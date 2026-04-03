@@ -60,6 +60,47 @@ document.addEventListener('DOMContentLoaded', () => {
         chatArea.scrollTop = chatArea.scrollHeight;
     }
 
+    function formatChatDebug(payload) {
+        if (!payload) return "No debug payload.";
+
+        let output = "[CHAT REQUEST]\n";
+        output += `User message:\n${payload.user_message || 'N/A'}\n\n`;
+        output += `Model:\n${payload.selected_model || 'N/A'}\n\n`;
+        output += `RAG enabled:\n${payload.rag_enabled ? 'true' : 'false'}\n\n`;
+
+        if (payload.rag_enabled) {
+            output += `Retrieval query:\n${payload.retrieval_query || 'N/A'}\n\n`;
+
+            const chunks = payload.retrieval_chunks || [];
+            output += `Retrieved chunks count:\n${chunks.length}\n\n`;
+            output += `Retrieved chunks:\n`;
+
+            if (chunks.length === 0) {
+                output += `0 results\n`;
+            } else {
+                chunks.forEach((chunk, index) => {
+                    const truncatedChunk = chunk.length > 500 ? chunk.substring(0, 500) + '...' : chunk;
+                    output += `\n[${index + 1}] length=${chunk.length}\n${truncatedChunk}\n`;
+                });
+            }
+            output += `\n`;
+        }
+
+        let promptToDisplay = payload.final_prompt || 'N/A';
+        if (promptToDisplay.length > 8000) {
+            promptToDisplay = promptToDisplay.substring(0, 8000) + '\n\n[...prompt truncated for display...]';
+        }
+
+        output += `Final prompt sent to model:\n${promptToDisplay}\n\n`;
+        output += `Model response preview:\n${payload.response_preview || 'N/A'}\n\n`;
+
+        output += `Errors:\n`;
+        output += `retrieval: ${payload.retrieval_error || 'none'}\n`;
+        output += `ollama: ${payload.ollama_error || 'none'}\n`;
+
+        return output;
+    }
+
     async function sendMessage() {
         const message = messageInput.value.trim();
         const model = modelSelect.value;
@@ -101,7 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Render debug trace
-            debugOutput.textContent = JSON.stringify(data.debug, null, 2);
+            debugOutput.textContent = formatChatDebug(data.debug);
 
         } catch (error) {
             statusArea.textContent = `Error sending request: ${error.message}`;
@@ -181,14 +222,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const result = await response.json();
 
-            let debugText = debugOutput.textContent;
-            let currentDebug = null;
-            try {
-                currentDebug = JSON.parse(debugText);
-            } catch (e) {
-                currentDebug = { history: [] };
-            }
-
             const debugInfo = {
                 path: file.name,
                 status: result.ok ? "success" : "failed",
@@ -199,15 +232,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             const ingestDebugStr = `\n[INGEST]\npath: ${debugInfo.path}\nstatus: ${debugInfo.status}\ndoc_id: ${debugInfo.doc_id}\nchunks_indexed: ${debugInfo.chunks_indexed}\nerror: ${debugInfo.error}\n`;
 
-            if (typeof currentDebug === 'object' && currentDebug !== null) {
-                if (!currentDebug.ingestions) {
-                    currentDebug.ingestions = [];
-                }
-                currentDebug.ingestions.push(debugInfo);
-                debugOutput.textContent = JSON.stringify(currentDebug, null, 2);
-            } else {
-                debugOutput.textContent = ingestDebugStr + "\n" + debugOutput.textContent;
-            }
+            // Append ingest log, keeping the previous log text
+            debugOutput.textContent = ingestDebugStr + "\n" + debugOutput.textContent;
 
             if (result.ok) {
                 ingestStatusArea.textContent = `Success: Ingested ${result.doc_id} (${result.chunks_indexed} chunks)`;

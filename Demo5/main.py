@@ -74,20 +74,19 @@ async def api_chat(request: ChatRequest):
     watcher.pre_check(context)
 
     # RAG Integration
-    rag_debug = {"enabled": False}
+    retrieval_query = None
+    retrieval_chunks = []
+    retrieval_error = None
     final_prompt = request.message
+
     if RAG_ENABLED:
         rag_result = get_rag_context(request.message, top_k=3)
-        rag_debug = {
-            "enabled": True,
-            "query": request.message,
-            "chunks_returned": len(rag_result.get("chunks", [])),
-            "error": rag_result.get("error"),
-            "chunks": [chunk[:300] for chunk in rag_result.get("chunks", [])]
-        }
+        retrieval_query = request.message
+        retrieval_error = rag_result.get("error")
+        retrieval_chunks = rag_result.get("chunks", [])
 
-        if rag_result.get("chunks"):
-            context_blocks = "\n\n".join([f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(rag_result["chunks"])])
+        if retrieval_chunks:
+            context_blocks = "\n\n".join([f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(retrieval_chunks)])
             final_prompt = f"You are a helpful assistant.\n\nUse the following retrieved context if it is relevant to the user's question.\nIf it is not relevant, ignore it.\n\nRetrieved context:\n{context_blocks}\n\nUser question:\n{request.message}"
 
     # 3. Call Ollama
@@ -115,23 +114,23 @@ async def api_chat(request: ChatRequest):
     elapsed_ms = round((end_time - start_time) * 1000, 2)
 
     # 5. Build structured debug trace
-    preview = request.message[:50] + ("..." if len(request.message) > 50 else "")
+    response_preview = reply_text[:100] + ("..." if len(reply_text) > 100 else "") if reply_text else None
 
-    debug_trace = {
+    debug_payload = {
+        "user_message": request.message,
         "selected_model": request.model,
-        "user_message_preview": preview,
-        "watcher_pre_result": [e.model_dump() for e in context.watcher_events if e.stage == "pre_ollama"][0] if any(e.stage == "pre_ollama" for e in context.watcher_events) else None,
-        "rag": rag_debug,
-        "ollama_request_summary": context.ollama_request_summary,
-        "ollama_response_summary": context.ollama_response_summary,
-        "watcher_post_result": [e.model_dump() for e in context.watcher_events if e.stage == "post_ollama"][0] if any(e.stage == "post_ollama" for e in context.watcher_events) else None,
-        "elapsed_time_ms": elapsed_ms,
-        "error": context.error
+        "rag_enabled": RAG_ENABLED,
+        "retrieval_query": retrieval_query,
+        "retrieval_chunks": retrieval_chunks,
+        "retrieval_error": retrieval_error,
+        "final_prompt": final_prompt,
+        "ollama_error": context.error,
+        "response_preview": response_preview
     }
 
     return ChatResponse(
         reply=reply_text,
-        debug=debug_trace
+        debug=debug_payload
     )
 
 if __name__ == "__main__":

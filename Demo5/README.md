@@ -47,6 +47,39 @@ Open your browser and navigate to [http://127.0.0.1:8000](http://127.0.0.1:8000)
 6. Click **Ingest PDF** with no file selected (or cancel the browse dialog) and confirm it shows a clean message like "No PDF selected".
 7. (Optional) Try ingesting an invalid or broken file and confirm the UI handles the failure gracefully.
 
+### Manual Testing for Chat Debug Panel
+
+**Case A — Plain chat, empty DB**
+1. Launch app with no indexed PDFs.
+2. Ask a normal question.
+3. Confirm:
+   - App responds,
+   - Debug panel shows RAG state as enabled but retrieved chunks count is 0,
+   - Final prompt is visible.
+
+**Case B — RAG chat**
+1. Ingest a PDF.
+2. Ask a related question.
+3. Confirm:
+   - Retrieved chunks are shown with their lengths,
+   - Final prompt includes the retrieved context,
+   - Model response preview is shown,
+   - Selected model is shown.
+
+**Case C — Retrieval failure**
+1. Temporarily break the RAG logic (e.g. point to a missing DB or rename `rag.db`).
+2. Ask a question.
+3. Confirm:
+   - Chat still works gracefully (without context),
+   - Debug panel clearly shows `retrieval: <error message>` under Errors.
+
+**Case D — Ollama failure**
+1. Stop the Ollama server.
+2. Submit a message.
+3. Confirm:
+   - No app crash,
+   - Debug panel shows `ollama: <error message>` under Errors.
+
 ## Features Included in Phase 1
 - FastAPI backend serving a lightweight single-page HTML frontend.
 - Ollama local model discovery.
