@@ -50,6 +50,50 @@ h1 {
     min-height: 20px;
 }
 
+.ingest-panel {
+    padding: 10px 20px;
+    background: #eef2f5;
+    border-bottom: 1px solid #ddd;
+    font-size: 0.9rem;
+}
+
+.ingest-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 5px;
+}
+
+#selected-pdf-path {
+    flex: 1;
+    color: #555;
+    font-family: monospace;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.ingest-status-area {
+    color: #333;
+    font-weight: 500;
+    margin-bottom: 5px;
+}
+
+.indexed-docs-area {
+    font-size: 0.85rem;
+    color: #444;
+}
+
+.indexed-docs-area ul {
+    list-style-type: none;
+    padding-left: 0;
+    margin-top: 2px;
+}
+
+.indexed-docs-area ul li {
+    margin-bottom: 2px;
+}
+
 .chat-area {
     flex: 1;
     padding: 20px;

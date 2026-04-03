@@ -34,13 +34,18 @@ Open your browser and navigate to [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 ### Manual Testing for RAG Integration
 1. Start Ollama and ensure `nomic-embed-text` is available.
-2. Ingest at least one sample PDF using `python -c "from rag.ingest import ingest_pdf; from rag.db import get_connection, init_db; conn = get_connection(); init_db(conn); ingest_pdf('sample.pdf', conn); conn.close()"`
-3. Launch app: `python main.py`
-4. Ask a question related to the PDF and confirm:
-   - App responds,
-   - Debug panel shows retrieved chunks,
-   - Prompt path does not crash.
-5. Also test launching the app with an empty DB or no DB. Ask a normal question and confirm plain chat still works.
+2. Launch app: `python main.py`
+3. Click **Browse PDF** in the ingest panel and select a valid PDF file.
+4. Click **Ingest PDF** and confirm:
+   - Success status appears in the ingest panel.
+   - Chunk count appears in the success message.
+   - Debug panel logs ingestion details.
+   - The document ID appears in the "Indexed docs" list.
+5. Ask a question related to the PDF and confirm:
+   - App responds using retrieved context,
+   - Debug panel shows retrieved chunks in the RAG section.
+6. Click **Ingest PDF** with no file selected (or cancel the browse dialog) and confirm it shows a clean message like "No PDF selected".
+7. (Optional) Try ingesting an invalid or broken file and confirm the UI handles the failure gracefully.
 
 ## Features Included in Phase 1
 - FastAPI backend serving a lightweight single-page HTML frontend.
