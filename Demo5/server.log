@@ -1,12 +1,18 @@
-INFO:     Started server process [130561]
+INFO:     Started server process [138886]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:49464 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49464 - "GET /static/styles.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49478 - "GET /static/app.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49464 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49478 - "GET /api/models HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49478 - "GET /api/stats HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49478 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49478 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39692 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53274 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53274 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53276 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53274 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53276 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53276 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53276 - "POST /api/ingest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53276 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53276 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [138886]
