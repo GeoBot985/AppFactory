@@ -19,7 +19,7 @@ async def get_models() -> Tuple[List[str], str]:
     except Exception as e:
         return [], f"Error fetching models: {str(e)}"
 
-async def chat(model: str, message: str) -> Tuple[Dict[str, Any], Dict[str, Any], str]:
+async def chat(model: str, message: str, temperature: float = 0.1) -> Tuple[Dict[str, Any], Dict[str, Any], str]:
     """
     Sends a chat request to Ollama.
     Returns (response_data, request_summary, error_message).
@@ -27,7 +27,10 @@ async def chat(model: str, message: str) -> Tuple[Dict[str, Any], Dict[str, Any]
     request_payload = {
         "model": model,
         "messages": [{"role": "user", "content": message}],
-        "stream": False
+        "stream": False,
+        "options": {
+            "temperature": temperature
+        }
     }
 
     request_summary = {

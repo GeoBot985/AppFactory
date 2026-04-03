@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const messageInput = document.getElementById('message-input');
     const sendBtn = document.getElementById('send-btn');
     const debugOutput = document.getElementById('debug-output');
+    const evidenceOutput = document.getElementById('evidence-output');
 
     // Ingestion UI elements
     const pdfFileInput = document.getElementById('pdf-file-input');
@@ -80,6 +81,50 @@ document.addEventListener('DOMContentLoaded', () => {
         msgDiv.textContent = text;
         chatArea.appendChild(msgDiv);
         chatArea.scrollTop = chatArea.scrollHeight;
+    }
+
+    function renderEvidence(chunks) {
+        evidenceOutput.innerHTML = '';
+        if (!chunks || chunks.length === 0) {
+            evidenceOutput.innerHTML = '<div class="empty-evidence-msg">No evidence used.</div>';
+            return;
+        }
+
+        chunks.forEach((chunk, idx) => {
+            const chunkDiv = document.createElement('div');
+            chunkDiv.className = 'evidence-chunk';
+
+            const header = document.createElement('div');
+            header.className = 'evidence-chunk-header';
+
+            const titleSpan = document.createElement('span');
+            titleSpan.textContent = `[Doc: ${chunk.document_name} | Chunk ${chunk.chunk_index}]`;
+
+            const expandBtn = document.createElement('button');
+            expandBtn.className = 'expand-btn';
+            expandBtn.textContent = 'Expand';
+
+            header.appendChild(titleSpan);
+            header.appendChild(expandBtn);
+
+            const textDiv = document.createElement('div');
+            textDiv.className = 'evidence-chunk-text collapsed';
+            textDiv.textContent = chunk.text;
+
+            expandBtn.addEventListener('click', () => {
+                if (textDiv.classList.contains('collapsed')) {
+                    textDiv.classList.remove('collapsed');
+                    expandBtn.textContent = 'Collapse';
+                } else {
+                    textDiv.classList.add('collapsed');
+                    expandBtn.textContent = 'Expand';
+                }
+            });
+
+            chunkDiv.appendChild(header);
+            chunkDiv.appendChild(textDiv);
+            evidenceOutput.appendChild(chunkDiv);
+        });
     }
 
     function formatChatDebug(payload) {
@@ -235,6 +280,9 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 appendMessage('assistant', 'Empty response.');
             }
+
+            // Render evidence
+            renderEvidence(data.evidence);
 
             // Render debug trace
             debugOutput.textContent = formatChatDebug(data.debug);

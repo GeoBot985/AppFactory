@@ -16,6 +16,7 @@ from app.services.rag_service import (
 )
 from app.services.ingest_service import ingest_pdf_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
+from app.services.prompt_builder import build_grounded_prompt
 
 RAG_ENABLED = True
 WATCHER_ENABLED = True
@@ -99,6 +100,8 @@ async def api_chat(request: ChatRequest):
     retrieval_metrics = None
     retrieval_error = None
     final_prompt = request.message
+    skip_llm = False
+    reply_text = ""
 
     if RAG_ENABLED:
         rag_result = get_rag_context(request.message, top_k=3, document_ids=request.document_ids)
@@ -107,9 +110,13 @@ async def api_chat(request: ChatRequest):
         retrieval_chunks = rag_result.get("chunks", [])
         retrieval_metrics = rag_result.get("metrics")
 
-        if retrieval_chunks:
-            context_blocks = "\n\n".join([f"[Chunk {i+1}] (from {chunk['document_name']})\n{chunk['text']}" for i, chunk in enumerate(retrieval_chunks)])
-            final_prompt = f"You are a helpful assistant.\n\nUse the following retrieved context if it is relevant to the user's question.\nIf it is not relevant, ignore it.\n\nRetrieved context:\n{context_blocks}\n\nUser question:\n{request.message}"
+        if not retrieval_chunks and not retrieval_error:
+            # Fallback if corpus is empty or nothing retrieved
+            skip_llm = True
+            reply_text = "Insufficient information. No relevant information found in the selected documents."
+            final_prompt = "No context provided."
+        elif retrieval_chunks:
+            final_prompt = build_grounded_prompt(request.message, retrieval_chunks)
 
     # 2.5 Watcher Module
     watcher_allowed = None
@@ -140,22 +147,22 @@ async def api_chat(request: ChatRequest):
         final_prompt = watcher_result.get("payload", payload).get("final_prompt", final_prompt)
 
     # 3. Call Ollama
-    ollama_response, request_summary, error = await ollama_chat(request.model, final_prompt)
-    context.ollama_request_summary = request_summary
+    if not skip_llm:
+        ollama_response, request_summary, error = await ollama_chat(request.model, final_prompt, temperature=0.1)
+        context.ollama_request_summary = request_summary
 
-    reply_text = ""
-    if error:
-        context.error = error
-        reply_text = f"Error: {error}"
-    else:
-        # Simplify response summary to keep it clean
-        context.ollama_response_summary = {
-            "model": ollama_response.get("model"),
-            "created_at": ollama_response.get("created_at"),
-            "done": ollama_response.get("done"),
-            "total_duration": ollama_response.get("total_duration")
-        }
-        reply_text = ollama_response.get("message", {}).get("content", "")
+        if error:
+            context.error = error
+            reply_text = f"Error: {error}"
+        else:
+            # Simplify response summary to keep it clean
+            context.ollama_response_summary = {
+                "model": ollama_response.get("model"),
+                "created_at": ollama_response.get("created_at"),
+                "done": ollama_response.get("done"),
+                "total_duration": ollama_response.get("total_duration")
+            }
+            reply_text = ollama_response.get("message", {}).get("content", "")
 
     # 4. Watcher Post-check
     watcher.post_check(context)
@@ -209,6 +216,7 @@ async def api_chat(request: ChatRequest):
 
     return ChatResponse(
         reply=reply_text,
+        evidence=retrieval_chunks if RAG_ENABLED else None,
         debug=debug_payload
     )
 
