@@ -91,6 +91,10 @@ def ingest_pdf_file(path: str, document_name: str | None = None) -> dict:
         result["document_id"] = ingest_result.get("document_id")
         result["chunks_indexed"] = ingest_result.get("chunk_count", 0)
         result["path"] = ingest_result.get("source_path", persistent_path)
+        result["ocr_used"] = ingest_result.get("ocr_used", False)
+        result["ocr_char_count"] = ingest_result.get("ocr_char_count", 0)
+        result["ocr_page_count"] = ingest_result.get("ocr_page_count", 0)
+        result["ingestion_method"] = ingest_result.get("ingestion_method", "text")
 
     except Exception as e:
         error_str = str(e)

@@ -14,7 +14,11 @@ def init_db(conn):
         file_hash TEXT NOT NULL,
         file_size_bytes BIGINT NOT NULL,
         ingested_at TEXT NOT NULL,
-        chunk_count INTEGER NOT NULL
+        chunk_count INTEGER NOT NULL,
+        ingestion_method TEXT DEFAULT 'text',
+        ocr_used BOOLEAN DEFAULT FALSE,
+        ocr_char_count INTEGER DEFAULT 0,
+        ocr_page_count INTEGER DEFAULT 0
     );
     """)
     conn.execute("""
@@ -28,16 +32,33 @@ def init_db(conn):
     );
     """)
 
+    # Migration for existing databases
+    existing_cols_info = conn.execute("PRAGMA table_info('documents')").fetchall()
+    col_names = [c[1] for c in existing_cols_info]
+    if "ingestion_method" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN ingestion_method TEXT DEFAULT 'text'")
+    if "ocr_used" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN ocr_used BOOLEAN DEFAULT FALSE")
+    if "ocr_char_count" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN ocr_char_count INTEGER DEFAULT 0")
+    if "ocr_page_count" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN ocr_page_count INTEGER DEFAULT 0")
+
 def insert_document(conn, doc: dict) -> None:
     conn.execute("""
         INSERT INTO documents (
             document_id, document_name, source_path, file_hash,
-            file_size_bytes, ingested_at, chunk_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            file_size_bytes, ingested_at, chunk_count,
+            ingestion_method, ocr_used, ocr_char_count, ocr_page_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, [
         doc["document_id"], doc["document_name"], doc["source_path"],
         doc["file_hash"], doc["file_size_bytes"], doc["ingested_at"],
-        doc["chunk_count"]
+        doc["chunk_count"],
+        doc.get("ingestion_method", "text"),
+        doc.get("ocr_used", False),
+        doc.get("ocr_char_count", 0),
+        doc.get("ocr_page_count", 0)
     ])
 
 def insert_chunk(conn, chunk: dict) -> None:
@@ -53,7 +74,8 @@ def list_documents(conn) -> list[dict]:
     results = conn.execute("SELECT * FROM documents ORDER BY ingested_at DESC").fetchall()
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
-        "file_size_bytes", "ingested_at", "chunk_count"
+        "file_size_bytes", "ingested_at", "chunk_count",
+        "ingestion_method", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return [dict(zip(cols, r)) for r in results]
 
@@ -89,7 +111,8 @@ def get_document_by_id(conn, document_id: str) -> dict | None:
         return None
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
-        "file_size_bytes", "ingested_at", "chunk_count"
+        "file_size_bytes", "ingested_at", "chunk_count",
+        "ingestion_method", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return dict(zip(cols, result))
 
@@ -99,7 +122,8 @@ def get_document_by_hash(conn, file_hash: str) -> dict | None:
         return None
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
-        "file_size_bytes", "ingested_at", "chunk_count"
+        "file_size_bytes", "ingested_at", "chunk_count",
+        "ingestion_method", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return dict(zip(cols, result))
 

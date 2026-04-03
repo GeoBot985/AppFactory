@@ -386,16 +386,29 @@ document.addEventListener('DOMContentLoaded', () => {
             const name = document.createElement('div');
             name.className = 'doc-name';
             name.textContent = doc.document_name;
+            if (doc.ocr_used) {
+                const ocrBadge = document.createElement('span');
+                ocrBadge.textContent = 'OCR';
+                ocrBadge.style.fontSize = '0.7rem';
+                ocrBadge.style.backgroundColor = '#eee';
+                ocrBadge.style.padding = '2px 4px';
+                ocrBadge.style.borderRadius = '3px';
+                ocrBadge.style.marginLeft = '8px';
+                ocrBadge.style.color = '#666';
+                ocrBadge.style.verticalAlign = 'middle';
+                name.appendChild(ocrBadge);
+            }
 
             const meta = document.createElement('div');
             meta.className = 'doc-meta';
             const date = new Date(doc.ingested_at).toLocaleString();
             const sizeKB = (doc.file_size_bytes / 1024).toFixed(1);
+            let ocrMeta = doc.ocr_used ? ` | OCR: ${doc.ocr_char_count} chars, ${doc.ocr_page_count} pages` : '';
             meta.innerHTML = `
                 <span style="font-family: monospace; font-size: 0.7rem; color: #999;">ID: ${doc.document_id}</span><br>
                 Path: ${doc.source_path || 'N/A'}<br>
                 Ingested: ${date}<br>
-                Chunks: ${doc.chunk_count} | Size: ${sizeKB} KB
+                Chunks: ${doc.chunk_count} | Size: ${sizeKB} KB${ocrMeta}
             `;
 
             card.appendChild(name);
@@ -567,7 +580,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (result.status === "success") {
                 statusIcon.textContent = '✔ ';
                 statusIcon.style.color = 'green';
-                statusText = `${result.document_name} — ${result.chunks_indexed} chunks`;
+                let ocrInfo = result.ocr_used ? ` (OCR used: ${result.ocr_char_count} chars, ${result.ocr_page_count} pages)` : '';
+                statusText = `${result.document_name} — ${result.chunks_indexed} chunks${ocrInfo}`;
             } else if (result.status === "skipped") {
                 statusIcon.textContent = 'ℹ ';
                 statusIcon.style.color = 'orange';
@@ -586,6 +600,13 @@ document.addEventListener('DOMContentLoaded', () => {
             batchDebugStr += `\n[${i + 1}] ${file.name}\nstatus: ${result.status}\n`;
             if (result.status === "success" || result.status === "skipped") {
                 batchDebugStr += `chunks: ${result.chunks_indexed}\n`;
+                if (result.status === "success") {
+                    batchDebugStr += `ingestion_method: ${result.ingestion_method}\n`;
+                    if (result.ocr_used) {
+                        batchDebugStr += `ocr_char_count: ${result.ocr_char_count}\n`;
+                        batchDebugStr += `ocr_page_count: ${result.ocr_page_count}\n`;
+                    }
+                }
                 if (result.status === "skipped") batchDebugStr += `reason: duplicate\n`;
             } else {
                 batchDebugStr += `error: ${result.error || "unknown"}\n`;
