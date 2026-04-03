@@ -50,7 +50,7 @@ def insert_chunk(conn, chunk: dict) -> None:
     )
 
 def list_documents(conn) -> list[dict]:
-    results = conn.execute("SELECT * FROM documents").fetchall()
+    results = conn.execute("SELECT * FROM documents ORDER BY ingested_at DESC").fetchall()
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
         "file_size_bytes", "ingested_at", "chunk_count"
