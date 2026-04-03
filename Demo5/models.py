@@ -9,6 +9,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     reply: str
+    evidence: Optional[List[Dict[str, Any]]] = None
     debug: Dict[str, Any]
 
 class WatcherEvent(BaseModel):
