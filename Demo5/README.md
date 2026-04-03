@@ -26,11 +26,21 @@ pip install -r requirements.txt
 3. **Run the application:**
 
 ```bash
-python app.py
+python main.py
 ```
 
 4. **Access the web application:**
 Open your browser and navigate to [http://127.0.0.1:8000](http://127.0.0.1:8000)
+
+### Manual Testing for RAG Integration
+1. Start Ollama and ensure `nomic-embed-text` is available.
+2. Ingest at least one sample PDF using `python -c "from rag.ingest import ingest_pdf; from rag.db import get_connection, init_db; conn = get_connection(); init_db(conn); ingest_pdf('sample.pdf', conn); conn.close()"`
+3. Launch app: `python main.py`
+4. Ask a question related to the PDF and confirm:
+   - App responds,
+   - Debug panel shows retrieved chunks,
+   - Prompt path does not crash.
+5. Also test launching the app with an empty DB or no DB. Ask a normal question and confirm plain chat still works.
 
 ## Features Included in Phase 1
 - FastAPI backend serving a lightweight single-page HTML frontend.

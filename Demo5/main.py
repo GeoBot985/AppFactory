@@ -8,6 +8,9 @@ import time
 from models import ChatRequest, ChatResponse, TurnContext
 from ollama_client import get_models, chat as ollama_chat
 from watcher import PassiveWatcher
+from app.services.rag_service import get_rag_context
+
+RAG_ENABLED = True
 
 app = FastAPI(title="Demo5 Passive Watcher Chat")
 
@@ -43,8 +46,25 @@ async def api_chat(request: ChatRequest):
     # 2. Watcher Pre-check
     watcher.pre_check(context)
 
+    # RAG Integration
+    rag_debug = {"enabled": False}
+    final_prompt = request.message
+    if RAG_ENABLED:
+        rag_result = get_rag_context(request.message, top_k=3)
+        rag_debug = {
+            "enabled": True,
+            "query": request.message,
+            "chunks_returned": len(rag_result.get("chunks", [])),
+            "error": rag_result.get("error"),
+            "chunks": [chunk[:300] for chunk in rag_result.get("chunks", [])]
+        }
+
+        if rag_result.get("chunks"):
+            context_blocks = "\n\n".join([f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(rag_result["chunks"])])
+            final_prompt = f"You are a helpful assistant.\n\nUse the following retrieved context if it is relevant to the user's question.\nIf it is not relevant, ignore it.\n\nRetrieved context:\n{context_blocks}\n\nUser question:\n{request.message}"
+
     # 3. Call Ollama
-    ollama_response, request_summary, error = await ollama_chat(request.model, request.message)
+    ollama_response, request_summary, error = await ollama_chat(request.model, final_prompt)
     context.ollama_request_summary = request_summary
 
     reply_text = ""
@@ -74,6 +94,7 @@ async def api_chat(request: ChatRequest):
         "selected_model": request.model,
         "user_message_preview": preview,
         "watcher_pre_result": [e.model_dump() for e in context.watcher_events if e.stage == "pre_ollama"][0] if any(e.stage == "pre_ollama" for e in context.watcher_events) else None,
+        "rag": rag_debug,
         "ollama_request_summary": context.ollama_request_summary,
         "ollama_response_summary": context.ollama_response_summary,
         "watcher_post_result": [e.model_dump() for e in context.watcher_events if e.stage == "post_ollama"][0] if any(e.stage == "post_ollama" for e in context.watcher_events) else None,
@@ -88,4 +109,4 @@ async def api_chat(request: ChatRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
