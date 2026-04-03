@@ -162,3 +162,42 @@ def get_all_embeddings(conn, document_ids: list[str] | None = None):
         })
 
     return parsed_results
+
+
+def find_exact_chunk(
+    conn,
+    document_id: str,
+    chunk_index: int,
+    text: str,
+) -> dict | None:
+    result = conn.execute(
+        """
+        SELECT
+            c.chunk_id,
+            c.document_id,
+            c.chunk_index,
+            c.text,
+            d.document_name,
+            d.ingested_at
+        FROM chunks c
+        JOIN documents d ON c.document_id = d.document_id
+        WHERE c.document_id = ?
+          AND c.chunk_index = ?
+          AND c.text = ?
+        LIMIT 1
+        """,
+        [document_id, chunk_index, text],
+    ).fetchone()
+
+    if not result:
+        return None
+
+    cols = [
+        "chunk_id",
+        "document_id",
+        "chunk_index",
+        "text",
+        "document_name",
+        "ingested_at",
+    ]
+    return dict(zip(cols, result))

@@ -2,8 +2,7 @@ from typing import List, Dict
 
 def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
     """
-    Constructs a strict grounding prompt.
-    If there are no chunks, fallback behavior is handled prior to calling this or by returning a no-context prompt.
+    Constructs a strict but slightly more reasonable grounding prompt.
     """
     if not retrieved_chunks:
         return (
@@ -28,8 +27,11 @@ def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
         f"QUESTION:\n{query}\n\n"
         f"INSTRUCTIONS:\n"
         f"- Only use the provided context to answer the question.\n"
-        f"- If the answer is not contained in the context, say exactly: 'Insufficient information'.\n"
-        f"- Do not use prior knowledge.\n"
-        f"- Do not guess or fill in gaps.\n"
+        f"- You may make reasonable, minimal logical connections between closely related concepts present in the context "
+        f"(for example, connecting 'least privilege' or access rights to the idea of using multiple accounts when the "
+        f"relationship is directly implied by the text).\n"
+        f"- If the answer is not supported by the context at all, say exactly: 'Insufficient information'.\n"
+        f"- Do not use any prior knowledge or external frameworks not explicitly present in the context.\n"
+        f"- Do not guess or fill in large gaps.\n"
         f"- Cite your sources for every claim using the format [Doc: name | Chunk X].\n"
     )

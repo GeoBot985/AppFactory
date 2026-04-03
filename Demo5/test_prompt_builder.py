@@ -37,7 +37,8 @@ def test_build_grounded_prompt_with_chunks():
 
     # Assert instructions
     assert "Only use the provided context to answer the question." in prompt
+    assert "You may make reasonable, minimal logical connections" in prompt
     assert "Insufficient information" in prompt
-    assert "Do not use prior knowledge." in prompt
-    assert "Do not guess or fill in gaps." in prompt
+    assert "Do not use any prior knowledge or external frameworks not explicitly present in the context." in prompt
+    assert "Do not guess or fill in large gaps." in prompt
     assert "Cite your sources for every claim using the format [Doc: name | Chunk X]." in prompt
