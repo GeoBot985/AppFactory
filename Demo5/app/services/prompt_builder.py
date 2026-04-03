@@ -27,6 +27,7 @@ def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
         f"QUESTION:\n{query}\n\n"
         f"INSTRUCTIONS:\n"
         f"- Only use the provided context to answer the question.\n"
+        f"- Answer directly and concisely. Start with 'Yes' or 'No', then give a brief explanation.\n"
         f"- You may make reasonable, minimal logical connections between closely related concepts present in the context "
         f"(for example, connecting 'least privilege' or access rights to the idea of using multiple accounts when the "
         f"relationship is directly implied by the text).\n"

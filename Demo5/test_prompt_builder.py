@@ -37,6 +37,7 @@ def test_build_grounded_prompt_with_chunks():
 
     # Assert instructions
     assert "Only use the provided context to answer the question." in prompt
+    assert "Answer directly and concisely. Start with 'Yes' or 'No', then give a brief explanation." in prompt
     assert "You may make reasonable, minimal logical connections" in prompt
     assert "Insufficient information" in prompt
     assert "Do not use any prior knowledge or external frameworks not explicitly present in the context." in prompt
