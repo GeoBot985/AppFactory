@@ -96,6 +96,7 @@ async def api_chat(request: ChatRequest):
     watcher_modified = None
     watcher_notes = []
     watcher_error = None
+    watcher_rule_results = []
 
     if WATCHER_ENABLED:
         payload: ChatRequestPayload = {
@@ -104,6 +105,7 @@ async def api_chat(request: ChatRequest):
             "rag_enabled": RAG_ENABLED,
             "retrieval_query": retrieval_query,
             "retrieval_chunks": retrieval_chunks,
+            "retrieval_error": retrieval_error,
             "final_prompt": final_prompt
         }
 
@@ -113,6 +115,7 @@ async def api_chat(request: ChatRequest):
         watcher_modified = watcher_result.get("modified")
         watcher_notes = watcher_result.get("watcher_notes", [])
         watcher_error = watcher_result.get("watcher_error")
+        watcher_rule_results = watcher_result.get("rule_results", [])
 
         final_prompt = watcher_result.get("payload", payload).get("final_prompt", final_prompt)
 
@@ -155,6 +158,7 @@ async def api_chat(request: ChatRequest):
         "watcher_modified": watcher_modified,
         "watcher_notes": watcher_notes,
         "watcher_error": watcher_error,
+        "watcher_rule_results": watcher_rule_results,
         "final_prompt": final_prompt,
         "ollama_error": context.error,
         "response_preview": response_preview

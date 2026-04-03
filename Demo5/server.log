@@ -1,19 +1,62 @@
-INFO:     127.0.0.1:63775 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63776 - "GET /api/models HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62135 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62135 - "GET /static/styles.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54639 - "GET /static/app.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:54639 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:62135 - "GET /api/models HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50709 - "POST /api/ingest HTTP/1.1" 200 OK
-INFO:     127.0.0.1:50709 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49667 - "POST /api/chat HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63751 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:63751 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
-INFO:     127.0.0.1:49320 - "GET /static/app.js HTTP/1.1" 304 Not Modified
-INFO:     127.0.0.1:63751 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:49320 - "GET /api/models HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65229 - "POST /api/ingest HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65229 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:53082 - "POST /api/chat HTTP/1.1" 200 OK
-INFO:     127.0.0.1:65532 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     Will watch for changes in these directories: ['/app/Demo5']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [38363] using StatReload
+INFO:     Started server process [38612]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     127.0.0.1:34286 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34298 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34286 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34286 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34298 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47240 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47240 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47246 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47246 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47240 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39576 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39576 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39592 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39592 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39576 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39576 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39576 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39576 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39576 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40484 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40484 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40498 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40498 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40484 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40484 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40484 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40484 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40484 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45748 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45748 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47624 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47624 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47626 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47626 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47624 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47624 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47624 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47624 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40686 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40686 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40694 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40694 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40686 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40686 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [38612]
+INFO:     Stopping reloader process [38363]
