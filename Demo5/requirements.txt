@@ -3,3 +3,7 @@ uvicorn
 httpx
 pydantic
 jinja2
+duckdb
+pymupdf
+requests
+numpy
