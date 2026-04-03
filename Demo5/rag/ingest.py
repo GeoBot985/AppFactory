@@ -32,17 +32,20 @@ def chunk_text(text: str, chunk_size=500, overlap=50) -> list[str]:
         start += chunk_size - overlap
     return chunks
 
-def ingest_pdf(path: str, conn) -> dict:
+def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
     if not os.path.exists(path):
         raise FileNotFoundError(f"File not found: {path}")
 
-    doc_name = os.path.basename(path)
+    doc_name = document_name or os.path.basename(path)
     file_hash = get_file_hash(path)
     file_size = os.path.getsize(path)
     ingested_at = datetime.utcnow().isoformat()
     doc_id = str(uuid.uuid4())
 
     text = extract_text_from_pdf(path)
+    if not text or not text.strip():
+        raise ValueError("No extractable text found in PDF.")
+
     text_chunks = chunk_text(text)
 
     # We need to compute chunks first to know the count
@@ -63,6 +66,8 @@ def ingest_pdf(path: str, conn) -> dict:
         })
 
     chunk_count = len(processed_chunks)
+    if chunk_count == 0:
+        raise ValueError("No non-empty chunks could be created from PDF text.")
 
     # Create document record
     doc_record = {

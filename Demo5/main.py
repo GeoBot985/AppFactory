@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 import time
 import os
 import shutil
+import uuid
 
 from models import ChatRequest, ChatResponse, TurnContext
 from ollama_client import get_models, chat as ollama_chat
@@ -38,17 +39,21 @@ async def api_ingest(file: UploadFile = File(...)):
     # Save the uploaded file temporarily
     temp_dir = "temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
-    temp_path = os.path.join(temp_dir, file.filename)
+    safe_name = os.path.basename(file.filename or "upload.pdf")
+    temp_path = os.path.join(temp_dir, f"{uuid.uuid4().hex}_{safe_name}")
 
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        result = ingest_pdf_file(temp_path)
+        result = ingest_pdf_file(temp_path, document_name=safe_name)
     finally:
-        # Clean up
+        await file.close()
         if os.path.exists(temp_path):
-            os.remove(temp_path)
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
 
     return JSONResponse(content=result)
 
@@ -222,4 +227,4 @@ async def api_chat(request: ChatRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=False)

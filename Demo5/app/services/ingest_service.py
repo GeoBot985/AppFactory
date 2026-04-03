@@ -1,5 +1,7 @@
 import os
+import shutil
 import sys
+import uuid
 
 # Ensure rag can be imported from Demo5 root if needed
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -10,7 +12,19 @@ if demo5_root not in sys.path:
 from rag.db import get_connection, init_db, list_documents, get_document_by_hash
 from rag.ingest import ingest_pdf, get_file_hash
 
-def ingest_pdf_file(path: str) -> dict:
+
+PERSISTENT_UPLOAD_DIR = os.path.abspath(
+    os.path.join(demo5_root, "rag_uploads")
+)
+
+
+def _build_persistent_copy_path(source_path: str) -> str:
+    os.makedirs(PERSISTENT_UPLOAD_DIR, exist_ok=True)
+    filename = os.path.basename(source_path)
+    unique_name = f"{uuid.uuid4().hex}_{filename}"
+    return os.path.join(PERSISTENT_UPLOAD_DIR, unique_name)
+
+def ingest_pdf_file(path: str, document_name: str | None = None) -> dict:
     """
     Returns:
     {
@@ -24,11 +38,11 @@ def ingest_pdf_file(path: str) -> dict:
         "reason": str | None
     }
     """
-    document_name = os.path.basename(path)
+    display_name = document_name or os.path.basename(path)
     result = {
         "ok": False,
         "path": path,
-        "document_name": document_name,
+        "document_name": display_name,
         "status": "failed",
         "document_id": None,
         "chunks_indexed": 0,
@@ -57,17 +71,32 @@ def ingest_pdf_file(path: str) -> dict:
             result["chunks_indexed"] = existing_doc["chunk_count"]
             return result
 
-        # ingest_pdf now returns a full doc record
-        ingest_result = ingest_pdf(path, conn)
+        persistent_path = _build_persistent_copy_path(path)
+        shutil.copy2(path, persistent_path)
+
+        try:
+            ingest_result = ingest_pdf(
+                persistent_path,
+                conn,
+                document_name=display_name,
+            )
+        except Exception:
+            if os.path.exists(persistent_path):
+                os.remove(persistent_path)
+            raise
 
         result["ok"] = True
         result["status"] = "success"
+        result["document_name"] = ingest_result.get("document_name", display_name)
         result["document_id"] = ingest_result.get("document_id")
         result["chunks_indexed"] = ingest_result.get("chunk_count", 0)
+        result["path"] = ingest_result.get("source_path", persistent_path)
 
     except Exception as e:
         error_str = str(e)
-        if "fitz" in error_str.lower() or "pdf" in error_str.lower() or "read" in error_str.lower() and "file" in error_str.lower():
+        if "no extractable text" in error_str.lower() or "no non-empty chunks" in error_str.lower():
+            result["error"] = "No extractable text was found in this PDF."
+        elif "fitz" in error_str.lower() or "pdf" in error_str.lower() or "read" in error_str.lower() and "file" in error_str.lower():
             result["error"] = "Failed to read PDF."
         elif "embed" in error_str.lower() or "ollama" in error_str.lower():
             result["error"] = "Failed to generate embeddings."
