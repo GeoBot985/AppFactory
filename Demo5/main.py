@@ -1,14 +1,17 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, File, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from datetime import datetime, timezone
 import time
+import os
+import shutil
 
 from models import ChatRequest, ChatResponse, TurnContext
 from ollama_client import get_models, chat as ollama_chat
 from watcher import PassiveWatcher
 from app.services.rag_service import get_rag_context
+from app.services.ingest_service import ingest_pdf_file, get_indexed_docs
 
 RAG_ENABLED = True
 
@@ -23,6 +26,30 @@ watcher = PassiveWatcher()
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
+
+@app.post("/api/ingest")
+async def api_ingest(file: UploadFile = File(...)):
+    # Save the uploaded file temporarily
+    temp_dir = "temp_uploads"
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_path = os.path.join(temp_dir, file.filename)
+
+    try:
+        with open(temp_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+
+        result = ingest_pdf_file(temp_path)
+    finally:
+        # Clean up
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+    return JSONResponse(content=result)
+
+@app.get("/api/docs")
+async def api_docs():
+    docs = get_indexed_docs()
+    return {"docs": docs}
 
 @app.get("/api/models")
 async def api_models():

@@ -20,6 +20,22 @@
                 <div id="status-area" class="status-area"></div>
             </header>
 
+            <div class="ingest-panel">
+                <div class="ingest-controls">
+                    <input type="file" id="pdf-file-input" accept=".pdf" style="display: none;">
+                    <button id="browse-pdf-btn">Browse PDF</button>
+                    <span id="selected-pdf-path">No PDF selected.</span>
+                    <button id="ingest-pdf-btn" disabled>Ingest PDF</button>
+                </div>
+                <div id="ingest-status-area" class="ingest-status-area">Ready</div>
+                <div class="indexed-docs-area">
+                    <strong>Indexed docs:</strong>
+                    <ul id="indexed-docs-list">
+                        <li>None</li>
+                    </ul>
+                </div>
+            </div>
+
             <div id="chat-area" class="chat-area">
                 <!-- Chat messages will appear here -->
             </div>

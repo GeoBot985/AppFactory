@@ -21,13 +21,20 @@ def chunk_text(text: str, chunk_size=500, overlap=50) -> list[str]:
         start += chunk_size - overlap
     return chunks
 
-def ingest_pdf(path: str, conn):
+def ingest_pdf(path: str, conn) -> dict:
     filename = os.path.basename(path)
     text = extract_text_from_pdf(path)
     chunks = chunk_text(text)
 
+    chunks_indexed = 0
     for i, chunk in enumerate(chunks):
         if not chunk.strip():
             continue
         embedding = embed_text(chunk)
         insert_chunk(conn, filename, i, chunk, embedding)
+        chunks_indexed += 1
+
+    return {
+        "doc_id": filename,
+        "chunks_indexed": chunks_indexed
+    }

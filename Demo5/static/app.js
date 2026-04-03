@@ -6,6 +6,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const sendBtn = document.getElementById('send-btn');
     const debugOutput = document.getElementById('debug-output');
 
+    // Ingestion UI elements
+    const pdfFileInput = document.getElementById('pdf-file-input');
+    const browsePdfBtn = document.getElementById('browse-pdf-btn');
+    const selectedPdfPath = document.getElementById('selected-pdf-path');
+    const ingestPdfBtn = document.getElementById('ingest-pdf-btn');
+    const ingestStatusArea = document.getElementById('ingest-status-area');
+    const indexedDocsList = document.getElementById('indexed-docs-list');
+
     // Fetch models on load
     async function loadModels() {
         try {
@@ -112,6 +120,111 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // --- Ingestion Logic ---
+
+    browsePdfBtn.addEventListener('click', () => {
+        pdfFileInput.click();
+    });
+
+    pdfFileInput.addEventListener('change', () => {
+        if (pdfFileInput.files && pdfFileInput.files.length > 0) {
+            selectedPdfPath.textContent = pdfFileInput.files[0].name;
+            ingestPdfBtn.disabled = false;
+        } else {
+            selectedPdfPath.textContent = "No PDF selected.";
+            ingestPdfBtn.disabled = true;
+        }
+    });
+
+    async function loadIndexedDocs() {
+        try {
+            const response = await fetch('/api/docs');
+            if (response.ok) {
+                const data = await response.json();
+                indexedDocsList.innerHTML = '';
+                if (data.docs && data.docs.length > 0) {
+                    data.docs.forEach(docId => {
+                        const li = document.createElement('li');
+                        li.textContent = `- ${docId}`;
+                        indexedDocsList.appendChild(li);
+                    });
+                } else {
+                    const li = document.createElement('li');
+                    li.textContent = 'None';
+                    indexedDocsList.appendChild(li);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to load indexed docs", error);
+        }
+    }
+
+    ingestPdfBtn.addEventListener('click', async () => {
+        if (!pdfFileInput.files || pdfFileInput.files.length === 0) {
+            ingestStatusArea.textContent = "No PDF selected.";
+            return;
+        }
+
+        const file = pdfFileInput.files[0];
+        ingestStatusArea.textContent = "Ingesting...";
+        ingestPdfBtn.disabled = true;
+        browsePdfBtn.disabled = true;
+
+        const formData = new FormData();
+        formData.append("file", file);
+
+        try {
+            const response = await fetch('/api/ingest', {
+                method: 'POST',
+                body: formData
+            });
+
+            const result = await response.json();
+
+            let debugText = debugOutput.textContent;
+            let currentDebug = null;
+            try {
+                currentDebug = JSON.parse(debugText);
+            } catch (e) {
+                currentDebug = { history: [] };
+            }
+
+            const debugInfo = {
+                path: file.name,
+                status: result.ok ? "success" : "failed",
+                doc_id: result.doc_id || null,
+                chunks_indexed: result.chunks_indexed || 0,
+                error: result.error || "none"
+            };
+
+            const ingestDebugStr = `\n[INGEST]\npath: ${debugInfo.path}\nstatus: ${debugInfo.status}\ndoc_id: ${debugInfo.doc_id}\nchunks_indexed: ${debugInfo.chunks_indexed}\nerror: ${debugInfo.error}\n`;
+
+            if (typeof currentDebug === 'object' && currentDebug !== null) {
+                if (!currentDebug.ingestions) {
+                    currentDebug.ingestions = [];
+                }
+                currentDebug.ingestions.push(debugInfo);
+                debugOutput.textContent = JSON.stringify(currentDebug, null, 2);
+            } else {
+                debugOutput.textContent = ingestDebugStr + "\n" + debugOutput.textContent;
+            }
+
+            if (result.ok) {
+                ingestStatusArea.textContent = `Success: Ingested ${result.doc_id} (${result.chunks_indexed} chunks)`;
+                await loadIndexedDocs();
+            } else {
+                ingestStatusArea.textContent = result.error || "Ingestion failed.";
+            }
+
+        } catch (error) {
+            ingestStatusArea.textContent = "Failed to communicate with server for ingestion.";
+        } finally {
+            ingestPdfBtn.disabled = false;
+            browsePdfBtn.disabled = false;
+        }
+    });
+
     // Initialize
     loadModels();
+    loadIndexedDocs();
 });
