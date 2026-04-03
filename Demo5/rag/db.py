@@ -67,6 +67,16 @@ def get_document_by_id(conn, document_id: str) -> dict | None:
     ]
     return dict(zip(cols, result))
 
+def get_document_by_hash(conn, file_hash: str) -> dict | None:
+    result = conn.execute("SELECT * FROM documents WHERE file_hash = ?", [file_hash]).fetchone()
+    if not result:
+        return None
+    cols = [
+        "document_id", "document_name", "source_path", "file_hash",
+        "file_size_bytes", "ingested_at", "chunk_count"
+    ]
+    return dict(zip(cols, result))
+
 def get_all_embeddings(conn, document_ids: list[str] | None = None):
     query = """
         SELECT

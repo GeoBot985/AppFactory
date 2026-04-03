@@ -7,8 +7,8 @@ demo5_root = os.path.abspath(os.path.join(current_dir, "../../"))
 if demo5_root not in sys.path:
     sys.path.append(demo5_root)
 
-from rag.db import get_connection, init_db, list_documents
-from rag.ingest import ingest_pdf
+from rag.db import get_connection, init_db, list_documents, get_document_by_hash
+from rag.ingest import ingest_pdf, get_file_hash
 
 def ingest_pdf_file(path: str) -> dict:
     """
@@ -16,17 +16,24 @@ def ingest_pdf_file(path: str) -> dict:
     {
         "ok": bool,
         "path": str,
-        "doc_id": str | None,
+        "document_name": str,
+        "status": "success" | "failed" | "skipped",
+        "document_id": str | None,
         "chunks_indexed": int,
-        "error": str | None
+        "error": str | None,
+        "reason": str | None
     }
     """
+    document_name = os.path.basename(path)
     result = {
         "ok": False,
         "path": path,
-        "doc_id": None,
+        "document_name": document_name,
+        "status": "failed",
+        "document_id": None,
         "chunks_indexed": 0,
-        "error": None
+        "error": None,
+        "reason": None
     }
 
     if not os.path.exists(path):
@@ -39,11 +46,23 @@ def ingest_pdf_file(path: str) -> dict:
         conn = get_connection(db_path)
         init_db(conn)
 
+        # Optional Duplicate Detection
+        file_hash = get_file_hash(path)
+        existing_doc = get_document_by_hash(conn, file_hash)
+        if existing_doc:
+            result["ok"] = True
+            result["status"] = "skipped"
+            result["reason"] = "duplicate"
+            result["document_id"] = existing_doc["document_id"]
+            result["chunks_indexed"] = existing_doc["chunk_count"]
+            return result
+
         # ingest_pdf now returns a full doc record
         ingest_result = ingest_pdf(path, conn)
 
         result["ok"] = True
-        result["doc_id"] = ingest_result.get("document_id")
+        result["status"] = "success"
+        result["document_id"] = ingest_result.get("document_id")
         result["chunks_indexed"] = ingest_result.get("chunk_count", 0)
 
     except Exception as e:
