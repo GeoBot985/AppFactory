@@ -96,6 +96,7 @@ async def api_chat(request: ChatRequest):
     # RAG Integration
     retrieval_query = None
     retrieval_chunks = []
+    retrieval_metrics = None
     retrieval_error = None
     final_prompt = request.message
 
@@ -104,6 +105,7 @@ async def api_chat(request: ChatRequest):
         retrieval_query = request.message
         retrieval_error = rag_result.get("error")
         retrieval_chunks = rag_result.get("chunks", [])
+        retrieval_metrics = rag_result.get("metrics")
 
         if retrieval_chunks:
             context_blocks = "\n\n".join([f"[Chunk {i+1}] (from {chunk['document_name']})\n{chunk['text']}" for i, chunk in enumerate(retrieval_chunks)])
@@ -192,6 +194,7 @@ async def api_chat(request: ChatRequest):
         "selected_documents_names": selected_documents_names,
         "retrieval_query": retrieval_query,
         "retrieval_chunks": retrieval_chunks,
+        "retrieval_metrics": retrieval_metrics,
         "retrieval_error": retrieval_error,
         "watcher_enabled": WATCHER_ENABLED,
         "watcher_allowed": watcher_allowed,

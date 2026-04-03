@@ -101,16 +101,28 @@ document.addEventListener('DOMContentLoaded', () => {
         if (payload.rag_enabled) {
             output += `Retrieval query:\n${payload.retrieval_query || 'N/A'}\n\n`;
 
+            if (payload.retrieval_metrics) {
+                const m = payload.retrieval_metrics;
+                output += `[RETRIEVAL METRICS]\n`;
+                output += `Eligible docs: ${m.eligible_docs}\n`;
+                output += `Total candidate chunks: ${m.candidate_count}\n`;
+                output += `Pool size for reranking: ${m.pool_size}\n\n`;
+            }
+
             const chunks = payload.retrieval_chunks || [];
             output += `Retrieved chunks count:\n${chunks.length}\n\n`;
-            output += `Retrieved chunks:\n`;
+            output += `Retrieved chunks (ranked):\n`;
 
             if (chunks.length === 0) {
                 output += `0 results\n`;
             } else {
                 chunks.forEach((chunk, index) => {
-                    const truncatedChunk = chunk.length > 500 ? chunk.substring(0, 500) + '...' : chunk;
-                    output += `\n[${index + 1}] length=${chunk.length}\n${truncatedChunk}\n`;
+                    const text = chunk.text || "";
+                    const truncatedChunk = text.length > 500 ? text.substring(0, 500) + '...' : text;
+                    output += `\n[${index + 1}] score=${chunk.score.toFixed(4)} | v=${chunk.vector_score.toFixed(4)} | l=${chunk.lexical_score.toFixed(4)}\n`;
+                    output += `Doc: ${chunk.document_name} (index: ${chunk.chunk_index})\n`;
+                    output += `Text length: ${text.length}\n`;
+                    output += `${truncatedChunk}\n`;
                 });
             }
             output += `\n`;

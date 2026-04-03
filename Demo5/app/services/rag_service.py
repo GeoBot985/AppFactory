@@ -9,8 +9,10 @@ if demo5_root not in sys.path:
 
 from rag.db import get_connection, list_documents, delete_document, clear_corpus, get_corpus_stats
 from rag.search import search
-
-DB_PATH = "rag_v2.db"
+from app.config import (
+    DB_PATH, VECTOR_WEIGHT, LEXICAL_WEIGHT,
+    CANDIDATE_POOL_SIZE, PER_DOC_CAP
+)
 
 def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None = None) -> dict:
     """
@@ -19,6 +21,7 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
         "enabled": bool,
         "query": str,
         "chunks": list[dict],
+        "metrics": dict | None,
         "error": str | None
     }
     """
@@ -26,10 +29,11 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
         "enabled": True,
         "query": query,
         "chunks": [],
+        "metrics": None,
         "error": None
     }
 
-    # Default to rag_v2.db
+    # Default to DB_PATH from config
     if not os.path.exists(DB_PATH):
         result["error"] = "knowledge base empty / unavailable"
         return result
@@ -37,9 +41,22 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
     try:
         # Search function uses DuckDB connection to query chunks
         conn = get_connection(DB_PATH)
-        # Modified to pass document_ids and return dicts
-        search_results = search(conn, query, top_k=top_k, document_ids=document_ids)
-        result["chunks"] = search_results
+
+        # Call search with enhanced parameters
+        search_data = search(
+            conn,
+            query,
+            top_k=top_k,
+            document_ids=document_ids,
+            vector_weight=VECTOR_WEIGHT,
+            lexical_weight=LEXICAL_WEIGHT,
+            candidate_pool_size=CANDIDATE_POOL_SIZE,
+            per_doc_cap=PER_DOC_CAP
+        )
+
+        result["chunks"] = search_data.get("results", [])
+        result["metrics"] = search_data.get("metrics")
+
     except Exception as e:
         result["error"] = str(e)
     finally:
