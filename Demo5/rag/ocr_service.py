@@ -1,9 +1,38 @@
+import io
+import os
+import shutil
+
 import fitz
 import pytesseract
 from PIL import Image
-import io
 
 MIN_TEXT_THRESHOLD = 500
+
+
+def resolve_tesseract_cmd() -> str | None:
+    configured = os.getenv("TESSERACT_CMD")
+    if configured and os.path.exists(configured):
+        return configured
+
+    from_path = shutil.which("tesseract")
+    if from_path:
+        return from_path
+
+    common_paths = [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+    ]
+    for candidate in common_paths:
+        if candidate and os.path.exists(candidate):
+            return candidate
+
+    return None
+
+
+TESSERACT_CMD = resolve_tesseract_cmd()
+if TESSERACT_CMD:
+    pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
 def is_scanned_pdf(text_length: int) -> bool:
     return text_length < MIN_TEXT_THRESHOLD
@@ -51,6 +80,9 @@ def extract_text_with_ocr(pdf_path: str) -> dict:
     """
     try:
         # Check if tesseract is available
+        resolved_cmd = resolve_tesseract_cmd()
+        if resolved_cmd:
+            pytesseract.pytesseract.tesseract_cmd = resolved_cmd
         pytesseract.get_tesseract_version()
     except pytesseract.TesseractNotFoundError:
         return {
@@ -58,7 +90,7 @@ def extract_text_with_ocr(pdf_path: str) -> dict:
             "ocr_used": False,
             "ocr_char_count": 0,
             "ocr_page_count": 0,
-            "error": "OCR engine not available. Please install Tesseract."
+            "error": "OCR engine not available. Please install Tesseract or set TESSERACT_CMD."
         }
     except Exception as e:
         return {

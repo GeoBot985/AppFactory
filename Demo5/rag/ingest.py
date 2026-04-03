@@ -1,20 +1,22 @@
-import fitz  # PyMuPDF
-import os
+import fitz
 import hashlib
+import os
 import uuid
 from datetime import datetime
-from .embedder import embed_text
-from .db import insert_document, insert_chunk
-from .ocr_service import is_scanned_pdf, extract_text_with_ocr
+
+from .db import insert_chunk, insert_document
 from .docx_extractor import extract_docx_text
+from .embedder import embed_text
+from .ocr_service import extract_text_with_ocr, is_scanned_pdf
+
 
 def get_file_hash(path: str) -> str:
     sha256_hash = hashlib.sha256()
-    with open(path, "rb") as f:
-        # Read and update hash string value in blocks of 4K
-        for byte_block in iter(lambda: f.read(4096), b""):
+    with open(path, "rb") as file_handle:
+        for byte_block in iter(lambda: file_handle.read(4096), b""):
             sha256_hash.update(byte_block)
     return sha256_hash.hexdigest()
+
 
 def extract_text_from_pdf(path: str) -> str:
     text = ""
@@ -23,8 +25,9 @@ def extract_text_from_pdf(path: str) -> str:
             text += page.get_text() + "\n"
     return text
 
-def chunk_text(text: str, chunk_size=500, overlap=50) -> list[str]:
-    chunks = []
+
+def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
+    chunks: list[str] = []
     start = 0
     while start < len(text):
         end = min(start + chunk_size, len(text))
@@ -33,6 +36,7 @@ def chunk_text(text: str, chunk_size=500, overlap=50) -> list[str]:
             break
         start += chunk_size - overlap
     return chunks
+
 
 def ingest_document(path: str, conn, document_name: str | None = None) -> dict:
     if not os.path.exists(path):
@@ -55,8 +59,9 @@ def ingest_document(path: str, conn, document_name: str | None = None) -> dict:
     if ext == ".pdf":
         file_type = "pdf"
         text = extract_text_from_pdf(path)
+
         if is_scanned_pdf(len(text or "")):
-            print("No usable embedded text found → using OCR fallback")
+            print("No usable embedded text found; using OCR fallback")
             ocr_result = extract_text_with_ocr(path)
             if ocr_result["error"]:
                 raise ValueError(ocr_result["error"])
@@ -75,34 +80,33 @@ def ingest_document(path: str, conn, document_name: str | None = None) -> dict:
         text = extract_docx_text(path)
         if not text or not text.strip():
             raise ValueError("No extractable text was found in this DOCX file.")
+
     else:
-        # This shouldn't be reached if caller validates
         raise ValueError(f"Unsupported file type: {ext}")
 
     text_chunks = chunk_text(text)
 
-    # We need to compute chunks first to know the count
     processed_chunks = []
-    for i, text_chunk in enumerate(text_chunks):
+    for index, text_chunk in enumerate(text_chunks):
         if not text_chunk.strip():
             continue
 
         embedding = embed_text(text_chunk)
         chunk_id = str(uuid.uuid4())
-
-        processed_chunks.append({
-            "chunk_id": chunk_id,
-            "document_id": doc_id,
-            "chunk_index": i,
-            "text": text_chunk,
-            "embedding": embedding
-        })
+        processed_chunks.append(
+            {
+                "chunk_id": chunk_id,
+                "document_id": doc_id,
+                "chunk_index": index,
+                "text": text_chunk,
+                "embedding": embedding,
+            }
+        )
 
     chunk_count = len(processed_chunks)
     if chunk_count == 0:
         raise ValueError(f"No non-empty chunks could be created from {file_type.upper()} text.")
 
-    # Create document record
     doc_record = {
         "document_id": doc_id,
         "document_name": doc_name,
@@ -115,16 +119,15 @@ def ingest_document(path: str, conn, document_name: str | None = None) -> dict:
         "file_type": file_type,
         "ocr_used": ocr_used,
         "ocr_char_count": ocr_char_count,
-        "ocr_page_count": ocr_page_count
+        "ocr_page_count": ocr_page_count,
     }
 
-    # Insert into DB
     insert_document(conn, doc_record)
     for chunk in processed_chunks:
         insert_chunk(conn, chunk)
 
     return doc_record
 
+
 def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
-    # Maintain for backward compatibility if needed, but it's just a wrapper now
     return ingest_document(path, conn, document_name)
