@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from .embedder import embed_text
 from .db import insert_document, insert_chunk
+from .ocr_service import is_scanned_pdf, extract_text_with_ocr
 
 def get_file_hash(path: str) -> str:
     sha256_hash = hashlib.sha256()
@@ -43,6 +44,23 @@ def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
     doc_id = str(uuid.uuid4())
 
     text = extract_text_from_pdf(path)
+    ocr_used = False
+    ocr_char_count = 0
+    ocr_page_count = 0
+    ingestion_method = "text"
+
+    if is_scanned_pdf(len(text or "")):
+        print("No usable embedded text found → using OCR fallback")
+        ocr_result = extract_text_with_ocr(path)
+        if ocr_result["error"]:
+            raise ValueError(ocr_result["error"])
+
+        text = ocr_result["text"]
+        ocr_used = True
+        ocr_char_count = ocr_result["ocr_char_count"]
+        ocr_page_count = ocr_result["ocr_page_count"]
+        ingestion_method = "ocr"
+
     if not text or not text.strip():
         raise ValueError("No extractable text found in PDF.")
 
@@ -77,7 +95,11 @@ def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
         "file_hash": file_hash,
         "file_size_bytes": file_size,
         "ingested_at": ingested_at,
-        "chunk_count": chunk_count
+        "chunk_count": chunk_count,
+        "ingestion_method": ingestion_method,
+        "ocr_used": ocr_used,
+        "ocr_char_count": ocr_char_count,
+        "ocr_page_count": ocr_page_count
     }
 
     # Insert into DB
