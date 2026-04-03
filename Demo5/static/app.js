@@ -343,7 +343,7 @@ document.addEventListener('DOMContentLoaded', () => {
             selectedFilesContainer.appendChild(list);
             ingestPdfBtn.disabled = false;
         } else {
-            selectedFilesContainer.innerHTML = '<span id="selected-pdf-path">No PDF selected.</span>';
+            selectedFilesContainer.innerHTML = '<span id="selected-pdf-path">No files selected.</span>';
             ingestPdfBtn.disabled = true;
         }
     });
@@ -386,6 +386,18 @@ document.addEventListener('DOMContentLoaded', () => {
             const name = document.createElement('div');
             name.className = 'doc-name';
             name.textContent = doc.document_name;
+
+            const typeBadge = document.createElement('span');
+            typeBadge.textContent = (doc.file_type || 'pdf').toUpperCase();
+            typeBadge.style.fontSize = '0.7rem';
+            typeBadge.style.backgroundColor = '#e3f2fd';
+            typeBadge.style.padding = '2px 4px';
+            typeBadge.style.borderRadius = '3px';
+            typeBadge.style.marginLeft = '8px';
+            typeBadge.style.color = '#1976d2';
+            typeBadge.style.verticalAlign = 'middle';
+            name.appendChild(typeBadge);
+
             if (doc.ocr_used) {
                 const ocrBadge = document.createElement('span');
                 ocrBadge.textContent = 'OCR';
@@ -621,7 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Recommendation: Clear selection after ingestion
         pdfFileInput.value = '';
-        selectedFilesContainer.innerHTML = '<span id="selected-pdf-path">No PDF selected.</span>';
+        selectedFilesContainer.innerHTML = '<span id="selected-pdf-path">No files selected.</span>';
         ingestPdfBtn.disabled = true;
         browsePdfBtn.disabled = false;
     });

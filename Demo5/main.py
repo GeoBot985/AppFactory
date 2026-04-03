@@ -15,7 +15,7 @@ from app.services.rag_service import (
     get_rag_context, list_indexed_documents, delete_document_service,
     clear_corpus_service, get_corpus_stats_service
 )
-from app.services.ingest_service import ingest_pdf_file
+from app.services.ingest_service import ingest_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
 from app.services.prompt_builder import build_grounded_prompt
 
@@ -39,14 +39,25 @@ async def api_ingest(file: UploadFile = File(...)):
     # Save the uploaded file temporarily
     temp_dir = "temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
-    safe_name = os.path.basename(file.filename or "upload.pdf")
+
+    filename = file.filename or "upload.pdf"
+    safe_name = os.path.basename(filename)
     temp_path = os.path.join(temp_dir, f"{uuid.uuid4().hex}_{safe_name}")
+
+    # Extension validation
+    ext = os.path.splitext(safe_name)[1].lower()
+    if ext not in [".pdf", ".docx"]:
+        return JSONResponse(content={
+            "ok": False,
+            "status": "failed",
+            "error": "Unsupported file type. Supported types: PDF, DOCX."
+        })
 
     try:
         with open(temp_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        result = ingest_pdf_file(temp_path, document_name=safe_name)
+        result = ingest_file(temp_path, document_name=safe_name)
     finally:
         await file.close()
         if os.path.exists(temp_path):

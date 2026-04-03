@@ -10,7 +10,7 @@ if demo5_root not in sys.path:
     sys.path.append(demo5_root)
 
 from rag.db import get_connection, init_db, list_documents, get_document_by_hash
-from rag.ingest import ingest_pdf, get_file_hash
+from rag.ingest import ingest_document, get_file_hash
 
 
 PERSISTENT_UPLOAD_DIR = os.path.abspath(
@@ -24,7 +24,7 @@ def _build_persistent_copy_path(source_path: str) -> str:
     unique_name = f"{uuid.uuid4().hex}_{filename}"
     return os.path.join(PERSISTENT_UPLOAD_DIR, unique_name)
 
-def ingest_pdf_file(path: str, document_name: str | None = None) -> dict:
+def ingest_file(path: str, document_name: str | None = None) -> dict:
     """
     Returns:
     {
@@ -75,7 +75,7 @@ def ingest_pdf_file(path: str, document_name: str | None = None) -> dict:
         shutil.copy2(path, persistent_path)
 
         try:
-            ingest_result = ingest_pdf(
+            ingest_result = ingest_document(
                 persistent_path,
                 conn,
                 document_name=display_name,
@@ -95,13 +95,20 @@ def ingest_pdf_file(path: str, document_name: str | None = None) -> dict:
         result["ocr_char_count"] = ingest_result.get("ocr_char_count", 0)
         result["ocr_page_count"] = ingest_result.get("ocr_page_count", 0)
         result["ingestion_method"] = ingest_result.get("ingestion_method", "text")
+        result["file_type"] = ingest_result.get("file_type", "unknown")
 
     except Exception as e:
         error_str = str(e)
+        ext = os.path.splitext(path)[1].lower()
         if "no extractable text" in error_str.lower() or "no non-empty chunks" in error_str.lower():
-            result["error"] = "No extractable text was found in this PDF."
-        elif "fitz" in error_str.lower() or "pdf" in error_str.lower() or "read" in error_str.lower() and "file" in error_str.lower():
+            if ext == ".docx":
+                result["error"] = "No extractable text was found in this DOCX file."
+            else:
+                result["error"] = "No extractable text was found in this PDF."
+        elif "fitz" in error_str.lower() or "pdf" in error_str.lower() and "read" in error_str.lower():
             result["error"] = "Failed to read PDF."
+        elif "docx" in error_str.lower() and "read" in error_str.lower():
+            result["error"] = "Failed to read DOCX file."
         elif "embed" in error_str.lower() or "ollama" in error_str.lower():
             result["error"] = "Failed to generate embeddings."
         elif "sql" in error_str.lower() or "database" in error_str.lower() or "duckdb" in error_str.lower():
@@ -115,6 +122,9 @@ def ingest_pdf_file(path: str, document_name: str | None = None) -> dict:
             pass
 
     return result
+
+def ingest_pdf_file(path: str, document_name: str | None = None) -> dict:
+    return ingest_file(path, document_name)
 
 def get_indexed_docs() -> list[str]:
     """Returns a list of unique document IDs currently in the database."""

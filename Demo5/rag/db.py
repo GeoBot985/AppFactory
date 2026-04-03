@@ -16,6 +16,7 @@ def init_db(conn):
         ingested_at TEXT NOT NULL,
         chunk_count INTEGER NOT NULL,
         ingestion_method TEXT DEFAULT 'text',
+        file_type TEXT DEFAULT 'pdf',
         ocr_used BOOLEAN DEFAULT FALSE,
         ocr_char_count INTEGER DEFAULT 0,
         ocr_page_count INTEGER DEFAULT 0
@@ -37,6 +38,8 @@ def init_db(conn):
     col_names = [c[1] for c in existing_cols_info]
     if "ingestion_method" not in col_names:
         conn.execute("ALTER TABLE documents ADD COLUMN ingestion_method TEXT DEFAULT 'text'")
+    if "file_type" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN file_type TEXT DEFAULT 'pdf'")
     if "ocr_used" not in col_names:
         conn.execute("ALTER TABLE documents ADD COLUMN ocr_used BOOLEAN DEFAULT FALSE")
     if "ocr_char_count" not in col_names:
@@ -49,13 +52,14 @@ def insert_document(conn, doc: dict) -> None:
         INSERT INTO documents (
             document_id, document_name, source_path, file_hash,
             file_size_bytes, ingested_at, chunk_count,
-            ingestion_method, ocr_used, ocr_char_count, ocr_page_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ingestion_method, file_type, ocr_used, ocr_char_count, ocr_page_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, [
         doc["document_id"], doc["document_name"], doc["source_path"],
         doc["file_hash"], doc["file_size_bytes"], doc["ingested_at"],
         doc["chunk_count"],
         doc.get("ingestion_method", "text"),
+        doc.get("file_type", "pdf"),
         doc.get("ocr_used", False),
         doc.get("ocr_char_count", 0),
         doc.get("ocr_page_count", 0)
@@ -75,7 +79,7 @@ def list_documents(conn) -> list[dict]:
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
         "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "ocr_used", "ocr_char_count", "ocr_page_count"
+        "ingestion_method", "file_type", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return [dict(zip(cols, r)) for r in results]
 
@@ -112,7 +116,7 @@ def get_document_by_id(conn, document_id: str) -> dict | None:
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
         "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "ocr_used", "ocr_char_count", "ocr_page_count"
+        "ingestion_method", "file_type", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return dict(zip(cols, result))
 
@@ -123,7 +127,7 @@ def get_document_by_hash(conn, file_hash: str) -> dict | None:
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
         "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "ocr_used", "ocr_char_count", "ocr_page_count"
+        "ingestion_method", "file_type", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return dict(zip(cols, result))
 

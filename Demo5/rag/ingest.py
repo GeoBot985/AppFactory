@@ -6,6 +6,7 @@ from datetime import datetime
 from .embedder import embed_text
 from .db import insert_document, insert_chunk
 from .ocr_service import is_scanned_pdf, extract_text_with_ocr
+from .docx_extractor import extract_docx_text
 
 def get_file_hash(path: str) -> str:
     sha256_hash = hashlib.sha256()
@@ -33,7 +34,7 @@ def chunk_text(text: str, chunk_size=500, overlap=50) -> list[str]:
         start += chunk_size - overlap
     return chunks
 
-def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
+def ingest_document(path: str, conn, document_name: str | None = None) -> dict:
     if not os.path.exists(path):
         raise FileNotFoundError(f"File not found: {path}")
 
@@ -43,26 +44,40 @@ def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
     ingested_at = datetime.utcnow().isoformat()
     doc_id = str(uuid.uuid4())
 
-    text = extract_text_from_pdf(path)
+    ext = os.path.splitext(path)[1].lower()
+    text = ""
     ocr_used = False
     ocr_char_count = 0
     ocr_page_count = 0
     ingestion_method = "text"
+    file_type = "unknown"
 
-    if is_scanned_pdf(len(text or "")):
-        print("No usable embedded text found → using OCR fallback")
-        ocr_result = extract_text_with_ocr(path)
-        if ocr_result["error"]:
-            raise ValueError(ocr_result["error"])
+    if ext == ".pdf":
+        file_type = "pdf"
+        text = extract_text_from_pdf(path)
+        if is_scanned_pdf(len(text or "")):
+            print("No usable embedded text found → using OCR fallback")
+            ocr_result = extract_text_with_ocr(path)
+            if ocr_result["error"]:
+                raise ValueError(ocr_result["error"])
 
-        text = ocr_result["text"]
-        ocr_used = True
-        ocr_char_count = ocr_result["ocr_char_count"]
-        ocr_page_count = ocr_result["ocr_page_count"]
-        ingestion_method = "ocr"
+            text = ocr_result["text"]
+            ocr_used = True
+            ocr_char_count = ocr_result["ocr_char_count"]
+            ocr_page_count = ocr_result["ocr_page_count"]
+            ingestion_method = "ocr"
 
-    if not text or not text.strip():
-        raise ValueError("No extractable text found in PDF.")
+        if not text or not text.strip():
+            raise ValueError("No extractable text found in PDF.")
+
+    elif ext == ".docx":
+        file_type = "docx"
+        text = extract_docx_text(path)
+        if not text or not text.strip():
+            raise ValueError("No extractable text was found in this DOCX file.")
+    else:
+        # This shouldn't be reached if caller validates
+        raise ValueError(f"Unsupported file type: {ext}")
 
     text_chunks = chunk_text(text)
 
@@ -85,7 +100,7 @@ def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
 
     chunk_count = len(processed_chunks)
     if chunk_count == 0:
-        raise ValueError("No non-empty chunks could be created from PDF text.")
+        raise ValueError(f"No non-empty chunks could be created from {file_type.upper()} text.")
 
     # Create document record
     doc_record = {
@@ -97,6 +112,7 @@ def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
         "ingested_at": ingested_at,
         "chunk_count": chunk_count,
         "ingestion_method": ingestion_method,
+        "file_type": file_type,
         "ocr_used": ocr_used,
         "ocr_char_count": ocr_char_count,
         "ocr_page_count": ocr_page_count
@@ -108,3 +124,7 @@ def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
         insert_chunk(conn, chunk)
 
     return doc_record
+
+def ingest_pdf(path: str, conn, document_name: str | None = None) -> dict:
+    # Maintain for backward compatibility if needed, but it's just a wrapper now
+    return ingest_document(path, conn, document_name)
