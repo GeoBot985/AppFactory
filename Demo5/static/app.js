@@ -66,6 +66,8 @@ document.addEventListener('DOMContentLoaded', () => {
         let output = "[CHAT REQUEST]\n";
         output += `User message:\n${payload.user_message || 'N/A'}\n\n`;
         output += `Model:\n${payload.selected_model || 'N/A'}\n\n`;
+
+        output += `[RAG]\n`;
         output += `RAG enabled:\n${payload.rag_enabled ? 'true' : 'false'}\n\n`;
 
         if (payload.rag_enabled) {
@@ -86,15 +88,36 @@ document.addEventListener('DOMContentLoaded', () => {
             output += `\n`;
         }
 
+        output += `[WATCHER]\n`;
+        if (payload.watcher_enabled === false) {
+            output += `enabled: false\nstatus: skipped\n\n`;
+        } else {
+            output += `enabled: true\n`;
+            output += `allowed: ${payload.watcher_allowed !== undefined ? payload.watcher_allowed : 'N/A'}\n`;
+            output += `modified: ${payload.watcher_modified !== undefined ? payload.watcher_modified : 'N/A'}\n`;
+
+            const notes = payload.watcher_notes || [];
+            if (notes.length > 0) {
+                output += `notes:\n`;
+                notes.forEach(note => {
+                    output += `- ${note}\n`;
+                });
+            } else {
+                output += `notes: none\n`;
+            }
+            output += `error: ${payload.watcher_error || 'none'}\n\n`;
+        }
+
         let promptToDisplay = payload.final_prompt || 'N/A';
         if (promptToDisplay.length > 8000) {
             promptToDisplay = promptToDisplay.substring(0, 8000) + '\n\n[...prompt truncated for display...]';
         }
 
-        output += `Final prompt sent to model:\n${promptToDisplay}\n\n`;
-        output += `Model response preview:\n${payload.response_preview || 'N/A'}\n\n`;
+        output += `[FINAL PROMPT]\nFinal prompt sent to model:\n${promptToDisplay}\n\n`;
 
-        output += `Errors:\n`;
+        output += `[MODEL RESPONSE PREVIEW]\nModel response preview:\n${payload.response_preview || 'N/A'}\n\n`;
+
+        output += `[ERRORS]\nErrors:\n`;
         output += `retrieval: ${payload.retrieval_error || 'none'}\n`;
         output += `ollama: ${payload.ollama_error || 'none'}\n`;
 
