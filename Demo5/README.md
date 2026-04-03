@@ -32,20 +32,44 @@ python main.py
 4. **Access the web application:**
 Open your browser and navigate to [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
-### Manual Testing for RAG Integration
-1. Start Ollama and ensure `nomic-embed-text` is available.
-2. Launch app: `python main.py`
-3. Click **Browse PDF** in the ingest panel and select a valid PDF file.
-4. Click **Ingest PDF** and confirm:
-   - Success status appears in the ingest panel.
-   - Chunk count appears in the success message.
-   - Debug panel logs ingestion details.
-   - The document ID appears in the "Indexed docs" list.
-5. Ask a question related to the PDF and confirm:
-   - App responds using retrieved context,
-   - Debug panel shows retrieved chunks in the RAG section.
-6. Click **Ingest PDF** with no file selected (or cancel the browse dialog) and confirm it shows a clean message like "No PDF selected".
-7. (Optional) Try ingesting an invalid or broken file and confirm the UI handles the failure gracefully.
+### Manual Testing for Batch Ingestion (Spec 010)
+
+**Case A — Multiple valid PDFs**
+1. Select 3 PDFs.
+2. Click **Ingest Selected Files**.
+3. Confirm:
+   - All succeed.
+   - Individual chunk counts are displayed in the results area.
+   - Documents appear in the corpus panel.
+   - Debug panel shows `[INGEST BATCH]` with all 3 files.
+
+**Case B — Mixed valid + invalid**
+1. Select 2 valid + 1 corrupted/non-PDF file.
+2. Click **Ingest Selected Files**.
+3. Confirm:
+   - Valid files succeed.
+   - Invalid file fails cleanly with a red ✖ and error message.
+   - Batch continues after the failure.
+   - Results area shows all 3 statuses.
+
+**Case C — Empty selection**
+1. Click **Ingest Selected Files** with no files selected.
+2. Confirm:
+   - Button is disabled until files are selected.
+   - If forced, clear message shown, no crash.
+
+**Case D — Duplicate file**
+1. Ingest a file.
+2. Select the same file again and ingest.
+3. Confirm:
+   - Result shows "Skipped (duplicate)" with an orange ℹ.
+   - Debug panel logs the reason as `duplicate`.
+   - No new document is added to the corpus.
+
+**Case E — Corpus refresh**
+1. Ingest multiple files in one batch.
+2. Confirm the corpus panel updates immediately after the batch completes.
+3. Confirm any previous working set selection is preserved (if IDs still exist).
 
 ### Manual Testing for Corpus Panel + Working Set (Spec 009)
 

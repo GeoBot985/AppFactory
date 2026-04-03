@@ -59,24 +59,51 @@ h1 {
 
 .ingest-controls {
     display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 5px;
+    align-items: flex-start;
+    gap: 15px;
+    margin-bottom: 10px;
+}
+
+.selected-files-container {
+    flex: 1;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    padding: 8px 12px;
+    min-height: 40px;
+    max-height: 120px;
+    overflow-y: auto;
 }
 
 #selected-pdf-path {
-    flex: 1;
-    color: #555;
-    font-family: monospace;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
+    color: #888;
+    font-style: italic;
 }
 
 .ingest-status-area {
     color: #333;
-    font-weight: 500;
-    margin-bottom: 5px;
+    font-weight: bold;
+    margin-bottom: 10px;
+}
+
+.batch-results-area {
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    padding: 10px 15px;
+    margin-top: 10px;
+    font-family: monospace;
+    font-size: 0.85rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.batch-results-area h3 {
+    font-size: 0.9rem;
+    margin-top: 0;
+    margin-bottom: 8px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 4px;
 }
 
 .corpus-panel {

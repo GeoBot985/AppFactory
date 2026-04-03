@@ -10,8 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const pdfFileInput = document.getElementById('pdf-file-input');
     const browsePdfBtn = document.getElementById('browse-pdf-btn');
     const selectedPdfPath = document.getElementById('selected-pdf-path');
+    const selectedFilesContainer = document.getElementById('selected-files-container');
     const ingestPdfBtn = document.getElementById('ingest-pdf-btn');
     const ingestStatusArea = document.getElementById('ingest-status-area');
+    const batchResultsArea = document.getElementById('batch-results-area');
 
     // Corpus Panel elements
     const corpusList = document.getElementById('corpus-list');
@@ -238,10 +240,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     pdfFileInput.addEventListener('change', () => {
         if (pdfFileInput.files && pdfFileInput.files.length > 0) {
-            selectedPdfPath.textContent = pdfFileInput.files[0].name;
+            const files = Array.from(pdfFileInput.files);
+            const count = files.length;
+
+            selectedFilesContainer.innerHTML = '';
+            const title = document.createElement('div');
+            title.textContent = `Selected files (${count}):`;
+            title.style.fontWeight = 'bold';
+            selectedFilesContainer.appendChild(title);
+
+            const list = document.createElement('ul');
+            list.style.margin = '5px 0';
+            list.style.paddingLeft = '20px';
+            list.style.fontSize = '0.9em';
+
+            // Limit display to first 5
+            const displayLimit = 5;
+            files.slice(0, displayLimit).forEach(f => {
+                const li = document.createElement('li');
+                li.textContent = f.name;
+                list.appendChild(li);
+            });
+
+            if (count > displayLimit) {
+                const li = document.createElement('li');
+                li.textContent = `... and ${count - displayLimit} more`;
+                list.appendChild(li);
+            }
+
+            selectedFilesContainer.appendChild(list);
             ingestPdfBtn.disabled = false;
         } else {
-            selectedPdfPath.textContent = "No PDF selected.";
+            selectedFilesContainer.innerHTML = '<span id="selected-pdf-path">No PDF selected.</span>';
             ingestPdfBtn.disabled = true;
         }
     });
@@ -332,52 +362,94 @@ document.addEventListener('DOMContentLoaded', () => {
 
     ingestPdfBtn.addEventListener('click', async () => {
         if (!pdfFileInput.files || pdfFileInput.files.length === 0) {
-            ingestStatusArea.textContent = "No PDF selected.";
+            ingestStatusArea.textContent = "No files selected.";
             return;
         }
 
-        const file = pdfFileInput.files[0];
-        ingestStatusArea.textContent = "Ingesting...";
+        const files = Array.from(pdfFileInput.files);
+        const total = files.length;
+
+        ingestStatusArea.textContent = `Batch processing: 0/${total}...`;
         ingestPdfBtn.disabled = true;
         browsePdfBtn.disabled = true;
+        batchResultsArea.innerHTML = '<h3>Batch ingestion results:</h3>';
+        batchResultsArea.style.display = 'block';
 
-        const formData = new FormData();
-        formData.append("file", file);
+        let batchDebugStr = `\n[INGEST BATCH]\nfiles_selected: ${total}\n`;
+        const results = [];
 
-        try {
-            const response = await fetch('/api/ingest', {
-                method: 'POST',
-                body: formData
-            });
+        for (let i = 0; i < total; i++) {
+            const file = files[i];
+            ingestStatusArea.textContent = `Batch processing: ${i + 1}/${total} (${file.name})...`;
 
-            const result = await response.json();
+            const formData = new FormData();
+            formData.append("file", file);
 
-            const debugInfo = {
-                path: file.name,
-                status: result.ok ? "success" : "failed",
-                doc_id: result.doc_id || null,
-                chunks_indexed: result.chunks_indexed || 0,
-                error: result.error || "none"
-            };
-
-            const ingestDebugStr = `\n[INGEST]\npath: ${debugInfo.path}\nstatus: ${debugInfo.status}\ndoc_id: ${debugInfo.doc_id}\nchunks_indexed: ${debugInfo.chunks_indexed}\nerror: ${debugInfo.error}\n`;
-
-            // Append ingest log, keeping the previous log text
-            debugOutput.textContent = ingestDebugStr + "\n" + debugOutput.textContent;
-
-            if (result.ok) {
-                ingestStatusArea.textContent = `Success: Ingested ${result.doc_id} (${result.chunks_indexed} chunks)`;
-                await loadIndexedDocs();
-            } else {
-                ingestStatusArea.textContent = result.error || "Ingestion failed.";
+            let result;
+            try {
+                const response = await fetch('/api/ingest', {
+                    method: 'POST',
+                    body: formData
+                });
+                result = await response.json();
+            } catch (error) {
+                result = {
+                    ok: false,
+                    path: file.name,
+                    document_name: file.name,
+                    status: "failed",
+                    error: "Failed to communicate with server."
+                };
             }
 
-        } catch (error) {
-            ingestStatusArea.textContent = "Failed to communicate with server for ingestion.";
-        } finally {
-            ingestPdfBtn.disabled = false;
-            browsePdfBtn.disabled = false;
+            results.push(result);
+
+            // UI feedback for each file
+            const resultItem = document.createElement('div');
+            resultItem.style.marginBottom = '4px';
+
+            const statusIcon = document.createElement('span');
+            let statusText = '';
+
+            if (result.status === "success") {
+                statusIcon.textContent = '✔ ';
+                statusIcon.style.color = 'green';
+                statusText = `${result.document_name} — ${result.chunks_indexed} chunks`;
+            } else if (result.status === "skipped") {
+                statusIcon.textContent = 'ℹ ';
+                statusIcon.style.color = 'orange';
+                statusText = `${result.document_name} — Skipped (duplicate)`;
+            } else {
+                statusIcon.textContent = '✖ ';
+                statusIcon.style.color = 'red';
+                statusText = `${result.document_name} — Failed: ${result.error || "Unknown error"}`;
+            }
+
+            resultItem.appendChild(statusIcon);
+            resultItem.appendChild(document.createTextNode(statusText));
+            batchResultsArea.appendChild(resultItem);
+
+            // Debug log entry
+            batchDebugStr += `\n[${i + 1}] ${file.name}\nstatus: ${result.status}\n`;
+            if (result.status === "success" || result.status === "skipped") {
+                batchDebugStr += `chunks: ${result.chunks_indexed}\n`;
+                if (result.status === "skipped") batchDebugStr += `reason: duplicate\n`;
+            } else {
+                batchDebugStr += `error: ${result.error || "unknown"}\n`;
+            }
         }
+
+        debugOutput.textContent = batchDebugStr + "\n" + debugOutput.textContent;
+        ingestStatusArea.textContent = "Batch ingestion complete.";
+
+        // Refresh corpus panel
+        await loadIndexedDocs();
+
+        // Recommendation: Clear selection after ingestion
+        pdfFileInput.value = '';
+        selectedFilesContainer.innerHTML = '<span id="selected-pdf-path">No PDF selected.</span>';
+        ingestPdfBtn.disabled = true;
+        browsePdfBtn.disabled = false;
     });
 
     // Initialize

@@ -22,12 +22,17 @@
 
             <div class="ingest-panel">
                 <div class="ingest-controls">
-                    <input type="file" id="pdf-file-input" accept=".pdf" style="display: none;">
+                    <input type="file" id="pdf-file-input" accept=".pdf" multiple style="display: none;">
                     <button id="browse-pdf-btn">Browse PDF</button>
-                    <span id="selected-pdf-path">No PDF selected.</span>
-                    <button id="ingest-pdf-btn" disabled>Ingest PDF</button>
+                    <div id="selected-files-container" class="selected-files-container">
+                        <span id="selected-pdf-path">No PDF selected.</span>
+                    </div>
+                    <button id="ingest-pdf-btn" disabled>Ingest Selected Files</button>
                 </div>
                 <div id="ingest-status-area" class="ingest-status-area">Ready</div>
+                <div id="batch-results-area" class="batch-results-area" style="display: none;">
+                    <!-- Batch ingestion results will appear here -->
+                </div>
             </div>
 
             <div class="corpus-panel">
