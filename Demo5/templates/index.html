@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Demo5: Passive Watcher Chat</title>
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="main-panel">
+            <header>
+                <h1>Passive Watcher Chat</h1>
+                <div class="controls">
+                    <label for="model-select">Model:</label>
+                    <select id="model-select">
+                        <option value="">Loading models...</option>
+                    </select>
+                </div>
+                <div id="status-area" class="status-area"></div>
+            </header>
+
+            <div id="chat-area" class="chat-area">
+                <!-- Chat messages will appear here -->
+            </div>
+
+            <div class="input-area">
+                <textarea id="message-input" placeholder="Type your message here..." rows="3"></textarea>
+                <button id="send-btn">Send</button>
+            </div>
+        </div>
+
+        <div class="debug-panel">
+            <h2>Debug Trace</h2>
+            <pre id="debug-output">No request yet.</pre>
+        </div>
+    </div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
