@@ -1,7 +1,18 @@
 import fitz  # PyMuPDF
 import os
+import hashlib
+import uuid
+from datetime import datetime
 from .embedder import embed_text
-from .db import insert_chunk
+from .db import insert_document, insert_chunk
+
+def get_file_hash(path: str) -> str:
+    sha256_hash = hashlib.sha256()
+    with open(path, "rb") as f:
+        # Read and update hash string value in blocks of 4K
+        for byte_block in iter(lambda: f.read(4096), b""):
+            sha256_hash.update(byte_block)
+    return sha256_hash.hexdigest()
 
 def extract_text_from_pdf(path: str) -> str:
     text = ""
@@ -22,19 +33,51 @@ def chunk_text(text: str, chunk_size=500, overlap=50) -> list[str]:
     return chunks
 
 def ingest_pdf(path: str, conn) -> dict:
-    filename = os.path.basename(path)
+    if not os.path.exists(path):
+        raise FileNotFoundError(f"File not found: {path}")
+
+    doc_name = os.path.basename(path)
+    file_hash = get_file_hash(path)
+    file_size = os.path.getsize(path)
+    ingested_at = datetime.utcnow().isoformat()
+    doc_id = str(uuid.uuid4())
+
     text = extract_text_from_pdf(path)
-    chunks = chunk_text(text)
+    text_chunks = chunk_text(text)
 
-    chunks_indexed = 0
-    for i, chunk in enumerate(chunks):
-        if not chunk.strip():
+    # We need to compute chunks first to know the count
+    processed_chunks = []
+    for i, text_chunk in enumerate(text_chunks):
+        if not text_chunk.strip():
             continue
-        embedding = embed_text(chunk)
-        insert_chunk(conn, filename, i, chunk, embedding)
-        chunks_indexed += 1
 
-    return {
-        "doc_id": filename,
-        "chunks_indexed": chunks_indexed
+        embedding = embed_text(text_chunk)
+        chunk_id = str(uuid.uuid4())
+
+        processed_chunks.append({
+            "chunk_id": chunk_id,
+            "document_id": doc_id,
+            "chunk_index": i,
+            "text": text_chunk,
+            "embedding": embedding
+        })
+
+    chunk_count = len(processed_chunks)
+
+    # Create document record
+    doc_record = {
+        "document_id": doc_id,
+        "document_name": doc_name,
+        "source_path": os.path.abspath(path),
+        "file_hash": file_hash,
+        "file_size_bytes": file_size,
+        "ingested_at": ingested_at,
+        "chunk_count": chunk_count
     }
+
+    # Insert into DB
+    insert_document(conn, doc_record)
+    for chunk in processed_chunks:
+        insert_chunk(conn, chunk)
+
+    return doc_record

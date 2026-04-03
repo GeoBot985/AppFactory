@@ -9,19 +9,24 @@ def cosine_similarity(a, b):
         return 0.0
     return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
 
-def search(conn, query: str, top_k=5):
+def search(conn, query: str, top_k=5, document_ids: list[str] | None = None):
     query_embedding = embed_text(query)
-    all_embeddings = get_all_embeddings(conn)
+    all_embeddings_with_meta = get_all_embeddings(conn, document_ids=document_ids)
 
     scored_results = []
-    for text, embedding in all_embeddings:
-        score = cosine_similarity(query_embedding, embedding)
-        scored_results.append((score, text))
+    for item in all_embeddings_with_meta:
+        score = cosine_similarity(query_embedding, item["embedding"])
 
-    scored_results.sort(key=lambda x: x[0], reverse=True)
+        result = {
+            "document_id": item["document_id"],
+            "document_name": item["document_name"],
+            "ingested_at": item["ingested_at"],
+            "chunk_index": item["chunk_index"],
+            "text": item["text"],
+            "score": float(score)
+        }
+        scored_results.append(result)
 
-    top_results = []
-    for score, text in scored_results[:top_k]:
-        top_results.append(text)
+    scored_results.sort(key=lambda x: x["score"], reverse=True)
 
-    return top_results
+    return scored_results[:top_k]

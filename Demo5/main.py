@@ -88,7 +88,7 @@ async def api_chat(request: ChatRequest):
         retrieval_chunks = rag_result.get("chunks", [])
 
         if retrieval_chunks:
-            context_blocks = "\n\n".join([f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(retrieval_chunks)])
+            context_blocks = "\n\n".join([f"[Chunk {i+1}] (from {chunk['document_name']})\n{chunk['text']}" for i, chunk in enumerate(retrieval_chunks)])
             final_prompt = f"You are a helpful assistant.\n\nUse the following retrieved context if it is relevant to the user's question.\nIf it is not relevant, ignore it.\n\nRetrieved context:\n{context_blocks}\n\nUser question:\n{request.message}"
 
     # 2.5 Watcher Module

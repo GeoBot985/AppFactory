@@ -5,7 +5,7 @@ class ChatRequestPayload(TypedDict):
     selected_model: str
     rag_enabled: bool
     retrieval_query: Optional[str]
-    retrieval_chunks: List[str]
+    retrieval_chunks: List[dict]
     retrieval_error: Optional[str]
     final_prompt: str
 
