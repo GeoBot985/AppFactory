@@ -17,9 +17,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Corpus Panel elements
     const corpusList = document.getElementById('corpus-list');
+    const refreshCorpusBtn = document.getElementById('refresh-corpus-btn');
     const selectAllBtn = document.getElementById('select-all-btn');
     const clearSelectionBtn = document.getElementById('clear-selection-btn');
+    const removeSelectedBtn = document.getElementById('remove-selected-btn');
     const retrievalScopeText = document.getElementById('retrieval-scope-text');
+
+    // Stats elements
+    const statDocs = document.getElementById('stat-docs');
+    const statChunks = document.getElementById('stat-chunks');
+    const statSelected = document.getElementById('stat-selected');
+    const statLastIngest = document.getElementById('stat-last-ingest');
+
+    // Management elements
+    const clearConfirmCheck = document.getElementById('clear-confirm-check');
+    const clearCorpusBtn = document.getElementById('clear-corpus-btn');
 
     let allDocuments = [];
     let selectedDocumentIds = new Set();
@@ -279,9 +291,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateScopeStatus() {
         if (selectedDocumentIds.size === 0) {
             retrievalScopeText.textContent = "Full corpus";
+            removeSelectedBtn.disabled = true;
         } else {
             retrievalScopeText.textContent = `Working set (${selectedDocumentIds.size} documents)`;
+            removeSelectedBtn.disabled = false;
         }
+        statSelected.textContent = selectedDocumentIds.size;
     }
 
     function toggleDocumentSelection(docId) {
@@ -317,6 +332,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const date = new Date(doc.ingested_at).toLocaleString();
             const sizeKB = (doc.file_size_bytes / 1024).toFixed(1);
             meta.innerHTML = `
+                <span style="font-family: monospace; font-size: 0.7rem; color: #999;">ID: ${doc.document_id}</span><br>
+                Path: ${doc.source_path || 'N/A'}<br>
                 Ingested: ${date}<br>
                 Chunks: ${doc.chunk_count} | Size: ${sizeKB} KB
             `;
@@ -327,6 +344,20 @@ document.addEventListener('DOMContentLoaded', () => {
             card.addEventListener('click', () => toggleDocumentSelection(doc.document_id));
             corpusList.appendChild(card);
         });
+    }
+
+    async function loadStats() {
+        try {
+            const response = await fetch('/api/stats');
+            const data = await response.json();
+            if (data.ok) {
+                statDocs.textContent = data.stats.total_documents;
+                statChunks.textContent = data.stats.total_chunks;
+                statLastIngest.textContent = data.stats.last_ingestion_at ? new Date(data.stats.last_ingestion_at).toLocaleString() : 'N/A';
+            }
+        } catch (error) {
+            console.error("Failed to load stats", error);
+        }
     }
 
     async function loadIndexedDocs() {
@@ -341,6 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     selectedDocumentIds = new Set(Array.from(selectedDocumentIds).filter(id => validIds.has(id)));
                     renderDocumentCards();
                     updateScopeStatus();
+                    loadStats();
                 }
             }
         } catch (error) {
@@ -348,10 +380,71 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    refreshCorpusBtn.addEventListener('click', () => {
+        loadIndexedDocs();
+    });
+
     selectAllBtn.addEventListener('click', () => {
         allDocuments.forEach(doc => selectedDocumentIds.add(doc.document_id));
         renderDocumentCards();
         updateScopeStatus();
+    });
+
+    removeSelectedBtn.addEventListener('click', async () => {
+        if (selectedDocumentIds.size === 0) return;
+
+        const count = selectedDocumentIds.size;
+        const confirmMsg = count === 1
+            ? "Are you sure you want to remove the selected document?"
+            : `Are you sure you want to remove the ${count} selected documents?`;
+
+        if (!confirm(confirmMsg)) return;
+
+        removeSelectedBtn.disabled = true;
+        const idsToRemove = Array.from(selectedDocumentIds);
+
+        for (const docId of idsToRemove) {
+            try {
+                const response = await fetch(`/api/docs/${docId}`, { method: 'DELETE' });
+                const result = await response.json();
+                if (result.ok) {
+                    selectedDocumentIds.delete(docId);
+                } else {
+                    console.error(`Failed to delete doc ${docId}: ${result.error}`);
+                }
+            } catch (error) {
+                console.error(`Error deleting doc ${docId}`, error);
+            }
+        }
+
+        await loadIndexedDocs();
+    });
+
+    clearConfirmCheck.addEventListener('change', () => {
+        clearCorpusBtn.disabled = !clearConfirmCheck.checked;
+    });
+
+    clearCorpusBtn.addEventListener('click', async () => {
+        if (!clearConfirmCheck.checked) return;
+        if (!confirm("PERMANENTLY CLEAR ENTIRE CORPUS? This cannot be undone.")) return;
+
+        clearCorpusBtn.disabled = true;
+        try {
+            const response = await fetch('/api/docs/clear', { method: 'POST' });
+            const result = await response.json();
+            if (result.ok) {
+                selectedDocumentIds.clear();
+                clearConfirmCheck.checked = false;
+                clearCorpusBtn.disabled = true;
+                await loadIndexedDocs();
+            } else {
+                alert(`Failed to clear corpus: ${result.error}`);
+                clearCorpusBtn.disabled = false;
+            }
+        } catch (error) {
+            console.error("Error clearing corpus", error);
+            clearCorpusBtn.disabled = false;
+        }
     });
 
     clearSelectionBtn.addEventListener('click', () => {
