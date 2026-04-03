@@ -1,24 +1,92 @@
 INFO:     Will watch for changes in these directories: ['/app/Demo5']
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [59868] using StatReload
-INFO:     Started server process [60558]
+INFO:     Started reloader process [59309] using StatReload
+INFO:     Started server process [61065]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
-INFO:     127.0.0.1:43790 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:43790 - "GET /static/styles.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:43806 - "GET /static/app.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:43790 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:43806 - "GET /api/models HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45274 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45274 - "GET /static/styles.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45286 - "GET /static/app.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45286 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:45274 - "GET /api/models HTTP/1.1" 200 OK
-WARNING:  StatReload detected changes in 'main.py'. Reloading...
+INFO:     127.0.0.1:42570 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42570 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42570 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:42578 - "GET /api/stats HTTP/1.1" 200 OK
+WARNING:  StatReload detected changes in 'rag/db.py'. Reloading...
 INFO:     Shutting down
 INFO:     Waiting for application shutdown.
 INFO:     Application shutdown complete.
-INFO:     Finished server process [60558]
-INFO:     Started server process [101733]
+INFO:     Finished server process [61065]
+INFO:     Started server process [87811]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'app/services/rag_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [87811]
+INFO:     Started server process [96771]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'rag/db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [96771]
+INFO:     Started server process [117567]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'rag/db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [117567]
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/multiprocessing/spawn.py", line 122, in spawn_main
+    exitcode = _main(fd, parent_sentinel)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/multiprocessing/spawn.py", line 131, in _main
+    prepare(preparation_data)
+  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/multiprocessing/spawn.py", line 246, in prepare
+    _fixup_main_from_path(data['init_main_from_path'])
+  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/multiprocessing/spawn.py", line 297, in _fixup_main_from_path
+    main_content = runpy.run_path(main_path,
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "/app/Demo5/main.py", line 13, in <module>
+    from app.services.rag_service import (
+  File "/app/Demo5/app/services/rag_service.py", line 10, in <module>
+    from rag.db import get_connection, list_documents, delete_document, clear_corpus, get_corpus_stats
+  File "/app/Demo5/rag/db.py", line 121
+    """
+    ^
+SyntaxError: unterminated triple-quoted string literal (detected at line 144)
+WARNING:  StatReload detected changes in 'rag/db.py'. Reloading...
+INFO:     Started server process [132067]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'rag/db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [132067]
+INFO:     Started server process [138986]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'rag/db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [138986]
+INFO:     Started server process [145619]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  StatReload detected changes in 'rag/db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [145619]
+INFO:     Started server process [153484]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.

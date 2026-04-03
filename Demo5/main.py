@@ -10,7 +10,10 @@ import shutil
 from models import ChatRequest, ChatResponse, TurnContext
 from ollama_client import get_models, chat as ollama_chat
 from watcher import PassiveWatcher
-from app.services.rag_service import get_rag_context, list_indexed_documents
+from app.services.rag_service import (
+    get_rag_context, list_indexed_documents, delete_document_service,
+    clear_corpus_service, get_corpus_stats_service
+)
 from app.services.ingest_service import ingest_pdf_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
 
@@ -51,6 +54,21 @@ async def api_ingest(file: UploadFile = File(...)):
 @app.get("/api/docs")
 async def api_docs():
     result = list_indexed_documents()
+    return result
+
+@app.delete("/api/docs/{document_id}")
+async def api_delete_doc(document_id: str):
+    result = delete_document_service(document_id)
+    return result
+
+@app.post("/api/docs/clear")
+async def api_clear_corpus():
+    result = clear_corpus_service()
+    return result
+
+@app.get("/api/stats")
+async def api_stats():
+    result = get_corpus_stats_service()
     return result
 
 @app.get("/api/models")

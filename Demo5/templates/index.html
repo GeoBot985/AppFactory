@@ -39,16 +39,34 @@
                 <div class="corpus-header">
                     <h2>Corpus</h2>
                     <div class="corpus-controls">
+                        <button id="refresh-corpus-btn">Refresh</button>
                         <button id="select-all-btn">Select All</button>
                         <button id="clear-selection-btn">Clear Selection</button>
+                        <button id="remove-selected-btn" class="danger" disabled>Remove Selected</button>
                     </div>
                 </div>
+
+                <div class="corpus-stats" id="corpus-stats">
+                    <div class="stat-item">Docs: <span id="stat-docs">0</span></div>
+                    <div class="stat-item">Chunks: <span id="stat-chunks">0</span></div>
+                    <div class="stat-item">Selected: <span id="stat-selected">0</span></div>
+                    <div class="stat-item">Last Ingest: <span id="stat-last-ingest">N/A</span></div>
+                </div>
+
                 <div class="corpus-scope-status">
                     Retrieval scope: <span id="retrieval-scope-text">Full corpus</span>
                 </div>
+
                 <div id="corpus-list" class="corpus-list">
                     <div class="empty-corpus-msg">No indexed documents.</div>
                 </div>
+            </div>
+
+            <div class="corpus-management">
+                <label>
+                    <input type="checkbox" id="clear-confirm-check"> Enable Clear Corpus
+                </label>
+                <button id="clear-corpus-btn" class="danger" disabled>Clear Corpus</button>
             </div>
 
             <div id="chat-area" class="chat-area">
