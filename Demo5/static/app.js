@@ -106,6 +106,34 @@ document.addEventListener('DOMContentLoaded', () => {
                 output += `notes: none\n`;
             }
             output += `error: ${payload.watcher_error || 'none'}\n\n`;
+
+            const ruleResults = payload.watcher_rule_results || [];
+            if (ruleResults.length > 0) {
+                output += `[WATCHER RULES]\n`;
+
+                const summary = { error: 0, warning: 0, info: 0 };
+                ruleResults.forEach(r => {
+                    if (!r.passed) {
+                        summary[r.severity]++;
+                    }
+                });
+
+                output += `Summary:\n`;
+                output += `  errors: ${summary.error}\n`;
+                output += `  warnings: ${summary.warning}\n`;
+                output += `  info: ${summary.info}\n\n`;
+
+                ruleResults.forEach(r => {
+                    const statusText = r.passed ? "passed" : "!! FAILED !!";
+                    output += `${r.rule_id}: ${statusText}\n`;
+                    output += `  severity: ${r.severity}\n`;
+                    output += `  passed: ${r.passed}\n`;
+                    if (!r.passed && r.details) {
+                        output += `  details: ${r.details}\n`;
+                    }
+                    output += `\n`;
+                });
+            }
         }
 
         let promptToDisplay = payload.final_prompt || 'N/A';
