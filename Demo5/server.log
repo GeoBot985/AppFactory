@@ -1,0 +1,6 @@
+INFO:     127.0.0.1:62188 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64772 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64772 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:51540 - "GET /static/app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:51540 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:61750 - "POST /api/chat HTTP/1.1" 200 OK
