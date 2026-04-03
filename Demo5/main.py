@@ -12,8 +12,10 @@ from ollama_client import get_models, chat as ollama_chat
 from watcher import PassiveWatcher
 from app.services.rag_service import get_rag_context
 from app.services.ingest_service import ingest_pdf_file, get_indexed_docs
+from app.services.watcher import inspect_chat_request, ChatRequestPayload
 
 RAG_ENABLED = True
+WATCHER_ENABLED = True
 
 app = FastAPI(title="Demo5 Passive Watcher Chat")
 
@@ -89,6 +91,31 @@ async def api_chat(request: ChatRequest):
             context_blocks = "\n\n".join([f"[Chunk {i+1}]\n{chunk}" for i, chunk in enumerate(retrieval_chunks)])
             final_prompt = f"You are a helpful assistant.\n\nUse the following retrieved context if it is relevant to the user's question.\nIf it is not relevant, ignore it.\n\nRetrieved context:\n{context_blocks}\n\nUser question:\n{request.message}"
 
+    # 2.5 Watcher Module
+    watcher_allowed = None
+    watcher_modified = None
+    watcher_notes = []
+    watcher_error = None
+
+    if WATCHER_ENABLED:
+        payload: ChatRequestPayload = {
+            "user_message": request.message,
+            "selected_model": request.model,
+            "rag_enabled": RAG_ENABLED,
+            "retrieval_query": retrieval_query,
+            "retrieval_chunks": retrieval_chunks,
+            "final_prompt": final_prompt
+        }
+
+        watcher_result = inspect_chat_request(payload)
+
+        watcher_allowed = watcher_result.get("allowed")
+        watcher_modified = watcher_result.get("modified")
+        watcher_notes = watcher_result.get("watcher_notes", [])
+        watcher_error = watcher_result.get("watcher_error")
+
+        final_prompt = watcher_result.get("payload", payload).get("final_prompt", final_prompt)
+
     # 3. Call Ollama
     ollama_response, request_summary, error = await ollama_chat(request.model, final_prompt)
     context.ollama_request_summary = request_summary
@@ -123,6 +150,11 @@ async def api_chat(request: ChatRequest):
         "retrieval_query": retrieval_query,
         "retrieval_chunks": retrieval_chunks,
         "retrieval_error": retrieval_error,
+        "watcher_enabled": WATCHER_ENABLED,
+        "watcher_allowed": watcher_allowed,
+        "watcher_modified": watcher_modified,
+        "watcher_notes": watcher_notes,
+        "watcher_error": watcher_error,
         "final_prompt": final_prompt,
         "ollama_error": context.error,
         "response_preview": response_preview

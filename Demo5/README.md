@@ -80,6 +80,27 @@ Open your browser and navigate to [http://127.0.0.1:8000](http://127.0.0.1:8000)
    - No app crash,
    - Debug panel shows `ollama: <error message>` under Errors.
 
+### Manual Test Path for Watcher (Spec 006)
+
+**Case A — watcher enabled, plain chat**
+1. Start app and ensure `WATCHER_ENABLED = True`.
+2. Ask a normal question.
+3. Confirm response works, debug shows watcher enabled, allowed = true, modified = false, and notes includes `pass_through`.
+
+**Case B — watcher enabled, RAG chat**
+1. Ingest a PDF.
+2. Ask a question related to the PDF.
+3. Confirm retrieval works, watcher sees assembled prompt, watcher section appears in debug, response still works normally.
+
+**Case C — watcher disabled**
+1. Set `WATCHER_ENABLED = False`.
+2. Ask a question.
+3. Confirm app still works, debug shows watcher skipped.
+
+**Case D — simulated watcher failure**
+1. Temporarily force an exception inside watcher.
+2. Confirm app does not crash, watcher fails open, request reaches Ollama, and debug shows watcher error and fail-open note.
+
 ## Features Included in Phase 1
 - FastAPI backend serving a lightweight single-page HTML frontend.
 - Ollama local model discovery.
