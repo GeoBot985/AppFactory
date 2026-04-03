@@ -1,0 +1,2267 @@
+================================================================================
+main.py
+================================================================================
+
+import sys
+import os
+import threading
+
+# Add project root to path so `src` is imported as a package without shadowing stdlib modules.
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
+
+from src.config import (
+    WHITE_MODEL_NAME,
+    BLACK_MODEL_NAME,
+    OLLAMA_BASE_URL,
+    MODEL_TIMEOUT_SECONDS,
+    WHITE_PROMPT_PROFILE,
+    BLACK_PROMPT_PROFILE,
+)
+from src.llm.ollama_adapter import OllamaAdapter
+from src.llm.player import LLMPlayer
+from src.controller.game_controller import GameController
+from src.gui.main_window import MainWindow
+from src.prompt.prompt_profiles import get_prompt_profile
+from src.prompt.model_prompt_registry import get_model_prompt_settings
+
+
+def _load_models_async(app, white_player, black_player):
+    def worker():
+        try:
+            available_models = OllamaAdapter.list_models(OLLAMA_BASE_URL, timeout=MODEL_TIMEOUT_SECONDS)
+        except Exception:
+            available_models = []
+
+        def apply_models():
+            model_choices = available_models or [white_player.name, black_player.name]
+
+            if white_player.name not in model_choices:
+                white_player.name = model_choices[0]
+                white_player.adapter.model_name = model_choices[0]
+            white_settings = get_model_prompt_settings(white_player.name)
+            if WHITE_PROMPT_PROFILE:
+                white_player.prompt_profile = white_settings.profile
+            white_player.prompt_instructions = white_settings.custom_instructions
+
+            if black_player.name not in model_choices:
+                black_player.name = model_choices[min(1, len(model_choices) - 1)]
+                black_player.adapter.model_name = black_player.name
+            black_settings = get_model_prompt_settings(black_player.name)
+            if BLACK_PROMPT_PROFILE:
+                black_player.prompt_profile = black_settings.profile
+            black_player.prompt_instructions = black_settings.custom_instructions
+
+            app.update_model_names(white_player.name, black_player.name)
+            app.set_available_models(model_choices)
+
+        try:
+            app.after(0, apply_models)
+        except RuntimeError:
+            pass
+
+    threading.Thread(target=worker, daemon=True).start()
+
+
+def main():
+    # Create adapters and players
+    white_adapter = OllamaAdapter(model_name=WHITE_MODEL_NAME, base_url=OLLAMA_BASE_URL, timeout=MODEL_TIMEOUT_SECONDS)
+    black_adapter = OllamaAdapter(model_name=BLACK_MODEL_NAME, base_url=OLLAMA_BASE_URL, timeout=MODEL_TIMEOUT_SECONDS)
+
+    white_settings = get_model_prompt_settings(WHITE_MODEL_NAME)
+    black_settings = get_model_prompt_settings(BLACK_MODEL_NAME)
+
+    white_player = LLMPlayer(
+        name=WHITE_MODEL_NAME,
+        color="white",
+        adapter=white_adapter,
+        prompt_profile=get_prompt_profile(WHITE_PROMPT_PROFILE),
+        prompt_instructions=white_settings.custom_instructions,
+    )
+    black_player = LLMPlayer(
+        name=BLACK_MODEL_NAME,
+        color="black",
+        adapter=black_adapter,
+        prompt_profile=get_prompt_profile(BLACK_PROMPT_PROFILE),
+        prompt_instructions=black_settings.custom_instructions,
+    )
+
+    # Create game controller
+    game_controller = GameController(white_player, black_player)
+    
+    # Create and run GUI
+    app = MainWindow()
+    game_controller.set_gui(app)
+    app.update_model_names(white_player.name, black_player.name)
+    app.set_available_models([white_player.name, black_player.name])
+    _load_models_async(app, white_player, black_player)
+    
+    # Start the GUI main loop
+    app.mainloop()
+
+if __name__ == "__main__":
+    main()
+
+
+================================================================================
+src\__init__.py
+================================================================================
+
+
+
+================================================================================
+src\config.py
+================================================================================
+
+WHITE_MODEL_NAME = "qwen2.5:3b"
+BLACK_MODEL_NAME = "llama3.2:3b"
+OLLAMA_BASE_URL = "http://localhost:11434"
+MODEL_TIMEOUT_SECONDS = 60
+MAX_MOVE_RETRIES = 5
+
+# Prompt profile selection
+WHITE_PROMPT_PROFILE = "DEFAULT_STRICT"
+BLACK_PROMPT_PROFILE = "READABLE_BOARD"
+
+# GUI settings
+DEFAULT_MOVE_DELAY = 1.0  # seconds
+LIGHT_SQUARE_COLOR = "#f0d9b5"
+DARK_SQUARE_COLOR = "#b58863"
+
+# Observability settings
+ENABLE_LOGGING = True
+LOG_FILE_PATH = "runtime/logs/game_log.jsonl"
+ENABLE_DEBUG_PANEL = True
+
+# Watcher settings
+ENABLE_WATCHER = True
+WATCHER_STRICT_EXTRA_TEXT = False
+
+
+
+================================================================================
+src\controller\__init__.py
+================================================================================
+
+
+
+================================================================================
+src\controller\game_controller.py
+================================================================================
+
+import chess
+import time
+import threading
+import re
+from enum import Enum
+from typing import Optional
+
+from src.config import (
+    MAX_MOVE_RETRIES,
+    ENABLE_LOGGING,
+    LOG_FILE_PATH,
+    ENABLE_DEBUG_PANEL,
+    ENABLE_WATCHER,
+    WATCHER_STRICT_EXTRA_TEXT,
+)
+from src.prompt.prompt_builder import build_prompt
+from src.prompt.model_prompt_registry import get_model_prompt_settings
+from src.logging.turn_logger import TurnLogger
+from src.llm.ollama_adapter import MoveParseError
+from src.watcher.move_watcher import MoveWatcher
+
+class GameState(Enum):
+    IDLE = 0
+    RUNNING = 1
+    PAUSED = 2
+    FINISHED = 3
+    ERROR = 4
+
+class GameController:
+    def __init__(self, white_player, black_player):
+        self.white_player = white_player
+        self.black_player = black_player
+        self.gui = None
+        self.board = chess.Board()
+        self.move_history = []
+        self.state = GameState.IDLE
+        self.game_thread = None
+        self.stop_event = threading.Event()
+        
+        if ENABLE_LOGGING:
+            self.logger = TurnLogger(LOG_FILE_PATH)
+        else:
+            self.logger = None
+        self.watcher = MoveWatcher(WATCHER_STRICT_EXTRA_TEXT) if ENABLE_WATCHER else None
+
+    def _safe_gui_call(self, callback, *args):
+        if not self.gui:
+            return
+
+        try:
+            self.gui.after(0, callback, *args)
+        except Exception:
+            pass
+
+    def _classify_attempt_error(self, exc: Exception) -> str:
+        if isinstance(exc, TimeoutError):
+            return "timeout"
+        if isinstance(exc, ConnectionError):
+            return "connection_error"
+        if isinstance(exc, ValueError):
+            message = str(exc).lower()
+            if "uci" in message:
+                return "no_uci_found"
+            return "invalid_format"
+        if isinstance(exc, chess.InvalidMoveError):
+            return "invalid_format"
+        return "invalid_format"
+
+    def _try_parse_san_response(self, raw_response: Optional[str]):
+        if not raw_response:
+            return None
+
+        candidates = []
+        candidate = raw_response.strip()
+        if candidate:
+            candidates.append(candidate)
+            candidates.append(candidate.strip("\"'"))
+            candidates.append(candidate.rstrip(".!,;:"))
+            candidates.append(candidate.rstrip("+#"))
+            candidates.append(candidate.rstrip("+#").rstrip(".!,;:"))
+
+        seen = set()
+        for candidate in candidates:
+            if not candidate or candidate in seen:
+                continue
+            seen.add(candidate)
+            try:
+                return self.board.parse_san(candidate)
+            except ValueError:
+                continue
+        return None
+
+    def _try_parse_unique_square_response(self, raw_response: Optional[str]):
+        if not raw_response:
+            return None
+
+        candidate = raw_response.strip().lower()
+        if len(candidate) != 2:
+            return None
+        if candidate[0] not in "abcdefgh" or candidate[1] not in "12345678":
+            return None
+
+        matching_to = [move for move in self.board.legal_moves if chess.square_name(move.to_square) == candidate]
+        if len(matching_to) == 1:
+            return matching_to[0]
+
+        matching_from = [move for move in self.board.legal_moves if chess.square_name(move.from_square) == candidate]
+        if len(matching_from) == 1:
+            return matching_from[0]
+
+        return None
+
+    def _try_parse_piece_square_response(self, raw_response: Optional[str]):
+        if not raw_response:
+            return None
+
+        candidate = raw_response.strip().strip("\"'").rstrip(".!,;:").rstrip("+#")
+        match = re.fullmatch(r"([KQRBN])?x?([a-h][1-8])", candidate)
+        if not match:
+            return None
+
+        piece_symbol, target_square = match.groups()
+        piece_type = None
+        if piece_symbol:
+            piece_type = chess.PIECE_SYMBOLS.index(piece_symbol.lower())
+
+        matching_moves = []
+        for move in self.board.legal_moves:
+            if chess.square_name(move.to_square) != target_square:
+                continue
+            if piece_type is not None:
+                piece = self.board.piece_at(move.from_square)
+                if not piece or piece.piece_type != piece_type:
+                    continue
+            matching_moves.append(move)
+
+        if len(matching_moves) == 1:
+            return matching_moves[0]
+
+        return None
+
+    def _build_debug_payload(
+        self,
+        *,
+        player_name: str,
+        prompt_profile_name: str,
+        move_number: int,
+        side: str,
+        prompt: str,
+        raw_response: Optional[str],
+        parsed_move: Optional[str],
+        validity: str,
+        error: Optional[str],
+        watcher_decision: Optional[str],
+        watcher_reason_code: Optional[str],
+        watcher_message: Optional[str],
+        attempt: int,
+        duration_ms: int,
+    ):
+        return {
+            "model": player_name,
+            "prompt_profile": prompt_profile_name,
+            "move_number": move_number,
+            "side": side,
+            "raw_response": raw_response or "",
+            "parsed_move": parsed_move,
+            "validity": validity,
+            "error": error,
+            "watcher_decision": watcher_decision,
+            "watcher_reason_code": watcher_reason_code,
+            "watcher_message": watcher_message,
+            "attempt": attempt,
+            "max_attempts": MAX_MOVE_RETRIES,
+            "duration_ms": duration_ms,
+            "prompt_preview": prompt[:200],
+        }
+
+    def _watcher_bypass_decision(self, *, attempt, max_attempts, raw_response, parsed_move, error_str, is_legal):
+        if parsed_move and is_legal:
+            return {
+                "decision": "allow",
+                "reason_code": "ok",
+                "message": "Watcher disabled",
+                "force_retry": False,
+                "forfeit": False,
+            }
+        if attempt < max_attempts:
+            return {
+                "decision": "retry",
+                "reason_code": error_str or "parse_failed",
+                "message": "Watcher disabled",
+                "force_retry": True,
+                "forfeit": False,
+            }
+        return {
+            "decision": "forfeit",
+            "reason_code": "retry_limit_reached",
+            "message": "Watcher disabled",
+            "force_retry": False,
+            "forfeit": True,
+        }
+
+    def set_gui(self, gui):
+        self.gui = gui
+        self.gui.set_controller(self)
+        self.gui.update_model_names(self.white_player.name, self.black_player.name)
+        self.reset_game()
+
+    def set_player_model(self, color: str, model_name: str):
+        if not model_name:
+            return
+
+        player = self.white_player if color == "white" else self.black_player
+        settings = get_model_prompt_settings(model_name)
+        player.name = model_name
+        player.adapter.model_name = model_name
+        player.prompt_profile = settings.profile
+        player.prompt_instructions = settings.custom_instructions
+
+        if self.gui:
+            self._safe_gui_call(self.gui.update_model_names, self.white_player.name, self.black_player.name)
+
+    def start_game(self):
+        if self.state in [GameState.IDLE, GameState.FINISHED, GameState.ERROR]:
+            self.reset_game()
+            self.state = GameState.RUNNING
+            self.gui.update_status("Running")
+            self.gui.control_panel.set_control_state("running")
+            self.game_thread = threading.Thread(target=self.play_game_loop)
+            self.game_thread.start()
+
+    def pause_game(self):
+        if self.state == GameState.RUNNING:
+            self.state = GameState.PAUSED
+            self.gui.update_status("Paused")
+            self.gui.control_panel.set_control_state("paused")
+
+    def resume_game(self):
+        if self.state == GameState.PAUSED:
+            self.state = GameState.RUNNING
+            self.gui.update_status("Running")
+            self.gui.control_panel.set_control_state("running")
+
+    def reset_game(self):
+        self.stop_event.set()
+        if self.game_thread and self.game_thread.is_alive():
+            self.game_thread.join()
+
+        self.board.reset()
+        self.move_history = []
+        self.state = GameState.IDLE
+        
+        if self.gui:
+            self._safe_gui_call(self.gui.board_view.update_board, self.board)
+            self._safe_gui_call(self.gui.move_log_view.clear_log)
+            if ENABLE_DEBUG_PANEL:
+                self._safe_gui_call(self.gui.clear_debug_panel)
+            self._safe_gui_call(self.gui.update_status, "Idle")
+            self._safe_gui_call(self.gui.update_turn, "White")
+            self._safe_gui_call(self.gui.control_panel.set_control_state, "idle")
+            
+        self.stop_event.clear()
+
+    def step_turn(self):
+        if self.state in [GameState.IDLE, GameState.PAUSED]:
+            if not self.game_thread or not self.game_thread.is_alive():
+                self.gui.after(0, self.gui.update_status, "Stepping")
+                self.game_thread = threading.Thread(target=self.execute_single_turn)
+                self.game_thread.start()
+
+    def play_game_loop(self):
+        while not self.board.is_game_over() and not self.stop_event.is_set():
+            if self.state == GameState.RUNNING:
+                self.execute_single_turn()
+                if self.stop_event.is_set() or self.board.is_game_over():
+                    break
+                delay = self.gui.control_panel.delay_scale.get()
+                time.sleep(delay)
+            else:
+                time.sleep(0.1)
+        
+        if not self.stop_event.is_set() and self.board.is_game_over():
+            self.state = GameState.FINISHED
+            outcome = self.board.outcome()
+            status = f"Finished: {self.board.result()}"
+            if outcome:
+                winner = "White" if outcome.winner == chess.WHITE else "Black" if outcome.winner == chess.BLACK else "No one"
+                status = f"Finished: {winner} wins by {outcome.termination.name.lower()}." if outcome.winner is not None else f"Draw by {outcome.termination.name.lower()}."
+            
+            self._safe_gui_call(self.gui.update_status, status)
+            self._safe_gui_call(self.gui.control_panel.set_control_state, "finished")
+
+    def execute_single_turn(self):
+        if self.board.is_game_over(): return
+
+        start_time = time.time()
+        player = self.white_player if self.board.turn == chess.WHITE else self.black_player
+        side = "White" if self.board.turn == chess.WHITE else "Black"
+        move_number = self.board.fullmove_number
+        turn_fen = self.board.fen()
+        self._safe_gui_call(self.gui.update_turn, side)
+
+        attempts_data = []
+        final_result = "forfeit"
+        profile = player.prompt_profile
+        prompt = build_prompt(
+            board=self.board,
+            move_history=self.move_history,
+            side=side.lower(),
+            profile=profile,
+            custom_instructions=player.prompt_instructions,
+        )
+        final_raw_response = None
+        final_parsed_move = None
+        final_legal = False
+        final_error = None
+        final_watcher_decision = None
+        final_watcher_reason_code = None
+        final_watcher_message = None
+        move = None
+        applied_move_number = move_number
+        applied_color = side.lower()
+        
+        for attempt in range(MAX_MOVE_RETRIES):
+            raw_response, parsed_move, error_str, validity = None, None, None, "Error"
+            is_legal = False
+            attempt_start_time = time.time()
+            
+            try:
+                current_prompt = prompt
+                if attempt > 0:
+                    retry_context = {
+                        "attempt": attempt + 1,
+                        "max_attempts": MAX_MOVE_RETRIES,
+                        "failure_type": final_error or "invalid_format",
+                        "previous_response": final_raw_response,
+                    }
+                    current_prompt = build_prompt(
+                        board=self.board,
+                        move_history=self.move_history,
+                        side=side.lower(),
+                        profile=profile,
+                        custom_instructions=player.prompt_instructions,
+                        retry_context=retry_context,
+                    )
+                
+                move_data = player.adapter.get_move(current_prompt)
+                raw_response, parsed_move = move_data['raw'], move_data['parsed']
+                
+                move = chess.Move.from_uci(parsed_move)
+                
+                if move in self.board.legal_moves:
+                    validity = "Legal"
+                    is_legal = True
+                else:
+                    validity = "Illegal"
+                    error_str = "illegal_move"
+
+            except MoveParseError as e:
+                raw_response = e.raw_response
+                move = self._try_parse_san_response(raw_response)
+                if move is None:
+                    move = self._try_parse_piece_square_response(raw_response)
+                if move is None:
+                    move = self._try_parse_unique_square_response(raw_response)
+                if move is not None:
+                    parsed_move = move.uci()
+                    validity = "Legal" if move in self.board.legal_moves else "Illegal"
+                    is_legal = move in self.board.legal_moves
+                    error_str = None if is_legal else "illegal_move"
+                else:
+                    error_str = self._classify_attempt_error(e)
+            except Exception as e:
+                error_str = self._classify_attempt_error(e)
+
+            attempt_duration_ms = (time.time() - attempt_start_time) * 1000
+            final_raw_response = raw_response
+            final_parsed_move = parsed_move
+            final_error = error_str
+
+            watcher_context = {
+                "side": side.lower(),
+                "model_name": player.name,
+                "move_number": move_number,
+                "fen": turn_fen,
+                "raw_response": raw_response,
+                "parsed_move": parsed_move,
+                "parse_error": error_str,
+                "is_legal": is_legal,
+                "attempt": attempt + 1,
+                "max_attempts": MAX_MOVE_RETRIES,
+                "prompt_profile": profile.name,
+                "prior_attempts": [
+                    {
+                        "raw_response": prior["raw_response"],
+                        "parsed_move": prior["parsed_move"],
+                        "reason_code": prior.get("watcher_reason_code"),
+                    }
+                    for prior in attempts_data
+                ],
+            }
+            watcher_result = (
+                self.watcher.inspect(watcher_context)
+                if self.watcher
+                else self._watcher_bypass_decision(
+                    attempt=attempt + 1,
+                    max_attempts=MAX_MOVE_RETRIES,
+                    raw_response=raw_response,
+                    parsed_move=parsed_move,
+                    error_str=error_str,
+                    is_legal=is_legal,
+                )
+            )
+            final_watcher_decision = watcher_result["decision"]
+            final_watcher_reason_code = watcher_result["reason_code"]
+            final_watcher_message = watcher_result["message"]
+
+            attempts_data.append({
+                "attempt": attempt + 1,
+                "raw_response": raw_response,
+                "parsed_move": parsed_move,
+                "error": error_str,
+                "watcher_decision": watcher_result["decision"],
+                "watcher_reason_code": watcher_result["reason_code"],
+                "watcher_message": watcher_result["message"],
+            })
+
+            if ENABLE_DEBUG_PANEL:
+                debug_data = self._build_debug_payload(
+                    player_name=player.name,
+                    prompt_profile_name=profile.name,
+                    move_number=move_number,
+                    side=side,
+                    prompt=current_prompt,
+                    raw_response=raw_response,
+                    parsed_move=parsed_move,
+                    validity=validity,
+                    error=error_str,
+                    watcher_decision=watcher_result["decision"],
+                    watcher_reason_code=watcher_result["reason_code"],
+                    watcher_message=watcher_result["message"],
+                    attempt=attempt + 1,
+                    duration_ms=round(attempt_duration_ms),
+                )
+                self._safe_gui_call(self.gui.update_debug_panel, debug_data)
+
+            if watcher_result["decision"] == "allow":
+                final_result = "move_applied"
+                final_legal = is_legal
+                san_move = self.board.san(move)
+                self.board.push(move)
+                self.move_history.append(san_move)
+                
+                applied_move_number = move_number
+                applied_color = side.lower()
+                
+                self._safe_gui_call(self.gui.board_view.update_board, self.board)
+                self._safe_gui_call(self.gui.move_log_view.add_move, san_move, applied_move_number, applied_color)
+                if self.state == GameState.PAUSED:
+                    self._safe_gui_call(self.gui.update_status, "Paused")
+                break
+            if watcher_result["decision"] == "forfeit":
+                break
+        
+        total_duration_ms = (time.time() - start_time) * 1000
+        if self.logger:
+            log_data = {
+                "move_number": move_number,
+                "side": side.lower(),
+                "model": player.name,
+                "prompt_profile": profile.name,
+                "legal_moves_format": profile.legal_moves_format,
+                "retry_tone": profile.retry_tone,
+                "fen": turn_fen,
+                "prompt": prompt,
+                "raw_response": final_raw_response,
+                "parsed_move": final_parsed_move,
+                "legal": final_legal,
+                "watcher_decision": final_watcher_decision,
+                "watcher_reason_code": final_watcher_reason_code,
+                "watcher_message": final_watcher_message,
+                "retries": len(attempts_data) - 1,
+                "attempts": attempts_data,
+                "duration_ms": round(total_duration_ms),
+                "result": final_result,
+            }
+            try:
+                self.logger.log_turn(log_data)
+            except Exception:
+                pass
+
+        if final_result != "move_applied":
+            self.state = GameState.ERROR
+            self._safe_gui_call(self.gui.update_status, f"Error: {player.name} forfeits.")
+            self._safe_gui_call(self.gui.control_panel.set_control_state, "error")
+
+
+================================================================================
+src\gui\__init__.py
+================================================================================
+
+
+
+================================================================================
+src\gui\board_view.py
+================================================================================
+
+import tkinter as tk
+import chess
+
+from src.config import LIGHT_SQUARE_COLOR, DARK_SQUARE_COLOR
+
+class BoardView(tk.Canvas):
+    def __init__(self, parent, square_size=60):
+        self.square_size = square_size
+        self.legend_margin = 24
+        canvas_size = self.legend_margin + square_size * 8
+        super().__init__(parent, width=canvas_size, height=canvas_size)
+        self.piece_images = {}
+        self.draw_board()
+
+    def draw_board(self):
+        for row in range(8):
+            for col in range(8):
+                color = LIGHT_SQUARE_COLOR if (row + col) % 2 == 0 else DARK_SQUARE_COLOR
+                x1 = self.legend_margin + col * self.square_size
+                y1 = row * self.square_size
+                x2 = x1 + self.square_size
+                y2 = y1 + self.square_size
+                self.create_rectangle(x1, y1, x2, y2, fill=color, outline="")
+        self.draw_legend()
+
+    def draw_legend(self):
+        for col, file_name in enumerate("abcdefgh"):
+            x = self.legend_margin + col * self.square_size + self.square_size // 2
+            y = 8 * self.square_size + self.legend_margin // 2
+            self.create_text(x, y, text=file_name, font=("Segoe UI", 12), fill="#333333", tags="legend")
+
+        for row in range(8):
+            x = self.legend_margin // 2
+            y = row * self.square_size + self.square_size // 2
+            self.create_text(x, y, text=str(8 - row), font=("Segoe UI", 12), fill="#333333", tags="legend")
+
+    def update_board(self, board: chess.Board):
+        self.delete("pieces")
+        for square in chess.SQUARES:
+            piece = board.piece_at(square)
+            if piece:
+                self.draw_piece(square, piece)
+
+    def draw_piece(self, square, piece):
+        row = 7 - chess.square_rank(square)
+        col = chess.square_file(square)
+        x = self.legend_margin + col * self.square_size + self.square_size // 2
+        y = row * self.square_size + self.square_size // 2
+        
+        piece_symbol = piece.unicode_symbol(invert_color=False)
+
+        # The default font might not support all chess characters.
+        # A font like 'Segoe UI Symbol' or 'DejaVu Sans' is a good choice.
+        self.create_text(x, y, text=piece_symbol, font=("Segoe UI Symbol", 36), tags="pieces")
+
+
+================================================================================
+src\gui\control_panel.py
+================================================================================
+
+import tkinter as tk
+from tkinter import ttk
+
+class ControlPanel(tk.Frame):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.white_model_var = tk.StringVar()
+        self.black_model_var = tk.StringVar()
+        
+        # Match Info
+        self.match_info_frame = ttk.LabelFrame(self, text="Match Info")
+        self.match_info_frame.pack(fill="x", padx=5, pady=5)
+
+        self.white_model_label = ttk.Label(self.match_info_frame, text="White: ")
+        self.white_model_label.pack(anchor="w")
+        self.white_model_selector = ttk.Combobox(
+            self.match_info_frame,
+            textvariable=self.white_model_var,
+            state="readonly",
+        )
+        self.white_model_selector.pack(fill="x", pady=(0, 4))
+        self.black_model_label = ttk.Label(self.match_info_frame, text="Black: ")
+        self.black_model_label.pack(anchor="w")
+        self.black_model_selector = ttk.Combobox(
+            self.match_info_frame,
+            textvariable=self.black_model_var,
+            state="readonly",
+        )
+        self.black_model_selector.pack(fill="x", pady=(0, 4))
+        self.turn_label = ttk.Label(self.match_info_frame, text="Turn: ")
+        self.turn_label.pack(anchor="w")
+        self.status_label = ttk.Label(self.match_info_frame, text="Status: Idle")
+        self.status_label.pack(anchor="w")
+
+        # Controls
+        self.controls_frame = ttk.LabelFrame(self, text="Controls")
+        self.controls_frame.pack(fill="x", padx=5, pady=5)
+
+        self.start_button = ttk.Button(self.controls_frame, text="Start Match")
+        self.start_button.pack(side="left", padx=5)
+        self.pause_button = ttk.Button(self.controls_frame, text="Pause Match", state=tk.DISABLED)
+        self.pause_button.pack(side="left", padx=5)
+        self.resume_button = ttk.Button(self.controls_frame, text="Resume Match", state=tk.DISABLED)
+        self.resume_button.pack(side="left", padx=5)
+        self.reset_button = ttk.Button(self.controls_frame, text="Reset Match", state=tk.DISABLED)
+        self.reset_button.pack(side="left", padx=5)
+        self.step_button = ttk.Button(self.controls_frame, text="Step Turn")
+        self.step_button.pack(side="left", padx=5)
+
+        # Playback
+        self.playback_frame = ttk.LabelFrame(self, text="Playback")
+        self.playback_frame.pack(fill="x", padx=5, pady=5)
+        
+        self.delay_label = ttk.Label(self.playback_frame, text="Move Delay (s):")
+        self.delay_label.pack(side="left", padx=5)
+        self.delay_scale = ttk.Scale(self.playback_frame, from_=0.1, to=5.0, orient=tk.HORIZONTAL)
+        self.delay_scale.set(1.0)
+        self.delay_scale.pack(side="left", fill="x", expand=True)
+
+        # Model Output
+        self.model_output_frame = ttk.LabelFrame(self, text="Model Output")
+        self.model_output_frame.pack(fill="both", expand=True, padx=5, pady=5)
+
+        self.model_output_text = tk.Text(self.model_output_frame, height=10, state=tk.DISABLED)
+        self.model_output_text.pack(fill="both", expand=True)
+        
+    def set_control_state(self, state):
+        if state == "idle":
+            self.start_button.config(state=tk.NORMAL)
+            self.pause_button.config(state=tk.DISABLED)
+            self.resume_button.config(state=tk.DISABLED)
+            self.reset_button.config(state=tk.DISABLED)
+            self.step_button.config(state=tk.NORMAL)
+            self.set_model_selector_state("readonly")
+        elif state == "running":
+            self.start_button.config(state=tk.DISABLED)
+            self.pause_button.config(state=tk.NORMAL)
+            self.resume_button.config(state=tk.DISABLED)
+            self.reset_button.config(state=tk.NORMAL)
+            self.step_button.config(state=tk.DISABLED)
+            self.set_model_selector_state(tk.DISABLED)
+        elif state == "paused":
+            self.start_button.config(state=tk.DISABLED)
+            self.pause_button.config(state=tk.DISABLED)
+            self.resume_button.config(state=tk.NORMAL)
+            self.reset_button.config(state=tk.NORMAL)
+            self.step_button.config(state=tk.NORMAL)
+            self.set_model_selector_state("readonly")
+        elif state == "finished" or state == "error":
+            self.start_button.config(state=tk.DISABLED)
+            self.pause_button.config(state=tk.DISABLED)
+            self.resume_button.config(state=tk.DISABLED)
+            self.reset_button.config(state=tk.NORMAL)
+            self.step_button.config(state=tk.DISABLED)
+            self.set_model_selector_state("readonly")
+
+    def set_available_models(self, model_names):
+        self.white_model_selector["values"] = model_names
+        self.black_model_selector["values"] = model_names
+
+    def set_selected_models(self, white_name, black_name):
+        self.white_model_var.set(white_name)
+        self.black_model_var.set(black_name)
+
+    def set_model_selector_state(self, state):
+        self.white_model_selector.config(state=state)
+        self.black_model_selector.config(state=state)
+
+    def update_model_output(self, model_name, raw_response, parsed_move, validity, retry_count):
+        self.model_output_text.config(state=tk.NORMAL)
+        self.model_output_text.delete("1.0", tk.END)
+        self.model_output_text.insert(tk.END, f"Model: {model_name}\n")
+        self.model_output_text.insert(tk.END, f"Raw Response: {raw_response}\n")
+        self.model_output_text.insert(tk.END, f"Parsed Move: {parsed_move}\n")
+        self.model_output_text.insert(tk.END, f"Validity: {validity}\n")
+        self.model_output_text.insert(tk.END, f"Retry Count: {retry_count}\n")
+        self.model_output_text.config(state=tk.DISABLED)
+        
+    def clear_model_output(self):
+        self.model_output_text.config(state=tk.NORMAL)
+        self.model_output_text.delete("1.0", tk.END)
+        self.model_output_text.config(state=tk.DISABLED)
+
+
+================================================================================
+src\gui\debug_panel.py
+================================================================================
+
+import tkinter as tk
+from tkinter import ttk
+
+class DebugPanel(ttk.LabelFrame):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, text="Debug Info", *args, **kwargs)
+
+        self.model_label = ttk.Label(self, text="Model: ")
+        self.model_label.pack(anchor="w", padx=5, pady=2)
+
+        self.profile_label = ttk.Label(self, text="Profile: ")
+        self.profile_label.pack(anchor="w", padx=5, pady=2)
+
+        self.turn_label = ttk.Label(self, text="Move: ")
+        self.turn_label.pack(anchor="w", padx=5, pady=2)
+        
+        self.raw_response_label = ttk.Label(self, text="Raw Response:")
+        self.raw_response_label.pack(anchor="w", padx=5, pady=2)
+        self.raw_response_text = tk.Text(self, height=5, state=tk.DISABLED)
+        self.raw_response_text.pack(fill="x", padx=5, pady=2)
+
+        self.prompt_label = ttk.Label(self, text="Prompt Preview:")
+        self.prompt_label.pack(anchor="w", padx=5, pady=2)
+        self.prompt_preview_label = ttk.Label(self, text="", wraplength=280, justify="left")
+        self.prompt_preview_label.pack(anchor="w", fill="x", padx=5, pady=2)
+
+        self.parsed_move_label = ttk.Label(self, text="Parsed Move: ")
+        self.parsed_move_label.pack(anchor="w", padx=5, pady=2)
+
+        self.status_label = ttk.Label(self, text="Status: ")
+        self.status_label.pack(anchor="w", padx=5, pady=2)
+
+        self.error_label = ttk.Label(self, text="Error: ")
+        self.error_label.pack(anchor="w", padx=5, pady=2)
+
+        self.watcher_decision_label = ttk.Label(self, text="Watcher Decision: ")
+        self.watcher_decision_label.pack(anchor="w", padx=5, pady=2)
+
+        self.watcher_reason_label = ttk.Label(self, text="Watcher Reason: ")
+        self.watcher_reason_label.pack(anchor="w", padx=5, pady=2)
+
+        self.watcher_message_label = ttk.Label(self, text="Watcher Message: ", wraplength=280, justify="left")
+        self.watcher_message_label.pack(anchor="w", fill="x", padx=5, pady=2)
+
+        self.attempts_label = ttk.Label(self, text="Attempts: ")
+        self.attempts_label.pack(anchor="w", padx=5, pady=2)
+
+        self.time_label = ttk.Label(self, text="Time: ")
+        self.time_label.pack(anchor="w", padx=5, pady=2)
+
+    def update_panel(self, debug_data):
+        self.model_label.config(text=f"Model: {debug_data.get('model', 'N/A')}")
+        self.profile_label.config(text=f"Profile: {debug_data.get('prompt_profile', 'N/A')}")
+        self.turn_label.config(text=f"Move: {debug_data.get('move_number', 'N/A')} ({debug_data.get('side', 'N/A')})")
+        
+        self.raw_response_text.config(state=tk.NORMAL)
+        self.raw_response_text.delete("1.0", tk.END)
+        self.raw_response_text.insert("1.0", debug_data.get('raw_response', 'N/A'))
+        self.raw_response_text.config(state=tk.DISABLED)
+
+        self.prompt_preview_label.config(text=debug_data.get("prompt_preview", ""))
+        self.parsed_move_label.config(text=f"Parsed Move: {debug_data.get('parsed_move', 'N/A')}")
+        self.status_label.config(text=f"Status: {debug_data.get('validity', 'N/A')}")
+        self.error_label.config(text=f"Error: {debug_data.get('error', 'None')}")
+        self.watcher_decision_label.config(text=f"Watcher Decision: {debug_data.get('watcher_decision', 'N/A')}")
+        self.watcher_reason_label.config(text=f"Watcher Reason: {debug_data.get('watcher_reason_code', 'N/A')}")
+        self.watcher_message_label.config(text=f"Watcher Message: {debug_data.get('watcher_message', 'N/A')}")
+        self.attempts_label.config(text=f"Attempts: {debug_data.get('attempt', 'N/A')} / {debug_data.get('max_attempts', 'N/A')}")
+        self.time_label.config(text=f"Time: {debug_data.get('duration_ms', 'N/A')} ms")
+
+    def clear_panel(self):
+        self.model_label.config(text="Model: ")
+        self.profile_label.config(text="Profile: ")
+        self.turn_label.config(text="Move: ")
+        
+        self.raw_response_text.config(state=tk.NORMAL)
+        self.raw_response_text.delete("1.0", tk.END)
+        self.raw_response_text.config(state=tk.DISABLED)
+
+        self.prompt_preview_label.config(text="")
+        self.parsed_move_label.config(text="Parsed Move: ")
+        self.status_label.config(text="Status: ")
+        self.error_label.config(text="Error: ")
+        self.watcher_decision_label.config(text="Watcher Decision: ")
+        self.watcher_reason_label.config(text="Watcher Reason: ")
+        self.watcher_message_label.config(text="Watcher Message: ")
+        self.attempts_label.config(text="Attempts: ")
+        self.time_label.config(text="Time: ")
+
+
+================================================================================
+src\gui\main_window.py
+================================================================================
+
+import tkinter as tk
+from tkinter import ttk
+
+from src.gui.board_view import BoardView
+from src.gui.control_panel import ControlPanel
+from src.gui.move_log_view import MoveLogView
+from src.gui.debug_panel import DebugPanel
+from src.config import ENABLE_DEBUG_PANEL
+
+class MainWindow(tk.Tk):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.title("LLM Chess")
+        self.geometry("1000x750") # Increased height for debug panel
+
+        # Main frame
+        self.main_frame = ttk.Frame(self)
+        self.main_frame.pack(fill="both", expand=True)
+
+        # Board view
+        self.board_view = BoardView(self.main_frame)
+        self.board_view.pack(side="left", fill="both", expand=True)
+
+        # Right panel
+        self.right_panel = ttk.Frame(self.main_frame)
+        self.right_panel.pack(side="right", fill="y", padx=5, pady=5)
+        
+        # Control panel
+        self.control_panel = ControlPanel(self.right_panel)
+        self.control_panel.pack(fill="x")
+
+        # Move log
+        self.move_log_view = MoveLogView(self.right_panel, height=10)
+        self.move_log_view.pack(fill="both", expand=True, pady=5)
+        
+        # Debug panel
+        if ENABLE_DEBUG_PANEL:
+            self.debug_panel = DebugPanel(self.right_panel)
+            self.debug_panel.pack(fill="x", pady=5)
+        
+    def set_controller(self, controller):
+        self.controller = controller
+        self.control_panel.start_button.config(command=self.controller.start_game)
+        self.control_panel.pause_button.config(command=self.controller.pause_game)
+        self.control_panel.resume_button.config(command=self.controller.resume_game)
+        self.control_panel.reset_button.config(command=self.controller.reset_game)
+        self.control_panel.step_button.config(command=self.controller.step_turn)
+        self.control_panel.white_model_selector.bind("<<ComboboxSelected>>", self._on_white_model_selected)
+        self.control_panel.black_model_selector.bind("<<ComboboxSelected>>", self._on_black_model_selected)
+        
+    def update_status(self, text):
+        self.control_panel.status_label.config(text=f"Status: {text}")
+
+    def update_turn(self, side):
+        self.control_panel.turn_label.config(text=f"Turn: {side}")
+        
+    def update_model_names(self, white_name, black_name):
+        self.control_panel.white_model_label.config(text=f"White: {white_name}")
+        self.control_panel.black_model_label.config(text=f"Black: {black_name}")
+        self.control_panel.set_selected_models(white_name, black_name)
+
+    def set_available_models(self, model_names):
+        self.control_panel.set_available_models(model_names)
+
+    def update_debug_panel(self, debug_data):
+        if ENABLE_DEBUG_PANEL and hasattr(self, 'debug_panel'):
+            self.debug_panel.update_panel(debug_data)
+            
+    def clear_debug_panel(self):
+        if ENABLE_DEBUG_PANEL and hasattr(self, 'debug_panel'):
+            self.debug_panel.clear_panel()
+
+    def _on_white_model_selected(self, _event):
+        if hasattr(self, "controller"):
+            self.controller.set_player_model("white", self.control_panel.white_model_var.get())
+
+    def _on_black_model_selected(self, _event):
+        if hasattr(self, "controller"):
+            self.controller.set_player_model("black", self.control_panel.black_model_var.get())
+
+
+================================================================================
+src\gui\move_log_view.py
+================================================================================
+
+import tkinter as tk
+from tkinter import scrolledtext
+
+class MoveLogView(scrolledtext.ScrolledText):
+    def __init__(self, parent, *args, **kwargs):
+        super().__init__(parent, *args, **kwargs)
+        self.config(state=tk.DISABLED)
+
+    def add_move(self, move_san, move_number, color):
+        self.config(state=tk.NORMAL)
+        if color == "white":
+            self.insert(tk.END, f"{move_number}. {move_san} ")
+        else:
+            self.insert(tk.END, f"{move_san}\n")
+        self.config(state=tk.DISABLED)
+        self.see(tk.END)
+    
+    def clear_log(self):
+        self.config(state=tk.NORMAL)
+        self.delete("1.0", tk.END)
+        self.config(state=tk.DISABLED)
+
+
+================================================================================
+src\llm\__init__.py
+================================================================================
+
+
+
+================================================================================
+src\llm\ollama_adapter.py
+================================================================================
+
+import requests
+import re
+
+
+class MoveParseError(ValueError):
+    def __init__(self, message: str, raw_response: str = ""):
+        super().__init__(message)
+        self.raw_response = raw_response
+
+
+class OllamaAdapter:
+    def __init__(self, model_name: str, base_url: str, timeout: int = 30):
+        self.model_name = model_name
+        self.base_url = base_url
+        self.timeout = timeout
+
+    def get_move(self, prompt: str) -> dict:
+        api_url = f"{self.base_url}/api/generate"
+        payload = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False
+        }
+        try:
+            response = requests.post(api_url, json=payload, timeout=self.timeout)
+            response.raise_for_status()
+        except requests.exceptions.ConnectionError:
+            raise ConnectionError(f"Ollama server not reachable at {self.base_url}")
+        except requests.exceptions.Timeout:
+            raise TimeoutError(f"Ollama model response exceeded {self.timeout} seconds")
+        
+        try:
+            response_json = response.json()
+        except requests.exceptions.JSONDecodeError:
+            raise RuntimeError("Ollama returned malformed JSON payload")
+
+        raw_response = response_json.get("response", "")
+        
+        # \b[a-h][1-8][a-h][1-8][qrbn]?\b
+        match = re.search(r"\b[a-h][1-8][a-h][1-8][qrbn]?\b", raw_response.lower())
+
+        if match:
+            parsed_move = match.group(0)
+            return {"raw": raw_response, "parsed": parsed_move}
+        else:
+            raise MoveParseError("No valid UCI move found in model response", raw_response=raw_response)
+
+    @classmethod
+    def list_models(cls, base_url: str, timeout: int = 30) -> list[str]:
+        api_url = f"{base_url}/api/tags"
+        try:
+            response = requests.get(api_url, timeout=timeout)
+            response.raise_for_status()
+        except requests.exceptions.ConnectionError:
+            raise ConnectionError(f"Ollama server not reachable at {base_url}")
+        except requests.exceptions.Timeout:
+            raise TimeoutError(f"Ollama model listing exceeded {timeout} seconds")
+
+        try:
+            response_json = response.json()
+        except requests.exceptions.JSONDecodeError:
+            raise RuntimeError("Ollama returned malformed JSON payload")
+
+        models = response_json.get("models", [])
+        return [model["name"] for model in models if model.get("name")]
+
+
+================================================================================
+src\llm\player.py
+================================================================================
+
+class LLMPlayer:
+    """
+    A player that uses an LLM adapter to choose a move.
+    """
+    def __init__(self, name: str, color: str, adapter, prompt_profile, prompt_instructions: str = ""):
+        self.name = name
+        self.color = color
+        self.adapter = adapter
+        self.prompt_profile = prompt_profile
+        self.prompt_instructions = prompt_instructions
+
+    def choose_move(self, prompt: str) -> str:
+        """
+        Chooses a move using the adapter.
+        """
+        return self.adapter.get_move(prompt)
+
+
+================================================================================
+src\logging\__init__.py
+================================================================================
+
+
+
+================================================================================
+src\logging\turn_logger.py
+================================================================================
+
+import json
+import os
+from datetime import datetime
+
+class TurnLogger:
+    def __init__(self, log_file_path):
+        self.log_file_path = log_file_path
+        # Ensure the directory exists
+        log_dir = os.path.dirname(log_file_path)
+        if not os.path.exists(log_dir):
+            os.makedirs(log_dir)
+
+    def log_turn(self, turn_data: dict):
+        record = dict(turn_data)
+        record["timestamp"] = datetime.utcnow().replace(microsecond=0).isoformat()
+
+        try:
+            with open(self.log_file_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record) + "\n")
+                f.flush()
+        except Exception as e:
+            # Logging is intentionally non-fatal.
+            print(f"Error writing to log file: {e}")
+
+
+================================================================================
+src\prompt\__init__.py
+================================================================================
+
+
+
+================================================================================
+src\prompt\model_prompt_registry.py
+================================================================================
+
+from dataclasses import dataclass
+
+from src.prompt.prompt_profiles import (
+    DEFAULT_STRICT,
+    GEMMA_UCI_HARDLINE,
+    PromptProfile,
+)
+
+
+@dataclass(frozen=True)
+class ModelPromptSettings:
+    profile: PromptProfile
+    custom_instructions: str = ""
+
+
+MODEL_PROMPT_SETTINGS = {
+    "gemma3:1b": ModelPromptSettings(
+        profile=GEMMA_UCI_HARDLINE,
+        custom_instructions=(
+            "You often drift into SAN or shorthand. Do not do that here.\n"
+            "For captures, still return full UCI such as d1d8 or h7g8.\n"
+            "Do not answer with Qxd8+, Nf6, Bd7, Rh8, g8, or h8.\n"
+            "If a capture wins material immediately, prefer that capture over a quiet move."
+        ),
+    ),
+    "gemma3:4b": ModelPromptSettings(
+        profile=GEMMA_UCI_HARDLINE,
+        custom_instructions=(
+            "Use the legal move list exactly as written.\n"
+            "When a bishop or queen moves, return full from-square and to-square UCI.\n"
+            "Do not answer with SAN captures such as Qxd8+ or exd6.\n"
+            "If an undefended enemy piece can be captured safely in one move, prefer that capture."
+        ),
+    ),
+    "granite4:1b": ModelPromptSettings(
+        profile=DEFAULT_STRICT,
+        custom_instructions=(
+            "Do not repeat an earlier move if that piece is no longer on the same square.\n"
+            "Verify the move against the current board before replying.\n"
+            "Before replying, check whether you can win material or give check immediately.\n"
+            "Do not output a move for the wrong color. If White is to move, do not answer with moves like e5 or Nc6.\n"
+            "Before sending your answer, compare it against the legal move list and copy one entry exactly."
+        ),
+    ),
+    "granite4:3b": ModelPromptSettings(
+        profile=DEFAULT_STRICT,
+        custom_instructions=(
+            "Check the current board state before answering.\n"
+            "Return only one UCI move from the legal move list.\n"
+            "Before choosing a quiet move, check whether a legal capture wins material.\n"
+            "Do not output a move for the wrong color. If White is to move, do not answer with moves like e5 or Nc6.\n"
+            "Before sending your answer, compare it against the legal move list and copy one entry exactly."
+        ),
+    ),
+}
+
+
+def get_model_prompt_settings(model_name: str) -> ModelPromptSettings:
+    lowered = model_name.lower()
+    if lowered in MODEL_PROMPT_SETTINGS:
+        return MODEL_PROMPT_SETTINGS[lowered]
+    return ModelPromptSettings(profile=DEFAULT_STRICT, custom_instructions="")
+
+
+================================================================================
+src\prompt\prompt_builder.py
+================================================================================
+
+import chess
+from src.prompt.prompt_profiles import PromptProfile
+
+
+def _format_legal_moves(legal_moves: list[str], profile: PromptProfile) -> str:
+    if profile.legal_moves_format == "space":
+        return "Legal moves:\n" + " ".join(legal_moves)
+    if profile.legal_moves_format == "lines":
+        return "Legal moves:\n" + "\n".join(f"- {move}" for move in legal_moves)
+    return "Legal moves:\n" + ", ".join(legal_moves)
+
+
+def _format_history(board: chess.Board, move_history: list[str], profile: PromptProfile) -> str:
+    if not profile.include_move_history or profile.max_history_moves <= 0:
+        return ""
+
+    if profile.history_format == "uci":
+        uci_history = [move.uci() for move in board.move_stack]
+        recent_moves = uci_history[-profile.max_history_moves:]
+    else:
+        recent_moves = move_history[-profile.max_history_moves:]
+
+    if not recent_moves:
+        return "Recent moves:\nNone"
+    return "Recent moves:\n" + ", ".join(recent_moves)
+
+
+def _retry_prefix(retry_context: dict, profile: PromptProfile) -> str:
+    failure_type = retry_context.get("failure_type", "invalid_format")
+    previous_response = retry_context.get("previous_response")
+    attempt = retry_context.get("attempt")
+    max_attempts = retry_context.get("max_attempts")
+
+    tone_map = {
+        "neutral": "Your previous response was invalid. Please return one legal UCI move.",
+        "firm": "Your previous response was invalid or illegal. Choose only from the listed legal moves.",
+        "strict": "Your previous response was rejected. Return exactly one legal UCI move from the provided list. Any extra text will fail.",
+    }
+    header = tone_map.get(profile.retry_tone, tone_map["firm"])
+
+    lines = [header, f"Failure type: {failure_type}."]
+    if failure_type == "illegal_move":
+        lines.append("Your previous move is illegal in this exact position.")
+        lines.append("It is not a valid choice from the legal move list.")
+        lines.append("Do not repeat the previous move.")
+    elif failure_type in {"no_uci_found", "invalid_format", "parse_failed"}:
+        lines.append("Your previous response did not match the required UCI move format.")
+        lines.append("Do not use SAN, prose, shorthand, or partial square names.")
+    if attempt and max_attempts:
+        lines.append(f"Retry attempt {attempt} of {max_attempts}.")
+    if previous_response:
+        lines.append(f"Previous response: {previous_response}")
+    return "\n".join(lines)
+
+
+def build_prompt(
+    board: chess.Board,
+    move_history: list[str],
+    side: str,
+    profile: PromptProfile,
+    custom_instructions: str = "",
+    retry_context=None,
+) -> str:
+    sections = []
+    strategy_block = (
+        "Play the strongest legal move you can find in the current position.\n"
+        "Prioritize checkmate, material gain, tactical threats, and king safety.\n"
+        "Protect your pieces by keeping them covered by other pieces whenever practical.\n"
+        "Only enter trades, captures, or tactical sequences when the resulting position is favorable for you.\n"
+        "Avoid obvious blunders, hanging pieces, and one-move losses."
+    )
+    side_block = (
+        f"The side to move is {side}.\n"
+        f"Move only the {side} pieces.\n"
+        "Choose exactly one move from the legal move list shown below.\n"
+        "Your final answer must exactly match one legal move string from that list."
+    )
+
+    if retry_context:
+        sections.append(_retry_prefix(retry_context, profile))
+
+    if profile.board_style == "full":
+        sections.append(f"You are playing chess as {side}. Choose the best legal move for the current position.")
+    else:
+        sections.append(f"You are playing as {side}.")
+
+    sections.append(strategy_block)
+    sections.append(side_block)
+
+    if profile.include_fen:
+        sections.append(f"Current FEN:\n{board.fen()}")
+
+    if profile.include_ascii_board:
+        label = "Board position:" if profile.board_style == "full" else "Board:"
+        sections.append(f"{label}\n{board}")
+
+    history_block = _format_history(board, move_history, profile)
+    if history_block:
+        sections.append(history_block)
+
+    if profile.include_legal_moves:
+        legal_moves = [move.uci() for move in board.legal_moves]
+        sections.append(_format_legal_moves(legal_moves, profile))
+
+    if profile.strict_output_mode:
+        sections.append("Any response that is not a single UCI move will be rejected.")
+
+    if profile.output_reminder:
+        sections.append(profile.output_reminder)
+
+    if custom_instructions:
+        sections.append(custom_instructions)
+
+    sections.append(
+        "Return exactly one legal move in UCI format.\n"
+        "Examples: e2e4, g1f3, e7e8q\n"
+        "Copy one legal move exactly as written in the legal moves list.\n"
+        "Do not explain.\n"
+        "Do not include any other text.\n"
+        "Return only the move."
+    )
+
+    return "\n\n".join(section for section in sections if section)
+
+
+================================================================================
+src\prompt\prompt_profiles.py
+================================================================================
+
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True)
+class PromptProfile:
+    name: str
+    include_fen: bool
+    include_ascii_board: bool
+    include_move_history: bool
+    include_legal_moves: bool
+    legal_moves_format: str
+    history_format: str
+    board_style: str
+    strict_output_mode: bool
+    max_history_moves: int
+    retry_tone: str
+    output_reminder: str = ""
+
+
+DEFAULT_STRICT = PromptProfile(
+    name="DEFAULT_STRICT",
+    include_fen=True,
+    include_ascii_board=True,
+    include_move_history=True,
+    include_legal_moves=True,
+    legal_moves_format="comma",
+    history_format="san",
+    board_style="compact",
+    strict_output_mode=True,
+    max_history_moves=6,
+    retry_tone="firm",
+)
+
+COMPACT_HARDLINE = PromptProfile(
+    name="COMPACT_HARDLINE",
+    include_fen=True,
+    include_ascii_board=False,
+    include_move_history=False,
+    include_legal_moves=True,
+    legal_moves_format="space",
+    history_format="uci",
+    board_style="compact",
+    strict_output_mode=True,
+    max_history_moves=0,
+    retry_tone="strict",
+)
+
+READABLE_BOARD = PromptProfile(
+    name="READABLE_BOARD",
+    include_fen=True,
+    include_ascii_board=True,
+    include_move_history=True,
+    include_legal_moves=True,
+    legal_moves_format="lines",
+    history_format="san",
+    board_style="full",
+    strict_output_mode=True,
+    max_history_moves=8,
+    retry_tone="firm",
+)
+
+GEMMA_UCI_HARDLINE = PromptProfile(
+    name="GEMMA_UCI_HARDLINE",
+    include_fen=True,
+    include_ascii_board=True,
+    include_move_history=True,
+    include_legal_moves=True,
+    legal_moves_format="comma",
+    history_format="san",
+    board_style="compact",
+    strict_output_mode=True,
+    max_history_moves=4,
+    retry_tone="strict",
+    output_reminder=(
+        "Use UCI only. Do not use SAN or algebraic notation.\n"
+        "Forbidden examples: Nf3, Qxd8+, exd5, Bd7, Rh8, c6, d5.\n"
+        "Only a full UCI move is valid, such as e2e4, c8d7, or d7d5."
+    ),
+)
+
+
+PROMPT_PROFILES = {
+    DEFAULT_STRICT.name: DEFAULT_STRICT,
+    COMPACT_HARDLINE.name: COMPACT_HARDLINE,
+    READABLE_BOARD.name: READABLE_BOARD,
+    GEMMA_UCI_HARDLINE.name: GEMMA_UCI_HARDLINE,
+}
+
+
+def get_prompt_profile(name: str) -> PromptProfile:
+    try:
+        return PROMPT_PROFILES[name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown prompt profile: {name}") from exc
+
+
+def recommend_prompt_profile(model_name: str) -> PromptProfile:
+    lowered = model_name.lower()
+    if lowered.startswith("gemma"):
+        return GEMMA_UCI_HARDLINE
+    return DEFAULT_STRICT
+
+
+================================================================================
+src\watcher\__init__.py
+================================================================================
+
+
+
+
+================================================================================
+src\watcher\move_watcher.py
+================================================================================
+
+class MoveWatcher:
+    def __init__(self, strict_extra_text: bool = False):
+        self.strict_extra_text = strict_extra_text
+
+    def _has_attempts_remaining(self, attempt: int, max_attempts: int) -> bool:
+        return attempt < max_attempts
+
+    def _normalized_raw(self, raw_response):
+        if raw_response is None:
+            return ""
+        return raw_response.strip().lower()
+
+    def _has_extra_text(self, raw_response, parsed_move) -> bool:
+        if not raw_response or not parsed_move:
+            return False
+        return self._normalized_raw(raw_response) != parsed_move.strip().lower()
+
+    def _is_repeated_invalid_pattern(self, context: dict, base_reason: str) -> bool:
+        if context.get("attempt", 1) <= 1:
+            return False
+
+        current_signature = (
+            base_reason,
+            self._normalized_raw(context.get("raw_response")),
+            (context.get("parsed_move") or "").lower(),
+        )
+
+        for prior in context.get("prior_attempts", []):
+            prior_signature = (
+                prior.get("reason_code"),
+                self._normalized_raw(prior.get("raw_response")),
+                (prior.get("parsed_move") or "").lower(),
+            )
+            if prior_signature == current_signature:
+                return True
+        return False
+
+    def _blocking_decision(self, attempt: int, max_attempts: int, base_reason: str, message: str) -> dict:
+        if self._has_attempts_remaining(attempt, max_attempts):
+            return {
+                "decision": "retry",
+                "reason_code": base_reason,
+                "message": message,
+                "force_retry": True,
+                "forfeit": False,
+            }
+        return {
+            "decision": "forfeit",
+            "reason_code": "retry_limit_reached",
+            "message": f"Retry limit reached after {base_reason}",
+            "force_retry": False,
+            "forfeit": True,
+        }
+
+    def inspect(self, context: dict) -> dict:
+        attempt = context["attempt"]
+        max_attempts = context["max_attempts"]
+        raw_response = context.get("raw_response")
+        parsed_move = context.get("parsed_move")
+        parse_error = context.get("parse_error")
+        is_legal = context.get("is_legal")
+
+        if parse_error == "timeout":
+            base_reason = "timeout"
+            if self._is_repeated_invalid_pattern(context, base_reason):
+                base_reason = "repeated_invalid_response"
+            return self._blocking_decision(attempt, max_attempts, base_reason, "Model request timed out")
+
+        if parse_error == "connection_error":
+            base_reason = "connection_error"
+            if self._is_repeated_invalid_pattern(context, base_reason):
+                base_reason = "repeated_invalid_response"
+            return self._blocking_decision(attempt, max_attempts, base_reason, "Model backend connection failed")
+
+        if raw_response is None or raw_response.strip() == "":
+            base_reason = "empty_response"
+            if self._is_repeated_invalid_pattern(context, base_reason):
+                base_reason = "repeated_invalid_response"
+            return self._blocking_decision(attempt, max_attempts, base_reason, "Model returned an empty response")
+
+        if parsed_move and not is_legal:
+            base_reason = "illegal_move"
+            if self._is_repeated_invalid_pattern(context, base_reason):
+                base_reason = "repeated_invalid_response"
+            return self._blocking_decision(attempt, max_attempts, base_reason, "Parsed move is illegal in current position")
+
+        if parse_error or not parsed_move:
+            base_reason = "parse_failed"
+            if self._is_repeated_invalid_pattern(context, base_reason):
+                base_reason = "repeated_invalid_response"
+            return self._blocking_decision(attempt, max_attempts, base_reason, "No valid move could be parsed")
+
+        if self._has_extra_text(raw_response, parsed_move):
+            if self.strict_extra_text:
+                return self._blocking_decision(
+                    attempt,
+                    max_attempts,
+                    "extra_text_detected",
+                    "Legal move included extra text",
+                )
+            return {
+                "decision": "allow",
+                "reason_code": "extra_text_detected",
+                "message": "Legal move allowed but extra text was detected",
+                "force_retry": False,
+                "forfeit": False,
+            }
+
+        return {
+            "decision": "allow",
+            "reason_code": "ok",
+            "message": "Move allowed",
+            "force_retry": False,
+            "forfeit": False,
+        }
+
+
+================================================================================
+tests\test_controller.py
+================================================================================
+
+import unittest
+from unittest.mock import MagicMock, patch
+import sys
+import os
+import chess
+import time
+import threading
+
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.controller.game_controller import GameController, GameState
+from src.llm.player import LLMPlayer
+from src.llm.ollama_adapter import MoveParseError
+from src.prompt.prompt_profiles import DEFAULT_STRICT
+
+class TestGameController(unittest.TestCase):
+
+    def setUp(self):
+        # Mock players and adapters
+        self.white_adapter = MagicMock()
+        self.black_adapter = MagicMock()
+        self.white_player = LLMPlayer("white_model", "white", self.white_adapter, DEFAULT_STRICT)
+        self.black_player = LLMPlayer("black_model", "black", self.black_adapter, DEFAULT_STRICT)
+
+        # Mock GUI
+        self.gui = MagicMock()
+        # The GUI's after method needs to be handled for threaded tests
+        self.gui.after = MagicMock(side_effect=lambda ms, func, *args: func(*args))
+        
+        # Controller
+        self.controller = GameController(self.white_player, self.black_player)
+        self.controller.set_gui(self.gui)
+        self.controller.board.reset() # Ensure clean board
+
+    def test_single_turn_execution(self):
+        self.white_adapter.get_move.return_value = {"raw": "e2e4", "parsed": "e2e4"}
+        
+        self.controller.execute_single_turn()
+
+        # Last move on stack should be e4
+        self.assertEqual(self.controller.board.move_stack[-1].uci(), "e2e4")
+        self.assertEqual(len(self.controller.move_history), 1)
+        # Check that the board view was updated
+        self.gui.board_view.update_board.assert_called_with(self.controller.board)
+
+    def test_invalid_then_valid_move(self):
+        # Make the board illegal move parsable, but not legal
+        self.white_adapter.get_move.side_effect = [
+            ValueError("Invalid move format"), # Simulate parsing error in adapter
+            {"raw": "e1e3", "parsed": "e1e3"}, # Illegal move
+            {"raw": "e2e4", "parsed": "e2e4"}  # Legal move
+        ]
+        
+        self.controller.execute_single_turn()
+
+        self.assertEqual(self.controller.board.move_stack[-1].uci(), "e2e4")
+        self.assertEqual(self.white_adapter.get_move.call_count, 3)
+
+    def test_san_response_is_parsed_and_applied(self):
+        self.white_adapter.get_move.side_effect = MoveParseError(
+            "No valid UCI move found in model response",
+            raw_response="e4",
+        )
+
+        self.controller.execute_single_turn()
+
+        self.assertEqual(self.controller.board.move_stack[-1].uci(), "e2e4")
+
+    def test_black_san_response_is_parsed_and_applied(self):
+        self.white_adapter.get_move.return_value = {"raw": "e2e4", "parsed": "e2e4"}
+        self.black_adapter.get_move.side_effect = MoveParseError(
+            "No valid UCI move found in model response",
+            raw_response="d6",
+        )
+
+        self.controller.execute_single_turn()
+        self.controller.execute_single_turn()
+
+        self.assertEqual(self.controller.board.peek().uci(), "d7d6")
+
+    def test_unique_square_helper_resolves_single_legal_match(self):
+        self.controller.board.reset()
+        move = self.controller._try_parse_unique_square_response("e4")
+        self.assertIsNotNone(move)
+        self.assertEqual(move.uci(), "e2e4")
+
+    def test_set_player_model_updates_profile_recommendation(self):
+        self.controller.set_player_model("black", "gemma3:1b")
+        self.assertEqual(self.black_player.prompt_profile.name, "GEMMA_UCI_HARDLINE")
+        self.assertIn("Do not answer with Qxd8+", self.black_player.prompt_instructions)
+
+    def test_piece_square_helper_resolves_unique_legal_move(self):
+        self.controller.board = chess.Board("r1bqkb1r/ppp2p1N/3p3P/4p3/1n5P/8/PPPPPP2/RNBQKB1R b KQkq - 0 7")
+        move = self.controller._try_parse_piece_square_response("Bd7")
+        self.assertIsNotNone(move)
+        self.assertEqual(move.uci(), "c8d7")
+
+    def test_all_retries_fail(self):
+        self.white_adapter.get_move.side_effect = [ValueError("fail")] * 3
+        
+        self.controller.execute_single_turn()
+
+        self.assertEqual(self.controller.state, GameState.ERROR)
+        self.gui.update_status.assert_called_with("Error: white_model forfeits.")
+
+    def test_alternating_turns(self):
+        self.controller.board.reset()
+        self.white_adapter.get_move.return_value = {"raw": "e2e4", "parsed": "e2e4"}
+        self.black_adapter.get_move.return_value = {"raw": "e7e5", "parsed": "e7e5"}
+        
+        self.controller.execute_single_turn() # White's turn
+        self.assertEqual(self.controller.board.peek().uci(), "e2e4")
+        
+        self.controller.execute_single_turn() # Black's turn
+        self.assertEqual(self.controller.board.peek().uci(), "e7e5")
+        
+        self.assertEqual(len(self.controller.move_history), 2)
+
+    def test_set_player_model_updates_player_and_adapter(self):
+        self.controller.set_player_model("white", "new_white_model")
+        self.assertEqual(self.white_player.name, "new_white_model")
+        self.assertEqual(self.white_adapter.model_name, "new_white_model")
+        self.gui.update_model_names.assert_called_with("new_white_model", "black_model")
+
+    @patch('src.controller.game_controller.time.sleep', return_value=None) # Don't sleep in tests
+    def test_game_over_detection_in_loop(self, patched_time_sleep):
+        # Fool's mate
+        self.controller.board.reset()
+        self.white_adapter.get_move.side_effect = [
+            {"raw": "f2f3", "parsed": "f2f3"},
+            {"raw": "g2g4", "parsed": "g2g4"}
+        ]
+        self.black_adapter.get_move.side_effect = [
+            {"raw": "e7e5", "parsed": "e7e5"},
+            {"raw": "d8h4", "parsed": "d8h4"}
+        ]
+        
+        # Start the game loop in a thread
+        self.controller.state = GameState.RUNNING
+        game_thread = threading.Thread(target=self.controller.play_game_loop)
+        game_thread.start()
+        
+        # Give the thread time to run and finish
+        game_thread.join(timeout=2)
+
+        self.assertTrue(self.controller.board.is_checkmate())
+        self.assertEqual(self.controller.state, GameState.FINISHED)
+        self.gui.update_status.assert_called_with("Finished: Black wins by checkmate.")
+
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+================================================================================
+tests\test_gui_smoke.py
+================================================================================
+
+import unittest
+import tkinter as tk
+import sys
+import os
+import chess
+
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.gui.main_window import MainWindow
+
+class TestGuiSmoke(unittest.TestCase):
+
+    def setUp(self):
+        # This is not ideal, but for a smoke test it's okay to create a root window.
+        # For more complex tests, this should be mocked.
+        try:
+            self.app = MainWindow()
+            self.app.update()
+        except tk.TclError:
+            # This can happen in environments without a display
+            self.skipTest("Could not create a Tkinter window.")
+
+
+    def tearDown(self):
+        if self.app:
+            self.app.destroy()
+
+    def test_window_creation(self):
+        self.assertIsNotNone(self.app)
+        self.assertEqual(self.app.title(), "LLM Chess")
+
+    def test_board_view_initial_position(self):
+        board = chess.Board()
+        self.app.board_view.update_board(board)
+        # A simple check: count the number of pieces.
+        self.assertEqual(len(self.app.board_view.find_withtag("pieces")), 32)
+        self.assertEqual(len(self.app.board_view.find_withtag("legend")), 16)
+
+    def test_move_log_updates(self):
+        self.app.move_log_view.add_move("e4", 1, "white")
+        content = self.app.move_log_view.get("1.0", tk.END).strip()
+        self.assertEqual(content, "1. e4")
+
+    def test_status_panel_updates(self):
+        self.app.update_status("Test Status")
+        self.assertEqual(self.app.control_panel.status_label.cget("text"), "Status: Test Status")
+
+        self.app.update_turn("Black")
+        self.assertEqual(self.app.control_panel.turn_label.cget("text"), "Turn: Black")
+
+        self.app.update_model_names("test_white", "test_black")
+        self.assertEqual(self.app.control_panel.white_model_label.cget("text"), "White: test_white")
+        self.assertEqual(self.app.control_panel.black_model_label.cget("text"), "Black: test_black")
+        self.assertEqual(self.app.control_panel.white_model_var.get(), "test_white")
+        self.assertEqual(self.app.control_panel.black_model_var.get(), "test_black")
+
+    def test_model_selectors_accept_available_models(self):
+        self.app.set_available_models(["qwen2.5:3b", "llama3.2:3b"])
+        self.assertEqual(
+            tuple(self.app.control_panel.white_model_selector.cget("values")),
+            ("qwen2.5:3b", "llama3.2:3b"),
+        )
+        self.app.update_model_names("qwen2.5:3b", "llama3.2:3b")
+        self.assertEqual(self.app.control_panel.white_model_var.get(), "qwen2.5:3b")
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+================================================================================
+tests\test_logging.py
+================================================================================
+
+import unittest
+from unittest.mock import MagicMock, patch
+import sys
+import os
+import json
+import time
+
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.logging.turn_logger import TurnLogger
+from src.controller.game_controller import GameController
+from src.llm.player import LLMPlayer
+from src.prompt.prompt_profiles import DEFAULT_STRICT
+
+class TestLogging(unittest.TestCase):
+
+    def setUp(self):
+        self.log_path = "runtime/logs/test_log.jsonl"
+        # Clean up any old log files
+        if os.path.exists(self.log_path):
+            os.remove(self.log_path)
+            
+        # Mock players and controller for logging tests
+        self.white_adapter = MagicMock()
+        self.black_adapter = MagicMock()
+        self.white_player = LLMPlayer("test_white_model", "white", self.white_adapter, DEFAULT_STRICT)
+        self.black_player = LLMPlayer("test_black_model", "black", self.black_adapter, DEFAULT_STRICT)
+        
+        self.controller = GameController(self.white_player, self.black_player)
+        # We are testing the logger via the controller, so we need to set it up
+        self.controller.logger = TurnLogger(self.log_path)
+        
+        self.gui = MagicMock()
+        self.gui.after = MagicMock(side_effect=lambda ms, func, *args: func(*args))
+        self.controller.set_gui(self.gui)
+
+
+    def tearDown(self):
+        if os.path.exists(self.log_path):
+            os.remove(self.log_path)
+
+    def test_log_file_created(self):
+        self.white_adapter.get_move.return_value = {"raw": "e2e4", "parsed": "e2e4"}
+        self.controller.execute_single_turn()
+        self.assertTrue(os.path.exists(self.log_path))
+
+    def test_valid_turn_logged(self):
+        self.white_adapter.get_move.return_value = {"raw": "e2e4", "parsed": "e2e4"}
+        self.controller.execute_single_turn()
+        
+        with open(self.log_path, 'r') as f:
+            log_entry = json.loads(f.readline())
+            
+        self.assertEqual(log_entry['move_number'], 1)
+        self.assertEqual(log_entry['side'], 'white')
+        self.assertEqual(log_entry['model'], 'test_white_model')
+        self.assertEqual(log_entry['prompt_profile'], 'DEFAULT_STRICT')
+        self.assertEqual(log_entry['legal_moves_format'], 'comma')
+        self.assertEqual(log_entry['retry_tone'], 'firm')
+        self.assertIn('timestamp', log_entry)
+        self.assertEqual(log_entry['raw_response'], 'e2e4')
+        self.assertEqual(log_entry['parsed_move'], 'e2e4')
+        self.assertTrue(log_entry['legal'])
+        self.assertEqual(log_entry['watcher_decision'], 'allow')
+        self.assertEqual(log_entry['watcher_reason_code'], 'ok')
+        self.assertEqual(log_entry['attempts'][-1]['parsed_move'], 'e2e4')
+        self.assertTrue(log_entry['result'], 'move_applied')
+
+    def test_retry_attempts_recorded(self):
+        self.white_adapter.get_move.side_effect = [
+            ValueError("fail"),
+            {"raw": "e2e4", "parsed": "e2e4"}
+        ]
+        self.controller.execute_single_turn()
+        
+        with open(self.log_path, 'r') as f:
+            log_entry = json.loads(f.readline())
+            
+        self.assertEqual(log_entry['retries'], 1)
+        self.assertEqual(len(log_entry['attempts']), 2)
+        self.assertEqual(log_entry['attempts'][0]['error'], 'invalid_format')
+        self.assertEqual(log_entry['attempts'][0]['watcher_reason_code'], 'empty_response')
+        self.assertIsNone(log_entry['attempts'][1]['error'])
+
+    def test_duration_recorded(self):
+        # Add a small delay to ensure duration is non-zero
+        def delayed_get_move(*args, **kwargs):
+            time.sleep(0.01)
+            return {"raw": "e2e4", "parsed": "e2e4"}
+        self.white_adapter.get_move.side_effect = delayed_get_move
+
+        self.controller.execute_single_turn()
+        
+        with open(self.log_path, 'r') as f:
+            log_entry = json.loads(f.readline())
+            
+        self.assertIn('duration_ms', log_entry)
+        self.assertGreater(log_entry['duration_ms'], 0)
+
+    @patch('src.logging.turn_logger.open')
+    def test_logging_failure_safe(self, mock_open):
+        mock_open.side_effect = IOError("Disk full")
+        self.white_adapter.get_move.return_value = {"raw": "e2e4", "parsed": "e2e4"}
+        
+        # This should not raise an exception
+        with patch('builtins.print') as mock_print:
+            self.controller.execute_single_turn()
+            mock_print.assert_called_with("Error writing to log file: Disk full")
+        
+        # And the game should proceed
+        self.assertEqual(self.controller.board.move_stack[-1].uci(), "e2e4")
+
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+================================================================================
+tests\test_move_watcher.py
+================================================================================
+
+import os
+import sys
+import unittest
+
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.watcher.move_watcher import MoveWatcher
+
+
+class TestMoveWatcher(unittest.TestCase):
+    def setUp(self):
+        self.watcher = MoveWatcher()
+
+    def _context(self, **overrides):
+        context = {
+            "side": "white",
+            "model_name": "qwen2.5:3b",
+            "move_number": 5,
+            "fen": "test-fen",
+            "raw_response": "e2e4",
+            "parsed_move": "e2e4",
+            "parse_error": None,
+            "is_legal": True,
+            "attempt": 1,
+            "max_attempts": 3,
+            "prompt_profile": "DEFAULT_STRICT",
+            "prior_attempts": [],
+        }
+        context.update(overrides)
+        return context
+
+    def test_legal_clean_move_allowed(self):
+        result = self.watcher.inspect(self._context())
+        self.assertEqual(result["decision"], "allow")
+        self.assertEqual(result["reason_code"], "ok")
+
+    def test_legal_move_with_extra_text_allowed_but_flagged(self):
+        result = self.watcher.inspect(self._context(raw_response="I choose e2e4"))
+        self.assertEqual(result["decision"], "allow")
+        self.assertEqual(result["reason_code"], "extra_text_detected")
+
+    def test_parse_failure_retries_before_max(self):
+        result = self.watcher.inspect(self._context(raw_response="Move pawn", parsed_move=None, parse_error="parse_failed", is_legal=False))
+        self.assertEqual(result["decision"], "retry")
+        self.assertEqual(result["reason_code"], "parse_failed")
+
+    def test_parse_failure_forfeits_at_max(self):
+        result = self.watcher.inspect(
+            self._context(raw_response="Move pawn", parsed_move=None, parse_error="parse_failed", is_legal=False, attempt=3)
+        )
+        self.assertEqual(result["decision"], "forfeit")
+        self.assertEqual(result["reason_code"], "retry_limit_reached")
+
+    def test_illegal_move_retries_before_max(self):
+        result = self.watcher.inspect(self._context(raw_response="e1e3", parsed_move="e1e3", is_legal=False, parse_error="illegal_move", attempt=2))
+        self.assertEqual(result["decision"], "retry")
+        self.assertEqual(result["reason_code"], "illegal_move")
+
+    def test_repeated_identical_invalid_response_flagged(self):
+        result = self.watcher.inspect(
+            self._context(
+                raw_response="Move pawn",
+                parsed_move=None,
+                parse_error="parse_failed",
+                is_legal=False,
+                attempt=2,
+                prior_attempts=[{"raw_response": "Move pawn", "parsed_move": None, "reason_code": "parse_failed"}],
+            )
+        )
+        self.assertEqual(result["decision"], "retry")
+        self.assertEqual(result["reason_code"], "repeated_invalid_response")
+
+    def test_timeout_handled_deterministically(self):
+        result = self.watcher.inspect(
+            self._context(raw_response="timeout", parsed_move=None, parse_error="timeout", is_legal=False, attempt=2)
+        )
+        self.assertEqual(result["decision"], "retry")
+        self.assertEqual(result["reason_code"], "timeout")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+
+================================================================================
+tests\test_ollama_adapter.py
+================================================================================
+
+import unittest
+from unittest.mock import patch, MagicMock
+import requests
+import sys
+import os
+
+# Add src to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src')))
+
+from llm.ollama_adapter import OllamaAdapter, MoveParseError
+
+class TestOllamaAdapter(unittest.TestCase):
+
+    def setUp(self):
+        self.adapter = OllamaAdapter(model_name="test_model", base_url="http://localhost:11434")
+
+    @patch('requests.post')
+    def test_valid_plain_uci(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "e2e4"}
+        mock_response.raise_for_status = MagicMock()
+        mock_post.return_value = mock_response
+        
+        move = self.adapter.get_move("prompt")
+        self.assertEqual(move['parsed'], "e2e4")
+
+    @patch('requests.post')
+    def test_noisy_sentence_containing_uci(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "I choose g1f3 because it develops a knight."}
+        mock_response.raise_for_status = MagicMock()
+        mock_post.return_value = mock_response
+        
+        move = self.adapter.get_move("prompt")
+        self.assertEqual(move['parsed'], "g1f3")
+
+    @patch('requests.post')
+    def test_json_ish_junk_containing_move(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": '{"move":"d2d4"}'}
+        mock_response.raise_for_status = MagicMock()
+        mock_post.return_value = mock_response
+        
+        move = self.adapter.get_move("prompt")
+        self.assertEqual(move['parsed'], "d2d4")
+
+    @patch('requests.post')
+    def test_invalid_natural_language(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"response": "Move the king pawn two spaces"}
+        mock_response.raise_for_status = MagicMock()
+        mock_post.return_value = mock_response
+        
+        with self.assertRaises(MoveParseError) as ctx:
+            self.adapter.get_move("prompt")
+        self.assertEqual(ctx.exception.raw_response, "Move the king pawn two spaces")
+
+    @patch('requests.post', side_effect=requests.exceptions.Timeout)
+    def test_adapter_handles_timeout_cleanly(self, mock_post):
+        with self.assertRaises(TimeoutError):
+            self.adapter.get_move("prompt")
+
+    @patch('requests.post', side_effect=requests.exceptions.ConnectionError)
+    def test_adapter_handles_ollama_unavailable(self, mock_post):
+        with self.assertRaises(ConnectionError):
+            self.adapter.get_move("prompt")
+    
+    @patch('requests.post')
+    def test_malformed_json_response(self, mock_post):
+        mock_response = MagicMock()
+        mock_response.json.side_effect = requests.exceptions.JSONDecodeError("Expecting value", "doc", 0)
+        mock_response.raise_for_status = MagicMock()
+        mock_post.return_value = mock_response
+        
+        with self.assertRaises(RuntimeError):
+            self.adapter.get_move("prompt")
+
+    @patch('requests.get')
+    def test_list_models_returns_installed_names(self, mock_get):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "models": [
+                {"name": "qwen2.5:3b"},
+                {"name": "llama3.2:3b"},
+            ]
+        }
+        mock_response.raise_for_status = MagicMock()
+        mock_get.return_value = mock_response
+
+        models = OllamaAdapter.list_models("http://localhost:11434")
+        self.assertEqual(models, ["qwen2.5:3b", "llama3.2:3b"])
+
+if __name__ == '__main__':
+    unittest.main()
+
+
+================================================================================
+tests\test_prompt_profiles.py
+================================================================================
+
+import os
+import sys
+import unittest
+
+import chess
+
+# Add project root to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from src.prompt.prompt_builder import build_prompt
+from src.prompt.prompt_profiles import COMPACT_HARDLINE, DEFAULT_STRICT, GEMMA_UCI_HARDLINE, READABLE_BOARD
+from src.prompt.model_prompt_registry import get_model_prompt_settings
+
+
+class TestPromptProfiles(unittest.TestCase):
+    def setUp(self):
+        self.board = chess.Board()
+        self.move_history = ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6", "Ba4", "Nf6"]
+
+    def test_default_profile_builds_valid_prompt(self):
+        prompt = build_prompt(self.board, self.move_history, "white", DEFAULT_STRICT)
+
+        self.assertIn("You are playing as white.", prompt)
+        self.assertIn("Play the strongest legal move you can find in the current position.", prompt)
+        self.assertIn("Protect your pieces by keeping them covered by other pieces whenever practical.", prompt)
+        self.assertIn("Only enter trades, captures, or tactical sequences when the resulting position is favorable for you.", prompt)
+        self.assertIn("The side to move is white.", prompt)
+        self.assertIn("Choose exactly one move from the legal move list shown below.", prompt)
+        self.assertIn("Your final answer must exactly match one legal move string from that list.", prompt)
+        self.assertIn("Current FEN:", prompt)
+        self.assertIn("Legal moves:", prompt)
+        self.assertIn("Return exactly one legal move in UCI format.", prompt)
+        self.assertIn("Copy one legal move exactly as written in the legal moves list.", prompt)
+
+    def test_compact_profile_omits_optional_sections(self):
+        prompt = build_prompt(self.board, self.move_history, "white", COMPACT_HARDLINE)
+
+        self.assertNotIn("Board:\n", prompt)
+        self.assertNotIn("Recent moves:", prompt)
+
+    def test_readable_board_profile_uses_line_legal_moves(self):
+        prompt = build_prompt(self.board, self.move_history, "black", READABLE_BOARD)
+
+        self.assertIn("Legal moves:\n- ", prompt)
+
+    def test_retry_context_changes_prompt(self):
+        prompt = build_prompt(
+            self.board,
+            self.move_history,
+            "white",
+            DEFAULT_STRICT,
+            retry_context={
+                "attempt": 2,
+                "max_attempts": 3,
+                "failure_type": "illegal_move",
+                "previous_response": "e1e3",
+            },
+        )
+
+        self.assertIn("Failure type: illegal_move.", prompt)
+        self.assertIn("Your previous move is illegal in this exact position.", prompt)
+        self.assertIn("Do not repeat the previous move.", prompt)
+        self.assertIn("Retry attempt 2 of 3.", prompt)
+        self.assertIn("Previous response: e1e3", prompt)
+
+    def test_strict_output_mode_adds_hardening(self):
+        prompt = build_prompt(self.board, self.move_history, "white", DEFAULT_STRICT)
+
+        self.assertIn("Any response that is not a single UCI move will be rejected.", prompt)
+
+    def test_max_history_truncation_works(self):
+        prompt = build_prompt(self.board, self.move_history, "white", DEFAULT_STRICT)
+
+        self.assertIn("Nf3, Nc6, Bb5, a6, Ba4, Nf6", prompt)
+        self.assertNotIn("e4, e5, Nf3", prompt)
+
+    def test_gemma_profile_adds_uci_only_notation_warning(self):
+        prompt = build_prompt(self.board, self.move_history, "black", GEMMA_UCI_HARDLINE)
+
+        self.assertIn("Use UCI only. Do not use SAN or algebraic notation.", prompt)
+        self.assertIn("Forbidden examples: Nf3, Qxd8+, exd5, Bd7, Rh8, c6, d5.", prompt)
+
+    def test_model_specific_custom_instructions_are_included(self):
+        settings = get_model_prompt_settings("gemma3:4b")
+        prompt = build_prompt(
+            self.board,
+            self.move_history,
+            "black",
+            settings.profile,
+            custom_instructions=settings.custom_instructions,
+        )
+
+        self.assertIn("Do not answer with SAN captures such as Qxd8+ or exd6.", prompt)
+        self.assertIn("If an undefended enemy piece can be captured safely in one move, prefer that capture.", prompt)
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+

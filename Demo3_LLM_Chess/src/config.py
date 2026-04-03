@@ -1,0 +1,24 @@
+WHITE_MODEL_NAME = "qwen2.5:3b"
+BLACK_MODEL_NAME = "llama3.2:3b"
+OLLAMA_BASE_URL = "http://localhost:11434"
+MODEL_TIMEOUT_SECONDS = 60
+MAX_MOVE_RETRIES = 5
+
+# Prompt profile selection
+WHITE_PROMPT_PROFILE = "DEFAULT_STRICT"
+BLACK_PROMPT_PROFILE = "READABLE_BOARD"
+
+# GUI settings
+DEFAULT_MOVE_DELAY = 1.0  # seconds
+LIGHT_SQUARE_COLOR = "#f0d9b5"
+DARK_SQUARE_COLOR = "#b58863"
+
+# Observability settings
+ENABLE_LOGGING = True
+LOG_FILE_PATH = "runtime/logs/game_log.jsonl"
+ENABLE_DEBUG_PANEL = True
+
+# Watcher settings
+ENABLE_WATCHER = True
+WATCHER_STRICT_EXTRA_TEXT = False
+
