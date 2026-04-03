@@ -28,11 +28,21 @@
                     <button id="ingest-pdf-btn" disabled>Ingest PDF</button>
                 </div>
                 <div id="ingest-status-area" class="ingest-status-area">Ready</div>
-                <div class="indexed-docs-area">
-                    <strong>Indexed docs:</strong>
-                    <ul id="indexed-docs-list">
-                        <li>None</li>
-                    </ul>
+            </div>
+
+            <div class="corpus-panel">
+                <div class="corpus-header">
+                    <h2>Corpus</h2>
+                    <div class="corpus-controls">
+                        <button id="select-all-btn">Select All</button>
+                        <button id="clear-selection-btn">Clear Selection</button>
+                    </div>
+                </div>
+                <div class="corpus-scope-status">
+                    Retrieval scope: <span id="retrieval-scope-text">Full corpus</span>
+                </div>
+                <div id="corpus-list" class="corpus-list">
+                    <div class="empty-corpus-msg">No indexed documents.</div>
                 </div>
             </div>
 

@@ -10,8 +10,8 @@ import shutil
 from models import ChatRequest, ChatResponse, TurnContext
 from ollama_client import get_models, chat as ollama_chat
 from watcher import PassiveWatcher
-from app.services.rag_service import get_rag_context
-from app.services.ingest_service import ingest_pdf_file, get_indexed_docs
+from app.services.rag_service import get_rag_context, list_indexed_documents
+from app.services.ingest_service import ingest_pdf_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
 
 RAG_ENABLED = True
@@ -50,8 +50,8 @@ async def api_ingest(file: UploadFile = File(...)):
 
 @app.get("/api/docs")
 async def api_docs():
-    docs = get_indexed_docs()
-    return {"docs": docs}
+    result = list_indexed_documents()
+    return result
 
 @app.get("/api/models")
 async def api_models():
@@ -82,7 +82,7 @@ async def api_chat(request: ChatRequest):
     final_prompt = request.message
 
     if RAG_ENABLED:
-        rag_result = get_rag_context(request.message, top_k=3)
+        rag_result = get_rag_context(request.message, top_k=3, document_ids=request.document_ids)
         retrieval_query = request.message
         retrieval_error = rag_result.get("error")
         retrieval_chunks = rag_result.get("chunks", [])
@@ -146,10 +146,32 @@ async def api_chat(request: ChatRequest):
     # 5. Build structured debug trace
     response_preview = reply_text[:100] + ("..." if len(reply_text) > 100 else "") if reply_text else None
 
+    # Handle RAG scope for debug
+    retrieval_scope = "full_corpus"
+    selected_documents_count = 0
+    selected_documents_names = []
+
+    if request.document_ids:
+        retrieval_scope = "working_set"
+        selected_documents_count = len(request.document_ids)
+
+        # Try to resolve document names from chunks or recent docs
+        # We can map ID -> Name from the retrieval_chunks if any matched
+        # Or from a quick lookup if needed. For now, let's use the chunks metadata.
+        id_to_name = {chunk['document_id']: chunk['document_name'] for chunk in retrieval_chunks}
+
+        selected_documents_names = []
+        for doc_id in request.document_ids:
+            name = id_to_name.get(doc_id, doc_id) # Fallback to ID if not in retrieved chunks
+            selected_documents_names.append(name)
+
     debug_payload = {
         "user_message": request.message,
         "selected_model": request.model,
         "rag_enabled": RAG_ENABLED,
+        "retrieval_scope": retrieval_scope,
+        "selected_documents_count": selected_documents_count,
+        "selected_documents_names": selected_documents_names,
         "retrieval_query": retrieval_query,
         "retrieval_chunks": retrieval_chunks,
         "retrieval_error": retrieval_error,

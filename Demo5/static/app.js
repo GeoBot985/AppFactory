@@ -12,7 +12,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedPdfPath = document.getElementById('selected-pdf-path');
     const ingestPdfBtn = document.getElementById('ingest-pdf-btn');
     const ingestStatusArea = document.getElementById('ingest-status-area');
-    const indexedDocsList = document.getElementById('indexed-docs-list');
+
+    // Corpus Panel elements
+    const corpusList = document.getElementById('corpus-list');
+    const selectAllBtn = document.getElementById('select-all-btn');
+    const clearSelectionBtn = document.getElementById('clear-selection-btn');
+    const retrievalScopeText = document.getElementById('retrieval-scope-text');
+
+    let allDocuments = [];
+    let selectedDocumentIds = new Set();
 
     // Fetch models on load
     async function loadModels() {
@@ -68,7 +76,13 @@ document.addEventListener('DOMContentLoaded', () => {
         output += `Model:\n${payload.selected_model || 'N/A'}\n\n`;
 
         output += `[RAG]\n`;
-        output += `RAG enabled:\n${payload.rag_enabled ? 'true' : 'false'}\n\n`;
+        output += `RAG enabled:\n${payload.rag_enabled ? 'true' : 'false'}\n`;
+        output += `Scope: ${payload.retrieval_scope || 'full_corpus'}\n`;
+        output += `Selected docs count: ${payload.selected_documents_count || 0}\n`;
+        if (payload.selected_documents_names && payload.selected_documents_names.length > 0) {
+            output += `Selected docs: ${payload.selected_documents_names.join(', ')}\n`;
+        }
+        output += `\n`;
 
         if (payload.rag_enabled) {
             output += `Retrieval query:\n${payload.retrieval_query || 'N/A'}\n\n`;
@@ -178,7 +192,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ model, message })
+                body: JSON.stringify({
+                    model,
+                    message,
+                    document_ids: selectedDocumentIds.size > 0 ? Array.from(selectedDocumentIds) : null
+                })
             });
 
             const data = await response.json();
@@ -228,28 +246,89 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    function updateScopeStatus() {
+        if (selectedDocumentIds.size === 0) {
+            retrievalScopeText.textContent = "Full corpus";
+        } else {
+            retrievalScopeText.textContent = `Working set (${selectedDocumentIds.size} documents)`;
+        }
+    }
+
+    function toggleDocumentSelection(docId) {
+        if (selectedDocumentIds.has(docId)) {
+            selectedDocumentIds.delete(docId);
+        } else {
+            selectedDocumentIds.add(docId);
+        }
+        renderDocumentCards();
+        updateScopeStatus();
+    }
+
+    function renderDocumentCards() {
+        corpusList.innerHTML = '';
+        if (allDocuments.length === 0) {
+            const emptyMsg = document.createElement('div');
+            emptyMsg.className = 'empty-corpus-msg';
+            emptyMsg.textContent = 'No indexed documents.';
+            corpusList.appendChild(emptyMsg);
+            return;
+        }
+
+        allDocuments.forEach(doc => {
+            const card = document.createElement('div');
+            card.className = `doc-card ${selectedDocumentIds.has(doc.document_id) ? 'selected' : ''}`;
+
+            const name = document.createElement('div');
+            name.className = 'doc-name';
+            name.textContent = doc.document_name;
+
+            const meta = document.createElement('div');
+            meta.className = 'doc-meta';
+            const date = new Date(doc.ingested_at).toLocaleString();
+            const sizeKB = (doc.file_size_bytes / 1024).toFixed(1);
+            meta.innerHTML = `
+                Ingested: ${date}<br>
+                Chunks: ${doc.chunk_count} | Size: ${sizeKB} KB
+            `;
+
+            card.appendChild(name);
+            card.appendChild(meta);
+
+            card.addEventListener('click', () => toggleDocumentSelection(doc.document_id));
+            corpusList.appendChild(card);
+        });
+    }
+
     async function loadIndexedDocs() {
         try {
             const response = await fetch('/api/docs');
             if (response.ok) {
                 const data = await response.json();
-                indexedDocsList.innerHTML = '';
-                if (data.docs && data.docs.length > 0) {
-                    data.docs.forEach(docId => {
-                        const li = document.createElement('li');
-                        li.textContent = `- ${docId}`;
-                        indexedDocsList.appendChild(li);
-                    });
-                } else {
-                    const li = document.createElement('li');
-                    li.textContent = 'None';
-                    indexedDocsList.appendChild(li);
+                if (data.ok) {
+                    allDocuments = data.documents || [];
+                    // Keep selected IDs that still exist
+                    const validIds = new Set(allDocuments.map(d => d.document_id));
+                    selectedDocumentIds = new Set(Array.from(selectedDocumentIds).filter(id => validIds.has(id)));
+                    renderDocumentCards();
+                    updateScopeStatus();
                 }
             }
         } catch (error) {
             console.error("Failed to load indexed docs", error);
         }
     }
+
+    selectAllBtn.addEventListener('click', () => {
+        allDocuments.forEach(doc => selectedDocumentIds.add(doc.document_id));
+        renderDocumentCards();
+        updateScopeStatus();
+    });
+
+    clearSelectionBtn.addEventListener('click', () => {
+        selectedDocumentIds.clear();
+        renderDocumentCards();
+        updateScopeStatus();
+    });
 
     ingestPdfBtn.addEventListener('click', async () => {
         if (!pdfFileInput.files || pdfFileInput.files.length === 0) {

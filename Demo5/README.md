@@ -47,6 +47,47 @@ Open your browser and navigate to [http://127.0.0.1:8000](http://127.0.0.1:8000)
 6. Click **Ingest PDF** with no file selected (or cancel the browse dialog) and confirm it shows a clean message like "No PDF selected".
 7. (Optional) Try ingesting an invalid or broken file and confirm the UI handles the failure gracefully.
 
+### Manual Testing for Corpus Panel + Working Set (Spec 009)
+
+**Case A — Empty corpus**
+1. Start app with no indexed documents.
+2. Confirm corpus panel says "No indexed documents."
+3. Confirm retrieval scope shows "Full corpus".
+4. Normal chat still works.
+
+**Case B — Single document**
+1. Ingest one PDF.
+2. Confirm one document card appears in the Corpus panel.
+3. Select it (card should highlight).
+4. Ask a related question.
+5. Confirm retrieval scope in UI shows "Working set (1 documents)".
+6. Confirm debug output shows `retrieval_scope: working_set` and `selected_documents_count: 1`.
+7. Confirm results come from that document.
+
+**Case C — Multiple documents, no selection**
+1. Ingest multiple PDFs.
+2. Leave all unselected.
+3. Ask a question.
+4. Confirm retrieval uses full corpus (check debug `retrieval_scope: full_corpus`).
+
+**Case D — Multiple documents, subset selected**
+1. Ingest 3+ PDFs.
+2. Select only two cards.
+3. Ask a question.
+4. Confirm retrieval scope shows "Working set (2 documents)".
+5. Confirm debug output names selected docs and returned source docs.
+
+**Case E — Clear selection**
+1. Select multiple documents.
+2. Click **Clear Selection**.
+3. Confirm working set empties (cards unhighlight).
+4. Confirm retrieval scope returns to "Full corpus".
+
+**Case F — Select All**
+1. Click **Select All**.
+2. Confirm all document cards are highlighted.
+3. Confirm retrieval scope updates to "Working set (N documents)".
+
 ### Manual Testing for Chat Debug Panel
 
 **Case A — Plain chat, empty DB**
