@@ -1,13 +1,19 @@
-INFO:     Will watch for changes in these directories: ['/app/Demo5']
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     Started reloader process [146983] using StatReload
-INFO:     Started server process [147812]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     127.0.0.1:48294 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48294 - "GET /static/styles.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48300 - "GET /static/app.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48294 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48300 - "GET /api/models HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48300 - "POST /api/ingest HTTP/1.1" 200 OK
-INFO:     127.0.0.1:48300 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63775 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63776 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62135 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62135 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54639 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54639 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:62135 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50709 - "POST /api/ingest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50709 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49667 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63751 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63751 - "GET /static/styles.css HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:49320 - "GET /static/app.js HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:63751 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49320 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65229 - "POST /api/ingest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65229 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53082 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:65532 - "POST /api/chat HTTP/1.1" 200 OK
