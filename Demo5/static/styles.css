@@ -542,6 +542,26 @@ button.danger:disabled {
     color: #63d6ff;
 }
 
+.grounding-display {
+    padding: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    margin-bottom: 14px;
+    font-size: 0.85rem;
+    line-height: 1.6;
+}
+
+.grounding-info strong {
+    color: #9cc2ff;
+    margin-right: 4px;
+}
+
+hr {
+    border: none;
+    border-top: 1px solid var(--debug-border);
+    margin: 10px 0 20px;
+}
+
 #debug-output {
     flex: 1;
     min-height: 0;

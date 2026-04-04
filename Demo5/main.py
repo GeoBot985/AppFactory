@@ -18,6 +18,7 @@ from app.services.rag_service import (
 from app.services.ingest_service import ingest_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
 from app.services.prompt_builder import build_grounded_prompt
+from app.services.session_grounding import build_session_grounding, get_session_grounding
 from app.services.personal_service import initialize_personal_service, persist_user_input, get_personal_context
 from app.services.personal_prompt_builder import build_personal_grounded_prompt
 
@@ -35,9 +36,18 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 watcher = PassiveWatcher()
 
+@app.on_event("startup")
+async def startup_event():
+    await build_session_grounding()
+
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
+
+@app.get("/api/grounding")
+async def api_grounding():
+    grounding = get_session_grounding()
+    return grounding
 
 @app.post("/api/ingest")
 async def api_ingest(file: UploadFile = File(...)):
@@ -243,6 +253,7 @@ async def api_chat(request: ChatRequest):
             selected_documents_names.append(name)
 
     debug_payload = {
+        "grounding": get_session_grounding(),
         "user_message": request.message,
         "selected_model": request.model,
         "mode": effective_mode,
