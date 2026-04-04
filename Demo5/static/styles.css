@@ -21,6 +21,7 @@
     --debug-border: #3a4250;
     --debug-text: #f4f7fb;
     --shadow: 0 16px 32px rgba(31, 44, 68, 0.08);
+    --sidebar-width: 360px;
 }
 
 body {
@@ -32,11 +33,111 @@ body {
     overflow: hidden;
 }
 
+body.corpus-open {
+    overflow: hidden;
+}
+
 .container {
+    position: relative;
     display: flex;
     gap: 0;
     height: 100vh;
     padding: 20px;
+}
+
+.corpus-sidebar {
+    position: absolute;
+    z-index: 30;
+    top: 20px;
+    left: 20px;
+    bottom: 20px;
+    width: var(--sidebar-width);
+    display: flex;
+    flex-direction: column;
+    background: linear-gradient(180deg, #fbfdff 0%, #f7faff 100%);
+    border: 1px solid rgba(191, 208, 228, 0.7);
+    border-radius: 18px;
+    box-shadow: 0 20px 42px rgba(18, 31, 53, 0.16);
+    transform: translateX(calc(-100% - 28px));
+    transition: transform 0.25s ease;
+    overflow: hidden;
+}
+
+body.corpus-open .corpus-sidebar {
+    transform: translateX(0);
+}
+
+body.corpus-pinned .corpus-sidebar {
+    position: relative;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    transform: none;
+    margin-right: 18px;
+    flex: 0 0 var(--sidebar-width);
+}
+
+.corpus-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(18, 31, 53, 0.18);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    z-index: 20;
+}
+
+body.corpus-open:not(.corpus-pinned) .corpus-overlay {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.corpus-sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 18px 18px 14px;
+    border-bottom: 1px solid var(--border);
+    background: #f6f9fd;
+}
+
+.corpus-sidebar-header h2 {
+    font-size: 1.2rem;
+}
+
+.sidebar-eyebrow {
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #6c8196;
+    margin-bottom: 6px;
+}
+
+.corpus-sidebar-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.sidebar-btn,
+.sidebar-toggle-btn {
+    padding: 8px 12px;
+    border-radius: 10px;
+    font-size: 0.86rem;
+}
+
+.sidebar-btn.is-pinned,
+.sidebar-toggle-btn {
+    background: #163d70;
+}
+
+.header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+    margin-bottom: 14px;
 }
 
 .main-panel,
@@ -86,7 +187,6 @@ header {
 h1 {
     font-size: 1.55rem;
     line-height: 1.2;
-    margin-bottom: 14px;
 }
 
 .controls {
@@ -162,41 +262,36 @@ h1 {
     background: #fff;
     border: 1px solid var(--border);
     border-radius: 10px;
-    padding: 10px 14px;
+    padding: 8px 12px;
     margin-top: 8px;
     font-family: Consolas, "Courier New", monospace;
-    font-size: 0.8rem;
-    line-height: 1.4;
-    max-height: 142px;
+    font-size: 0.78rem;
+    line-height: 1.35;
+    max-height: 124px;
     overflow-y: auto;
 }
 
 .batch-results-area h3 {
-    font-size: 0.86rem;
-    margin-bottom: 8px;
+    font-size: 0.84rem;
+    margin-bottom: 6px;
     border-bottom: 1px solid #edf1f5;
-    padding-bottom: 5px;
+    padding-bottom: 4px;
 }
 
 .corpus-panel {
+    flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    min-height: 230px;
-    max-height: 320px;
-    padding: 16px 24px 18px;
+    padding: 16px 18px 14px;
     gap: 12px;
-    border-bottom: 1px solid var(--border);
 }
 
 .corpus-header {
     display: flex;
-    justify-content: space-between;
+    justify-content: flex-end;
     align-items: flex-start;
     gap: 12px;
-}
-
-.corpus-header h2 {
-    font-size: 1.1rem;
 }
 
 .corpus-controls {
@@ -243,10 +338,9 @@ h1 {
     min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    display: flex;
+    flex-direction: column;
     gap: 12px;
-    align-content: start;
     padding-right: 4px;
 }
 
@@ -305,13 +399,13 @@ h1 {
 }
 
 .corpus-management {
-    padding: 12px 24px;
+    padding: 12px 18px 16px;
     background: #fff;
-    border-bottom: 1px solid var(--border);
+    border-top: 1px solid var(--border);
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    justify-content: flex-end;
+    justify-content: space-between;
     gap: 14px;
     font-size: 0.9rem;
 }
@@ -593,6 +687,18 @@ hr {
         gap: 12px;
     }
 
+    .corpus-sidebar {
+        width: min(92vw, var(--sidebar-width));
+        bottom: 12px;
+        top: 12px;
+        left: 12px;
+    }
+
+    body.corpus-pinned .corpus-sidebar {
+        position: absolute;
+        margin-right: 0;
+    }
+
     .debug-resizer {
         display: none;
     }
@@ -610,18 +716,17 @@ hr {
         padding: 12px;
     }
 
+    .header-top,
     .ingest-controls,
     .input-area,
-    .chat-evidence-wrapper {
-        grid-template-columns: 1fr;
-    }
-
-    .corpus-header,
+    .chat-evidence-wrapper,
     .corpus-management {
+        grid-template-columns: 1fr;
         flex-direction: column;
         align-items: stretch;
     }
 
+    .controls,
     .corpus-controls {
         justify-content: flex-start;
     }
@@ -636,7 +741,7 @@ hr {
     }
 
     button,
-    .controls select {
+    .control-group select {
         width: 100%;
     }
 }

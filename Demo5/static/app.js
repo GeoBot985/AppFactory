@@ -10,6 +10,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const debugPanel = document.querySelector('.debug-panel');
     const debugResizer = document.getElementById('debug-resizer');
     const container = document.querySelector('.container');
+    const corpusSidebar = document.getElementById('corpus-sidebar');
+    const corpusOverlay = document.getElementById('corpus-overlay');
+    const openCorpusBtn = document.getElementById('open-corpus-btn');
+    const closeCorpusBtn = document.getElementById('close-corpus-btn');
+    const pinCorpusBtn = document.getElementById('pin-corpus-btn');
 
     const pdfFileInput = document.getElementById('pdf-file-input');
     const browsePdfBtn = document.getElementById('browse-pdf-btn');
@@ -37,6 +42,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let allDocuments = [];
     let selectedDocumentIds = new Set();
+    let corpusPinned = false;
+
+    function setCorpusPinned(pinned) {
+        corpusPinned = pinned;
+        document.body.classList.toggle('corpus-pinned', pinned);
+        document.body.classList.toggle('corpus-open', pinned || document.body.classList.contains('corpus-open'));
+        if (pinCorpusBtn) {
+            pinCorpusBtn.classList.toggle('is-pinned', pinned);
+            pinCorpusBtn.textContent = pinned ? 'Unpin' : 'Pin';
+        }
+    }
+
+    function openCorpusSidebar() {
+        if (!corpusSidebar) return;
+        document.body.classList.add('corpus-open');
+    }
+
+    function closeCorpusSidebar() {
+        if (!corpusSidebar || corpusPinned) return;
+        document.body.classList.remove('corpus-open');
+    }
 
     function escapeHtml(value) {
         return String(value)
@@ -242,6 +268,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (payload.mode === 'personal') {
             output += '[PERSONAL MODE]\n';
             output += `Input persisted: ${payload.personal_input_persisted ? 'yes' : 'no'}\n`;
+            output += `Retrieved records: ${payload.personal_records_retrieved_count || 0}\n`;
+            output += `General knowledge fallback: ${payload.personal_general_knowledge_fallback || 'disabled'}\n`;
+            output += `Status: ${payload.personal_status || 'N/A'}\n`;
 
             const pc = payload.personal_context || {};
             const entities = pc.resolved_entities || [];
@@ -467,6 +496,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             retrievalScopeText.textContent = `Working set (${selectedDocumentIds.size} documents)`;
             removeSelectedBtn.disabled = false;
+            openCorpusSidebar();
 
             // Auto-switch to Document mode if documents are selected
             if (modeSelect.value === 'chat') {
@@ -577,10 +607,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     refreshCorpusBtn.addEventListener('click', () => {
+        openCorpusSidebar();
         loadIndexedDocs();
     });
 
     selectAllBtn.addEventListener('click', () => {
+        openCorpusSidebar();
         allDocuments.forEach(doc => selectedDocumentIds.add(doc.document_id));
         renderDocumentCards();
         updateScopeStatus();
@@ -648,6 +680,29 @@ document.addEventListener('DOMContentLoaded', () => {
             clearCorpusBtn.disabled = false;
         }
     });
+
+    if (openCorpusBtn) {
+        openCorpusBtn.addEventListener('click', openCorpusSidebar);
+    }
+
+    if (closeCorpusBtn) {
+        closeCorpusBtn.addEventListener('click', closeCorpusSidebar);
+    }
+
+    if (corpusOverlay) {
+        corpusOverlay.addEventListener('click', closeCorpusSidebar);
+    }
+
+    if (pinCorpusBtn) {
+        pinCorpusBtn.addEventListener('click', () => {
+            setCorpusPinned(!corpusPinned);
+            if (!corpusPinned) {
+                document.body.classList.remove('corpus-open');
+            } else {
+                document.body.classList.add('corpus-open');
+            }
+        });
+    }
 
     ingestPdfBtn.addEventListener('click', async () => {
         if (!pdfFileInput.files || pdfFileInput.files.length === 0) {
@@ -738,6 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
         debugOutput.textContent = batchDebugStr + '\n' + debugOutput.textContent;
         ingestStatusArea.textContent = 'Batch ingestion complete.';
 
+        openCorpusSidebar();
         await loadIndexedDocs();
 
         pdfFileInput.value = '';

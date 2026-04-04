@@ -19,13 +19,20 @@ from app.services.ingest_service import ingest_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
 from app.services.prompt_builder import build_grounded_prompt
 from app.services.session_grounding import build_session_grounding, get_session_grounding
-from app.services.personal_service import initialize_personal_service, persist_user_input, get_personal_context
+from app.services.personal_service import (
+    AMBIGUITY_RESPONSE,
+    initialize_personal_service,
+    NO_ENTITY_RESPONSE,
+    NO_FACT_RESPONSE,
+    persist_user_input,
+    retrieve_personal_store_records,
+)
 from app.services.personal_prompt_builder import build_personal_grounded_prompt
 
 RAG_ENABLED = True
 WATCHER_ENABLED = True
 
-app = FastAPI(title="Demo5 Passive Watcher Chat")
+app = FastAPI(title="Tyrone 3.0")
 
 # Initialize DBs
 initialize_personal_service()
@@ -143,6 +150,9 @@ async def api_chat(request: ChatRequest):
     # Personal mode data
     personal_context = None
     personal_input_persisted = False
+    personal_status = None
+    personal_general_fallback_disabled = False
+    personal_retrieval_metrics = None
 
     if effective_mode == "document":
         if RAG_ENABLED:
@@ -160,19 +170,36 @@ async def api_chat(request: ChatRequest):
             elif retrieval_chunks:
                 final_prompt = build_grounded_prompt(request.message, retrieval_chunks)
     elif effective_mode == "personal":
-        # Persist user input to DuckDB
         persist_user_input(request.message, session_id=context.session_id)
         personal_input_persisted = True
+        personal_general_fallback_disabled = True
 
-        # Retrieve personal context
-        personal_context = get_personal_context(request.message)
+        personal_result = retrieve_personal_store_records(request.message)
+        personal_status = personal_result["status"]
+        personal_retrieval_metrics = personal_result.get("metrics")
+        personal_context = {
+            "resolved_entities": personal_result["resolved_entities"],
+            "memories": personal_result["memories"],
+        }
 
-        # Build prompt
-        final_prompt = build_personal_grounded_prompt(
-            request.message,
-            personal_context["resolved_entities"],
-            personal_context["memories"]
-        )
+        if personal_status == "ambiguous":
+            reply_text = AMBIGUITY_RESPONSE
+            skip_llm = True
+            final_prompt = "Personal mode store retrieval was ambiguous. No LLM prompt generated."
+        elif personal_status == "no_fact":
+            reply_text = NO_FACT_RESPONSE
+            skip_llm = True
+            final_prompt = "Personal mode store retrieval found an entity but no supporting records. No LLM prompt generated."
+        elif personal_status == "no_entity":
+            reply_text = NO_ENTITY_RESPONSE
+            skip_llm = True
+            final_prompt = "Personal mode store retrieval found no matching records. No LLM prompt generated."
+        else:
+            final_prompt = build_personal_grounded_prompt(
+                request.message,
+                personal_context["resolved_entities"],
+                personal_context["memories"],
+            )
     else: # chat mode
         # no document retrieval
         # no personal KB lookup
@@ -266,7 +293,11 @@ async def api_chat(request: ChatRequest):
         "retrieval_metrics": retrieval_metrics,
         "retrieval_error": retrieval_error,
         "personal_input_persisted": personal_input_persisted,
+        "personal_status": personal_status,
         "personal_context": personal_context,
+        "personal_records_retrieved_count": len(personal_context["memories"]) if personal_context else 0,
+        "personal_retrieval_metrics": personal_retrieval_metrics,
+        "personal_general_knowledge_fallback": "disabled" if effective_mode == "personal" else "n/a",
         "watcher_enabled": WATCHER_ENABLED,
         "watcher_allowed": watcher_allowed,
         "watcher_modified": watcher_modified,

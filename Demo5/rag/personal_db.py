@@ -130,6 +130,20 @@ def retrieve_personal_memories(conn, query: str, top_k: int = 5) -> list[dict]:
     ]
     return [dict(zip(cols, r)) for r in results]
 
+
+def list_personal_memories(conn, mode: str = "personal") -> list[dict]:
+    results = conn.execute("""
+        SELECT * FROM personal_memories
+        WHERE mode = ?
+        ORDER BY created_at DESC
+    """, [mode]).fetchall()
+
+    cols = [
+        "memory_id", "created_at", "raw_user_input", "normalized_text",
+        "mode", "session_id", "extracted_entities_json", "category"
+    ]
+    return [dict(zip(cols, r)) for r in results]
+
 def bootstrap_personal_data(conn):
     # Check if Cornelia already exists
     exists = conn.execute("SELECT 1 FROM personal_entities WHERE canonical_name = 'Cornelia'").fetchone()
@@ -148,10 +162,12 @@ def bootstrap_personal_data(conn):
     if not mem_exists:
         insert_personal_memory(conn, {
             "raw_user_input": "Cornelia's birthday is on 22 November.",
-            "mode": "personal"
+            "mode": "personal",
+            "category": "fact"
         })
         insert_personal_memory(conn, {
             "raw_user_input": "We decided to use WhatsApp for family communication.",
-            "mode": "personal"
+            "mode": "personal",
+            "category": "fact"
         })
         print("Bootstrapped personal memories.")
