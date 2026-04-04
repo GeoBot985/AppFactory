@@ -19,11 +19,16 @@ from app.services.ingest_service import ingest_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
 from app.services.prompt_builder import build_grounded_prompt
 from app.services.session_grounding import build_session_grounding, get_session_grounding
+from app.services.personal_service import initialize_personal_service, persist_user_input, get_personal_context
+from app.services.personal_prompt_builder import build_personal_grounded_prompt
 
 RAG_ENABLED = True
 WATCHER_ENABLED = True
 
 app = FastAPI(title="Demo5 Passive Watcher Chat")
+
+# Initialize DBs
+initialize_personal_service()
 
 # Setup templates and static files
 templates = Jinja2Templates(directory="templates")
@@ -110,6 +115,12 @@ async def api_models():
 async def api_chat(request: ChatRequest):
     start_time = time.time()
 
+    # Determine effective mode
+    # Document Mode may auto-activate when docs are selected, as per spec rules.
+    effective_mode = request.mode
+    if request.document_ids and effective_mode == "chat":
+        effective_mode = "document"
+
     # 1. Create TurnContext
     context = TurnContext(
         model=request.model,
@@ -120,7 +131,7 @@ async def api_chat(request: ChatRequest):
     # 2. Watcher Pre-check
     watcher.pre_check(context)
 
-    # RAG Integration
+    # Tri-Mode Execution Shell
     retrieval_query = None
     retrieval_chunks = []
     retrieval_metrics = None
@@ -129,20 +140,43 @@ async def api_chat(request: ChatRequest):
     skip_llm = False
     reply_text = ""
 
-    if RAG_ENABLED:
-        rag_result = get_rag_context(request.message, top_k=3, document_ids=request.document_ids)
-        retrieval_query = request.message
-        retrieval_error = rag_result.get("error")
-        retrieval_chunks = rag_result.get("chunks", [])
-        retrieval_metrics = rag_result.get("metrics")
+    # Personal mode data
+    personal_context = None
+    personal_input_persisted = False
 
-        if not retrieval_chunks and not retrieval_error:
-            # Fallback if corpus is empty or nothing retrieved
-            skip_llm = True
-            reply_text = "Insufficient information. No relevant information found in the selected documents."
-            final_prompt = "No context provided."
-        elif retrieval_chunks:
-            final_prompt = build_grounded_prompt(request.message, retrieval_chunks)
+    if effective_mode == "document":
+        if RAG_ENABLED:
+            rag_result = get_rag_context(request.message, top_k=3, document_ids=request.document_ids)
+            retrieval_query = request.message
+            retrieval_error = rag_result.get("error")
+            retrieval_chunks = rag_result.get("chunks", [])
+            retrieval_metrics = rag_result.get("metrics")
+
+            if not retrieval_chunks and not retrieval_error:
+                # Fallback if corpus is empty or nothing retrieved
+                skip_llm = True
+                reply_text = "Insufficient information. No relevant information found in the selected documents."
+                final_prompt = "No context provided."
+            elif retrieval_chunks:
+                final_prompt = build_grounded_prompt(request.message, retrieval_chunks)
+    elif effective_mode == "personal":
+        # Persist user input to DuckDB
+        persist_user_input(request.message, session_id=context.session_id)
+        personal_input_persisted = True
+
+        # Retrieve personal context
+        personal_context = get_personal_context(request.message)
+
+        # Build prompt
+        final_prompt = build_personal_grounded_prompt(
+            request.message,
+            personal_context["resolved_entities"],
+            personal_context["memories"]
+        )
+    else: # chat mode
+        # no document retrieval
+        # no personal KB lookup
+        final_prompt = request.message
 
     # 2.5 Watcher Module
     watcher_allowed = None
@@ -222,6 +256,7 @@ async def api_chat(request: ChatRequest):
         "grounding": get_session_grounding(),
         "user_message": request.message,
         "selected_model": request.model,
+        "mode": effective_mode,
         "rag_enabled": RAG_ENABLED,
         "retrieval_scope": retrieval_scope,
         "selected_documents_count": selected_documents_count,
@@ -230,6 +265,8 @@ async def api_chat(request: ChatRequest):
         "retrieval_chunks": retrieval_chunks,
         "retrieval_metrics": retrieval_metrics,
         "retrieval_error": retrieval_error,
+        "personal_input_persisted": personal_input_persisted,
+        "personal_context": personal_context,
         "watcher_enabled": WATCHER_ENABLED,
         "watcher_allowed": watcher_allowed,
         "watcher_modified": watcher_modified,
@@ -243,7 +280,7 @@ async def api_chat(request: ChatRequest):
 
     return ChatResponse(
         reply=reply_text,
-        evidence=retrieval_chunks if RAG_ENABLED else None,
+        evidence=retrieval_chunks if effective_mode == "document" else None,
         debug=debug_payload
     )
 

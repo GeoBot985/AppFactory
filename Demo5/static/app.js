@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', () => {
     const modelSelect = document.getElementById('model-select');
+    const modeSelect = document.getElementById('mode-select');
     const statusArea = document.getElementById('status-area');
     const chatArea = document.getElementById('chat-area');
     const messageInput = document.getElementById('message-input');
@@ -235,7 +236,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         let output = '[CHAT REQUEST]\n';
         output += `User message:\n${payload.user_message || 'N/A'}\n\n`;
-        output += `Model:\n${payload.selected_model || 'N/A'}\n\n`;
+        output += `Model:\n${payload.selected_model || 'N/A'}\n`;
+        output += `Mode:\n${payload.mode || 'chat'}\n\n`;
+
+        if (payload.mode === 'personal') {
+            output += '[PERSONAL MODE]\n';
+            output += `Input persisted: ${payload.personal_input_persisted ? 'yes' : 'no'}\n`;
+
+            const pc = payload.personal_context || {};
+            const entities = pc.resolved_entities || [];
+            output += `Resolved entities count: ${entities.length}\n`;
+            entities.forEach(ent => {
+                output += `- ${ent.canonical_name} (${ent.entity_type})\n`;
+            });
+
+            const memories = pc.memories || [];
+            output += `Personal records retrieved: ${memories.length}\n`;
+            memories.forEach((mem, i) => {
+                output += `[${i+1}] ${mem.raw_user_input.substring(0, 100)}${mem.raw_user_input.length > 100 ? '...' : ''}\n`;
+            });
+            output += '\n';
+        }
 
         output += '[RAG]\n';
         output += `RAG enabled:\n${payload.rag_enabled ? 'true' : 'false'}\n`;
@@ -246,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         output += '\n';
 
-        if (payload.rag_enabled) {
+        if (payload.rag_enabled && payload.mode === 'document') {
             output += `Retrieval query:\n${payload.retrieval_query || 'N/A'}\n\n`;
 
             if (payload.retrieval_metrics) {
@@ -340,6 +361,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function sendMessage() {
         const message = messageInput.value.trim();
         const model = modelSelect.value;
+        const mode = modeSelect.value;
 
         if (!message) return;
         if (!model) {
@@ -363,6 +385,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({
                     model,
                     message,
+                    mode,
                     document_ids: selectedDocumentIds.size > 0 ? Array.from(selectedDocumentIds) : null
                 })
             });
@@ -444,6 +467,11 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             retrievalScopeText.textContent = `Working set (${selectedDocumentIds.size} documents)`;
             removeSelectedBtn.disabled = false;
+
+            // Auto-switch to Document mode if documents are selected
+            if (modeSelect.value === 'chat') {
+                modeSelect.value = 'document';
+            }
         }
         statSelected.textContent = selectedDocumentIds.size;
     }

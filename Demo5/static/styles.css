@@ -92,17 +92,23 @@ h1 {
 .controls {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 20px;
     flex-wrap: wrap;
     margin-bottom: 8px;
 }
 
-.controls label {
+.control-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.control-group label {
     font-weight: 600;
 }
 
-.controls select {
-    min-width: 180px;
+.control-group select {
+    min-width: 150px;
     padding: 8px 10px;
     border: 1px solid var(--border-strong);
     border-radius: 8px;

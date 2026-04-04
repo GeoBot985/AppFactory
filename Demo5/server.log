@@ -17,3 +17,30 @@ INFO:     127.0.0.1:53972 - "GET /api/docs HTTP/1.1" 200 OK
 INFO:     127.0.0.1:53956 - "GET /api/models HTTP/1.1" 200 OK
 INFO:     127.0.0.1:53956 - "GET /api/stats HTTP/1.1" 200 OK
 INFO:     127.0.0.1:53972 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     Started server process [67693]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+Bootstrapped Cornelia entity.
+Bootstrapped personal memories.
+INFO:     127.0.0.1:42570 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47754 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:47754 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36794 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:36806 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45744 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45736 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:45744 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39692 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39692 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39700 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39692 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39700 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53274 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53274 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53286 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53274 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53286 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53286 - "POST /api/chat HTTP/1.1" 200 OK
