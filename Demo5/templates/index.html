@@ -12,10 +12,20 @@
             <header>
                 <h1>Passive Watcher Chat</h1>
                 <div class="controls">
-                    <label for="model-select">Model:</label>
-                    <select id="model-select">
-                        <option value="">Loading models...</option>
-                    </select>
+                    <div class="control-group">
+                        <label for="model-select">Model:</label>
+                        <select id="model-select">
+                            <option value="">Loading models...</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <label for="mode-select">Mode:</label>
+                        <select id="mode-select">
+                            <option value="chat">Chat</option>
+                            <option value="document">Document</option>
+                            <option value="personal">Personal</option>
+                        </select>
+                    </div>
                 </div>
                 <div id="status-area" class="status-area"></div>
             </header>
