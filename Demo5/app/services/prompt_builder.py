@@ -1,11 +1,24 @@
-from typing import List, Dict
+from typing import List, Dict, Optional
+from app.services.session_grounding import get_session_grounding
 
 def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
     """
     Constructs a strict but slightly more reasonable grounding prompt.
     """
+    grounding = get_session_grounding()
+    grounding_str = ""
+    if grounding:
+        grounding_str = (
+            f"AGENT CONTEXT:\n"
+            f"- Current Datetime: {grounding.get('current_datetime')}\n"
+            f"- Timezone: {grounding.get('timezone')}\n"
+            f"- Location: {grounding.get('location')}\n"
+            f"- Purpose: {grounding.get('agent_purpose')}\n\n"
+        )
+
     if not retrieved_chunks:
         return (
+            f"{grounding_str}"
             f"QUESTION:\n{query}\n\n"
             f"INSTRUCTIONS:\n"
             f"- You have no context provided.\n"
@@ -23,6 +36,7 @@ def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
     context_str = "\n\n".join(context_blocks)
 
     return (
+        f"{grounding_str}"
         f"CONTEXT:\n\n{context_str}\n\n"
         f"QUESTION:\n{query}\n\n"
         f"INSTRUCTIONS:\n"

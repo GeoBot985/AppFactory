@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const clearConfirmCheck = document.getElementById('clear-confirm-check');
     const clearCorpusBtn = document.getElementById('clear-corpus-btn');
 
+    const groundingDisplay = document.getElementById('grounding-display');
+
     let allDocuments = [];
     let selectedDocumentIds = new Set();
 
@@ -93,6 +95,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             modelSelect.innerHTML = '';
 
+            // Fetch grounding for default model
+            const gResp = await fetch('/api/grounding');
+            const grounding = await gResp.json();
+            const defaultModel = (grounding && grounding.selected_model) ? grounding.selected_model : 'granite4:3b';
+
             if (data.error) {
                 statusArea.textContent = data.error;
                 const option = document.createElement('option');
@@ -102,12 +109,27 @@ document.addEventListener('DOMContentLoaded', () => {
                 sendBtn.disabled = true;
             } else if (data.models && data.models.length > 0) {
                 statusArea.textContent = '';
+                let defaultFound = false;
                 data.models.forEach(model => {
                     const option = document.createElement('option');
                     option.value = model;
                     option.textContent = model;
+                    if (model === defaultModel) {
+                        option.selected = true;
+                        defaultFound = true;
+                    }
                     modelSelect.appendChild(option);
                 });
+
+                if (!defaultFound && defaultModel) {
+                    const warning = document.createElement('div');
+                    warning.style.color = 'red';
+                    warning.style.fontSize = '0.8em';
+                    warning.style.marginTop = '4px';
+                    warning.textContent = `Default model ${defaultModel} not available.`;
+                    statusArea.appendChild(warning);
+                }
+
                 sendBtn.disabled = false;
             } else {
                 statusArea.textContent = 'No local models found. Pull a model via ollama.';
@@ -173,6 +195,39 @@ document.addEventListener('DOMContentLoaded', () => {
             chunkDiv.appendChild(textDiv);
             evidenceOutput.appendChild(chunkDiv);
         });
+    }
+
+    function renderGrounding(context) {
+        if (!context) {
+            groundingDisplay.textContent = 'No grounding context available.';
+            return;
+        }
+
+        let html = '<div class="grounding-info">';
+        html += `<div><strong>datetime:</strong> ${escapeHtml(context.current_datetime)}</div>`;
+        html += `<div><strong>timezone:</strong> ${escapeHtml(context.timezone)}</div>`;
+        html += `<div><strong>location:</strong> ${escapeHtml(context.location)}</div>`;
+        html += `<div><strong>purpose:</strong> ${escapeHtml(context.agent_purpose)}</div>`;
+        html += `<div><strong>default mode:</strong> ${escapeHtml(context.default_mode)}</div>`;
+
+        let modelStr = escapeHtml(context.selected_model);
+        if (!context.model_available) {
+            modelStr += ' <span style="color: red; font-weight: bold;">(Not available)</span>';
+        }
+        html += `<div><strong>model:</strong> ${modelStr}</div>`;
+        html += '</div>';
+
+        groundingDisplay.innerHTML = html;
+    }
+
+    async function loadGrounding() {
+        try {
+            const response = await fetch('/api/grounding');
+            const data = await response.json();
+            renderGrounding(data);
+        } catch (error) {
+            groundingDisplay.textContent = 'Failed to load grounding.';
+        }
     }
 
     function formatChatDebug(payload) {
@@ -697,6 +752,7 @@ document.addEventListener('DOMContentLoaded', () => {
         window.addEventListener('mouseleave', stopResize);
     }
 
+    loadGrounding();
     loadModels();
     loadIndexedDocs();
 });

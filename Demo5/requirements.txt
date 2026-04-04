@@ -10,3 +10,4 @@ numpy
 python-multipart
 pytesseract==0.3.13
 python-docx
+tzlocal
