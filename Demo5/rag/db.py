@@ -201,3 +201,14 @@ def find_exact_chunk(
         "ingested_at",
     ]
     return dict(zip(cols, result))
+
+def get_all_chunks_for_document(conn, document_id: str) -> list[dict]:
+    results = conn.execute("""
+        SELECT chunk_id, document_id, chunk_index, text
+        FROM chunks
+        WHERE document_id = ?
+        ORDER BY chunk_index ASC
+    """, [document_id]).fetchall()
+
+    cols = ["chunk_id", "document_id", "chunk_index", "text"]
+    return [dict(zip(cols, r)) for r in results]

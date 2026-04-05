@@ -7,6 +7,7 @@ class ChatRequest(BaseModel):
     message: str
     mode: str = "chat" # chat, document, personal
     document_ids: Optional[List[str]] = None
+    chat_document_id: Optional[str] = None
 
 class ChatResponse(BaseModel):
     reply: str

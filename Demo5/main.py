@@ -13,11 +13,11 @@ from ollama_client import get_models, chat as ollama_chat
 from watcher import PassiveWatcher
 from app.services.rag_service import (
     get_rag_context, list_indexed_documents, delete_document_service,
-    clear_corpus_service, get_corpus_stats_service
+    clear_corpus_service, get_corpus_stats_service, get_full_document_content
 )
 from app.services.ingest_service import ingest_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
-from app.services.prompt_builder import build_grounded_prompt
+from app.services.prompt_builder import build_grounded_prompt, build_chat_with_document_prompt
 from app.services.session_grounding import build_session_grounding, get_session_grounding
 from app.services.personal_service import (
     AMBIGUITY_RESPONSE,
@@ -123,10 +123,7 @@ async def api_chat(request: ChatRequest):
     start_time = time.time()
 
     # Determine effective mode
-    # Document Mode may auto-activate when docs are selected, as per spec rules.
     effective_mode = request.mode
-    if request.document_ids and effective_mode == "chat":
-        effective_mode = "document"
 
     # 1. Create TurnContext
     context = TurnContext(
@@ -201,9 +198,21 @@ async def api_chat(request: ChatRequest):
                 personal_context["memories"],
             )
     else: # chat mode
-        # no document retrieval
-        # no personal KB lookup
-        final_prompt = request.message
+        if request.chat_document_id:
+            doc_data = get_full_document_content(request.chat_document_id)
+            if doc_data.get("error"):
+                skip_llm = True
+                reply_text = f"Error: {doc_data['error']}"
+                final_prompt = f"Failed to load document {request.chat_document_id}"
+            else:
+                final_prompt = build_chat_with_document_prompt(
+                    request.message,
+                    doc_data["document_name"],
+                    doc_data["full_text"]
+                )
+        else:
+            # normal chat
+            final_prompt = request.message
 
     # 2.5 Watcher Module
     watcher_allowed = None
@@ -265,7 +274,16 @@ async def api_chat(request: ChatRequest):
     selected_documents_count = 0
     selected_documents_names = []
 
-    if request.document_ids:
+    if effective_mode == "chat" and request.chat_document_id:
+        retrieval_scope = "single_document_grounding"
+        selected_documents_count = 1
+        # Try to get the name if we loaded it successfully
+        if not skip_llm:
+            # We already have it from doc_data
+            selected_documents_names = [doc_data.get("document_name", request.chat_document_id)]
+        else:
+            selected_documents_names = [request.chat_document_id]
+    elif request.document_ids:
         retrieval_scope = "working_set"
         selected_documents_count = len(request.document_ids)
 
