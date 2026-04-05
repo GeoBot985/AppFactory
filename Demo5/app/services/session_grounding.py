@@ -18,6 +18,10 @@ class GroundingContext(TypedDict):
     selected_model: str
     model_available: bool
     available_models: List[str]
+    session_turn_count: int
+    session_prompt_tokens_est: int
+    session_response_tokens_est: int
+    session_total_tokens_est: int
 
 # Global session context
 _current_grounding: Optional[GroundingContext] = None
@@ -54,7 +58,11 @@ async def build_session_grounding(
         "default_mode": active_mode,
         "selected_model": selected_model,
         "model_available": model_available,
-        "available_models": available_models
+        "available_models": available_models,
+        "session_turn_count": 0,
+        "session_prompt_tokens_est": 0,
+        "session_response_tokens_est": 0,
+        "session_total_tokens_est": 0
     }
 
     _current_grounding = grounding
@@ -62,6 +70,14 @@ async def build_session_grounding(
 
 def get_session_grounding() -> Optional[GroundingContext]:
     return _current_grounding
+
+def increment_session_usage(prompt_tokens: int, response_tokens: int):
+    global _current_grounding
+    if _current_grounding:
+        _current_grounding["session_turn_count"] += 1
+        _current_grounding["session_prompt_tokens_est"] += prompt_tokens
+        _current_grounding["session_response_tokens_est"] += response_tokens
+        _current_grounding["session_total_tokens_est"] += (prompt_tokens + response_tokens)
 
 def format_grounding_for_debug(context: GroundingContext) -> str:
     if not context:

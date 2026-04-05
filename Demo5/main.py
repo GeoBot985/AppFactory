@@ -8,9 +8,10 @@ import os
 import shutil
 import uuid
 
-from models import ChatRequest, ChatResponse, TurnContext
+from models import ChatRequest, ChatResponse, TurnContext, TokenUsage
 from ollama_client import get_models, chat as ollama_chat
 from watcher import PassiveWatcher
+from app.utils.token_utils import estimate_tokens
 from app.services.rag_service import (
     get_rag_context, list_indexed_documents, delete_document_service,
     clear_corpus_service, get_corpus_stats_service, get_full_document_content
@@ -18,7 +19,7 @@ from app.services.rag_service import (
 from app.services.ingest_service import ingest_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
 from app.services.prompt_builder import build_grounded_prompt, build_chat_with_document_prompt
-from app.services.session_grounding import build_session_grounding, get_session_grounding
+from app.services.session_grounding import build_session_grounding, get_session_grounding, increment_session_usage
 from app.services.personal_service import (
     AMBIGUITY_RESPONSE,
     initialize_personal_service,
@@ -105,6 +106,12 @@ async def api_clear_corpus():
     result = clear_corpus_service()
     return result
 
+@app.post("/api/session/reset")
+async def api_reset_session():
+    # We rebuild grounding to get a new session ID and reset counters
+    await build_session_grounding()
+    return {"ok": True}
+
 @app.get("/api/stats")
 async def api_stats():
     result = get_corpus_stats_service()
@@ -131,6 +138,10 @@ async def api_chat(request: ChatRequest):
         user_message=request.message,
         request_started_at=datetime.now(timezone.utc).isoformat()
     )
+
+    # Token counting - User input
+    user_input_tokens = estimate_tokens(request.message)
+    context_tokens = 0
 
     # 2. Watcher Pre-check
     watcher.pre_check(context)
@@ -165,6 +176,9 @@ async def api_chat(request: ChatRequest):
                 reply_text = "Insufficient information. No relevant information found in the selected documents."
                 final_prompt = "No context provided."
             elif retrieval_chunks:
+                # Calculate context tokens from chunks
+                context_text = "\n".join([c.get("text", "") for c in retrieval_chunks])
+                context_tokens = estimate_tokens(context_text)
                 final_prompt = build_grounded_prompt(request.message, retrieval_chunks)
     elif effective_mode == "personal":
         persist_user_input(request.message, session_id=context.session_id)
@@ -192,6 +206,9 @@ async def api_chat(request: ChatRequest):
             skip_llm = True
             final_prompt = "Personal mode store retrieval found no matching records. No LLM prompt generated."
         else:
+            # Calculate context tokens from personal memories
+            context_text = "\n".join([m.get("raw_user_input", "") for m in personal_context["memories"]])
+            context_tokens = estimate_tokens(context_text)
             final_prompt = build_personal_grounded_prompt(
                 request.message,
                 personal_context["resolved_entities"],
@@ -205,6 +222,8 @@ async def api_chat(request: ChatRequest):
                 reply_text = f"Error: {doc_data['error']}"
                 final_prompt = f"Failed to load document {request.chat_document_id}"
             else:
+                # Full document context
+                context_tokens = estimate_tokens(doc_data.get("full_text", ""))
                 final_prompt = build_chat_with_document_prompt(
                     request.message,
                     doc_data["document_name"],
@@ -243,6 +262,9 @@ async def api_chat(request: ChatRequest):
         final_prompt = watcher_result.get("payload", payload).get("final_prompt", final_prompt)
 
     # 3. Call Ollama
+    prompt_tokens = estimate_tokens(final_prompt)
+    response_tokens = 0
+
     if not skip_llm:
         ollama_response, request_summary, error = await ollama_chat(request.model, final_prompt, temperature=0.1)
         context.ollama_request_summary = request_summary
@@ -259,6 +281,14 @@ async def api_chat(request: ChatRequest):
                 "total_duration": ollama_response.get("total_duration")
             }
             reply_text = ollama_response.get("message", {}).get("content", "")
+            response_tokens = estimate_tokens(reply_text)
+    else:
+        # If skipped LLM, we might still have a reply_text
+        response_tokens = estimate_tokens(reply_text)
+
+    # Increment session usage
+    increment_session_usage(prompt_tokens, response_tokens)
+    session_grounding = get_session_grounding()
 
     # 4. Watcher Post-check
     watcher.post_check(context)
@@ -327,10 +357,24 @@ async def api_chat(request: ChatRequest):
         "response_preview": response_preview
     }
 
+    token_usage = TokenUsage(
+        mode=effective_mode,
+        user_input_tokens_est=user_input_tokens,
+        context_tokens_est=context_tokens,
+        prompt_tokens_est=prompt_tokens,
+        response_tokens_est=response_tokens,
+        turn_total_tokens_est=prompt_tokens + response_tokens,
+        session_turn_count=session_grounding["session_turn_count"],
+        session_prompt_tokens_est=session_grounding["session_prompt_tokens_est"],
+        session_response_tokens_est=session_grounding["session_response_tokens_est"],
+        session_total_tokens_est=session_grounding["session_total_tokens_est"]
+    )
+
     return ChatResponse(
         reply=reply_text,
         evidence=retrieval_chunks if effective_mode == "document" else None,
-        debug=debug_payload
+        debug=debug_payload,
+        token_usage=token_usage
     )
 
 if __name__ == "__main__":

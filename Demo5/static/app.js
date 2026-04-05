@@ -44,6 +44,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatDocName = document.getElementById('chat-doc-name');
     const clearChatDocBtn = document.getElementById('clear-chat-doc-btn');
 
+    const resetSessionBtn = document.getElementById('reset-session-btn');
+    const tokenMode = document.getElementById('token-mode');
+    const tokenTurnTotal = document.getElementById('token-turn-total');
+    const tokenTurnPrompt = document.getElementById('token-turn-prompt');
+    const tokenTurnResponse = document.getElementById('token-turn-response');
+    const tokenSessionTotal = document.getElementById('token-session-total');
+    const tokenSessionTurns = document.getElementById('token-session-turns');
+
     let allDocuments = [];
     let selectedDocumentIds = new Set();
     let chatDocumentId = null;
@@ -262,6 +270,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function updateTokenDisplay(usage) {
+        if (!usage) return;
+        tokenMode.textContent = usage.mode || 'chat';
+        tokenTurnTotal.textContent = usage.turn_total_tokens_est.toLocaleString();
+        tokenTurnPrompt.textContent = usage.prompt_tokens_est.toLocaleString();
+        tokenTurnResponse.textContent = usage.response_tokens_est.toLocaleString();
+        tokenSessionTotal.textContent = usage.session_total_tokens_est.toLocaleString();
+        tokenSessionTurns.textContent = usage.session_turn_count.toLocaleString();
+    }
+
+    function resetTokenDisplay() {
+        tokenTurnTotal.textContent = '0';
+        tokenTurnPrompt.textContent = '0';
+        tokenTurnResponse.textContent = '0';
+        tokenSessionTotal.textContent = '0';
+        tokenSessionTurns.textContent = '0';
+    }
+
     function formatChatDebug(payload) {
         if (!payload) return 'No debug payload.';
 
@@ -439,6 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderEvidence(data.evidence, message);
             debugOutput.textContent = formatChatDebug(data.debug);
+            updateTokenDisplay(data.token_usage);
         } catch (error) {
             statusArea.textContent = `Error sending request: ${error.message}`;
         } finally {
@@ -755,6 +782,23 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
+
+    resetSessionBtn.addEventListener('click', async () => {
+        if (!confirm('Are you sure you want to reset the current session? This will clear session token counters and reset the session ID.')) return;
+
+        try {
+            const response = await fetch('/api/session/reset', { method: 'POST' });
+            if (response.ok) {
+                chatArea.innerHTML = '';
+                evidenceOutput.innerHTML = '<div class="empty-evidence-msg">No evidence yet.</div>';
+                debugOutput.textContent = 'Session reset.';
+                resetTokenDisplay();
+                await loadGrounding();
+            }
+        } catch (error) {
+            console.error('Failed to reset session', error);
+        }
+    });
 
     ingestPdfBtn.addEventListener('click', async () => {
         if (!pdfFileInput.files || pdfFileInput.files.length === 0) {

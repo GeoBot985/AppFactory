@@ -1,19 +1,38 @@
-/app/Demo5/main.py:46: DeprecationWarning:
+/app/Demo5/main.py:47: DeprecationWarning:
         on_event is deprecated, use lifespan event handlers instead.
 
         Read more about it in the
         [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
 
   @app.on_event("startup")
-INFO:     Started server process [164626]
+INFO:     Started server process [81724]
 INFO:     Waiting for application startup.
 INFO:     Application startup complete.
 INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
-INFO:     127.0.0.1:44930 - "GET /api/models HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40420 - "GET / HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40420 - "GET /static/styles.css HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40436 - "GET /static/app.js HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40436 - "GET /api/grounding HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40440 - "GET /api/docs HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40420 - "GET /api/models HTTP/1.1" 200 OK
-INFO:     127.0.0.1:40420 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46968 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46984 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46968 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46968 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46994 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46984 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:46984 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48294 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48300 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48294 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48300 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48302 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48294 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:48294 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34830 - "POST /api/session/reset HTTP/1.1" 200 OK
+INFO:     127.0.0.1:34830 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43600 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43600 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43612 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43612 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43626 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43600 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43600 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:43600 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37080 - "POST /api/chat HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37138 - "POST /api/session/reset HTTP/1.1" 200 OK
+INFO:     127.0.0.1:37138 - "GET /api/grounding HTTP/1.1" 200 OK
