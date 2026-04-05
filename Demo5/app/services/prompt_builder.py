@@ -50,3 +50,32 @@ def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
         f"- Do not guess or fill in large gaps.\n"
         f"- Cite your sources for every claim using the format [Doc: name | Chunk X].\n"
     )
+
+def build_chat_with_document_prompt(query: str, document_name: str, full_text: str) -> str:
+    """
+    Constructs a prompt for Chat mode when a full document is provided as context.
+    Allows for summarization, explanation, interpretation and Q&A over the whole document.
+    """
+    grounding = get_session_grounding()
+    grounding_str = ""
+    if grounding:
+        grounding_str = (
+            f"AGENT CONTEXT:\n"
+            f"- Current Datetime: {grounding.get('current_datetime')}\n"
+            f"- Timezone: {grounding.get('timezone')}\n"
+            f"- Location: {grounding.get('location')}\n"
+            f"- Purpose: {grounding.get('agent_purpose')}\n\n"
+        )
+
+    return (
+        f"{grounding_str}"
+        f"DOCUMENT CONTEXT (Name: {document_name}):\n\n{full_text}\n\n"
+        f"USER QUESTION:\n{query}\n\n"
+        f"INSTRUCTIONS:\n"
+        f"- You are in Chat mode with a full document as context.\n"
+        f"- Use the provided document as your primary source of information.\n"
+        f"- You may summarize, explain, interpret, and answer questions about the document as a whole.\n"
+        f"- Your answers should be natural and conversational.\n"
+        f"- If the answer is not supported by the document at all, say exactly: 'Insufficient information'.\n"
+        f"- Do not use prior knowledge that contradicts or is not supported by the document for specific facts.\n"
+    )

@@ -40,8 +40,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const groundingDisplay = document.getElementById('grounding-display');
 
+    const chatGroundingInfo = document.getElementById('chat-grounding-info');
+    const chatDocName = document.getElementById('chat-doc-name');
+    const clearChatDocBtn = document.getElementById('clear-chat-doc-btn');
+
     let allDocuments = [];
     let selectedDocumentIds = new Set();
+    let chatDocumentId = null;
     let corpusPinned = false;
 
     function setCorpusPinned(pinned) {
@@ -406,17 +411,20 @@ document.addEventListener('DOMContentLoaded', () => {
         messageInput.disabled = true;
 
         try {
+            const requestBody = {
+                model,
+                message,
+                mode,
+                document_ids: selectedDocumentIds.size > 0 ? Array.from(selectedDocumentIds) : null,
+                chat_document_id: (mode === 'chat' && chatDocumentId) ? chatDocumentId : null
+            };
+
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    model,
-                    message,
-                    mode,
-                    document_ids: selectedDocumentIds.size > 0 ? Array.from(selectedDocumentIds) : null
-                })
+                body: JSON.stringify(requestBody)
             });
 
             const data = await response.json();
@@ -498,23 +506,61 @@ document.addEventListener('DOMContentLoaded', () => {
             removeSelectedBtn.disabled = false;
             openCorpusSidebar();
 
-            // Auto-switch to Document mode if documents are selected
-            if (modeSelect.value === 'chat') {
-                modeSelect.value = 'document';
-            }
         }
         statSelected.textContent = selectedDocumentIds.size;
     }
 
-    function toggleDocumentSelection(docId) {
-        if (selectedDocumentIds.has(docId)) {
-            selectedDocumentIds.delete(docId);
+    function updateChatGroundingDisplay() {
+        if (chatDocumentId) {
+            const doc = allDocuments.find(d => d.document_id === chatDocumentId);
+            if (doc) {
+                chatDocName.textContent = doc.document_name;
+                chatGroundingInfo.style.display = 'flex';
+            } else {
+                chatDocumentId = null;
+                chatGroundingInfo.style.display = 'none';
+            }
         } else {
-            selectedDocumentIds.add(docId);
+            chatGroundingInfo.style.display = 'none';
+        }
+    }
+
+    function toggleDocumentSelection(docId) {
+        const mode = modeSelect.value;
+
+        if (mode === 'chat') {
+            if (chatDocumentId === docId) {
+                chatDocumentId = null;
+            } else {
+                chatDocumentId = docId;
+            }
+            updateChatGroundingDisplay();
+            renderDocumentCards();
+        } else {
+            if (selectedDocumentIds.has(docId)) {
+                selectedDocumentIds.delete(docId);
+            } else {
+                selectedDocumentIds.add(docId);
+            }
+            renderDocumentCards();
+            updateScopeStatus();
+        }
+    }
+
+    clearChatDocBtn.addEventListener('click', () => {
+        chatDocumentId = null;
+        updateChatGroundingDisplay();
+        renderDocumentCards();
+    });
+
+    modeSelect.addEventListener('change', () => {
+        if (modeSelect.value === 'chat') {
+            updateChatGroundingDisplay();
+        } else {
+            chatGroundingInfo.style.display = 'none';
         }
         renderDocumentCards();
-        updateScopeStatus();
-    }
+    });
 
     function createBadge(text, bg, color) {
         const badge = document.createElement('span');
@@ -538,9 +584,15 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        const mode = modeSelect.value;
+
         allDocuments.forEach(doc => {
             const card = document.createElement('div');
-            card.className = `doc-card ${selectedDocumentIds.has(doc.document_id) ? 'selected' : ''}`;
+            const isSelected = (mode === 'chat')
+                ? (chatDocumentId === doc.document_id)
+                : selectedDocumentIds.has(doc.document_id);
+
+            card.className = `doc-card ${isSelected ? 'selected' : ''}`;
 
             const name = document.createElement('div');
             name.className = 'doc-name';

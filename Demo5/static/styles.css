@@ -221,6 +221,18 @@ h1 {
     min-height: 22px;
 }
 
+.chat-grounding-info {
+    font-size: 0.85rem;
+    background: #e7f3ff;
+    border: 1px solid #c8e1ff;
+    padding: 6px 12px;
+    border-radius: 8px;
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    color: #0c4a9e;
+}
+
 .ingest-panel {
     padding: 14px 24px 16px;
     background: var(--panel-soft);

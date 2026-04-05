@@ -7,8 +7,11 @@ demo5_root = os.path.abspath(os.path.join(current_dir, "../../"))
 if demo5_root not in sys.path:
     sys.path.append(demo5_root)
 
-from rag.db import get_connection, list_documents, delete_document, clear_corpus, get_corpus_stats
-from rag.db import find_exact_chunk
+from rag.db import (
+    get_connection, list_documents, delete_document, clear_corpus,
+    get_corpus_stats, get_document_by_id, get_all_chunks_for_document,
+    find_exact_chunk
+)
 from rag.search import search
 from app.config import (
     DB_PATH, VECTOR_WEIGHT, LEXICAL_WEIGHT,
@@ -122,6 +125,57 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
             conn.close()
         except:
             pass
+
+    return result
+
+def get_full_document_content(document_id: str) -> dict:
+    """
+    Reconstructs the full document text from its chunks.
+    Returns:
+    {
+        "document_id": str,
+        "document_name": str,
+        "full_text": str,
+        "chunk_count": int,
+        "error": str | None
+    }
+    """
+    result = {
+        "document_id": document_id,
+        "document_name": None,
+        "full_text": "",
+        "chunk_count": 0,
+        "error": None
+    }
+
+    if not os.path.exists(DB_PATH):
+        result["error"] = "knowledge base empty / unavailable"
+        return result
+
+    conn = None
+    try:
+        conn = get_connection(DB_PATH)
+        doc = get_document_by_id(conn, document_id)
+        if not doc:
+            result["error"] = f"Document with ID {document_id} not found."
+            return result
+
+        result["document_name"] = doc["document_name"]
+        chunks = get_all_chunks_for_document(conn, document_id)
+        result["chunk_count"] = len(chunks)
+
+        # Concatenate in order (get_all_chunks_for_document returns sorted by chunk_index)
+        text_parts = [c["text"] for c in chunks]
+        result["full_text"] = "\n".join(text_parts)
+
+    except Exception as e:
+        result["error"] = str(e)
+    finally:
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
 
     return result
 
