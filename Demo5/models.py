@@ -9,10 +9,23 @@ class ChatRequest(BaseModel):
     document_ids: Optional[List[str]] = None
     chat_document_id: Optional[str] = None
 
+class TokenUsage(BaseModel):
+    mode: str
+    user_input_tokens_est: int
+    context_tokens_est: int
+    prompt_tokens_est: int
+    response_tokens_est: int
+    turn_total_tokens_est: int
+    session_turn_count: int
+    session_prompt_tokens_est: int
+    session_response_tokens_est: int
+    session_total_tokens_est: int
+
 class ChatResponse(BaseModel):
     reply: str
     evidence: Optional[List[Dict[str, Any]]] = None
     debug: Dict[str, Any]
+    token_usage: Optional[TokenUsage] = None
 
 class WatcherEvent(BaseModel):
     stage: str

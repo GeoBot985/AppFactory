@@ -66,6 +66,7 @@
                     <button id="open-corpus-btn" class="sidebar-toggle-btn" type="button">My Library</button>
                 </div>
                 <div class="controls">
+                    <button id="reset-session-btn" class="sidebar-btn" style="margin-right: 12px;">Reset Session</button>
                     <div class="control-group">
                         <label for="model-select">Model:</label>
                         <select id="model-select">
@@ -113,6 +114,26 @@
                     <div id="evidence-output" class="evidence-output">
                         <div class="empty-evidence-msg">No evidence yet.</div>
                     </div>
+                </div>
+            </div>
+
+            <div class="token-usage-bar" id="token-usage-bar">
+                <div class="token-usage-item">
+                    <span class="token-label">Mode:</span>
+                    <span id="token-mode">chat</span>
+                </div>
+                <div class="token-usage-item">
+                    <span class="token-label">Turn:</span>
+                    <span id="token-turn-total">0</span>
+                    <span class="token-sub">(P: <span id="token-turn-prompt">0</span> / R: <span id="token-turn-response">0</span>)</span>
+                </div>
+                <div class="token-usage-item">
+                    <span class="token-label">Session:</span>
+                    <span id="token-session-total">0</span>
+                    <span class="token-sub">(Turns: <span id="token-session-turns">0</span>)</span>
+                </div>
+                <div class="token-usage-item token-local-note">
+                    Local model - no cost
                 </div>
             </div>
 
