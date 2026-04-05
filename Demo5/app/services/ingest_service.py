@@ -96,6 +96,9 @@ def ingest_file(path: str, document_name: str | None = None) -> dict:
         result["ocr_page_count"] = ingest_result.get("ocr_page_count", 0)
         result["ingestion_method"] = ingest_result.get("ingestion_method", "text")
         result["file_type"] = ingest_result.get("file_type", "unknown")
+        result["timings"] = ingest_result.get("timings", {})
+        result["failed_pages"] = ingest_result.get("failed_pages", [])
+        result["max_workers"] = ingest_result.get("max_workers")
 
     except Exception as e:
         error_str = str(e)
