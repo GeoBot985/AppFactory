@@ -21,3 +21,4 @@ DEFAULT_TIMEZONE = None # If None, use system timezone
 # Ingestion Concurrency (Spec 021)
 import os
 INGESTION_MAX_WORKERS = min(4, os.cpu_count() or 1)
+INGESTION_EMBED_MAX_WORKERS = min(4, os.cpu_count() or 1)

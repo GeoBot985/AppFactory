@@ -11,7 +11,7 @@ from .docx_extractor import extract_docx_text
 from .embedder import embed_text
 from .ocr_service import extract_text_with_ocr, is_scanned_pdf
 from .timing import IngestionTimings, StageTimer
-from app.config import INGESTION_MAX_WORKERS
+from app.config import INGESTION_MAX_WORKERS, INGESTION_EMBED_MAX_WORKERS
 
 
 def get_file_hash(path: str) -> str:
@@ -68,6 +68,21 @@ def chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]
             break
         start += chunk_size - overlap
     return chunks
+
+
+def _embed_chunk(task: tuple[int, str, str]) -> dict | None:
+    index, text_chunk, doc_id = task
+    if not text_chunk.strip():
+        return None
+
+    embedding = embed_text(text_chunk)
+    return {
+        "chunk_id": str(uuid.uuid4()),
+        "document_id": doc_id,
+        "chunk_index": index,
+        "text": text_chunk,
+        "embedding": embedding,
+    }
 
 
 def ingest_document(path: str, conn, document_name: str | None = None) -> dict:
@@ -154,21 +169,18 @@ def ingest_document(path: str, conn, document_name: str | None = None) -> dict:
 
     processed_chunks = []
     with StageTimer(timings, "embedding"):
-        for index, text_chunk in enumerate(text_chunks):
-            if not text_chunk.strip():
-                continue
+        embed_tasks = [
+            (index, text_chunk, doc_id)
+            for index, text_chunk in enumerate(text_chunks)
+            if text_chunk.strip()
+        ]
 
-            embedding = embed_text(text_chunk)
-            chunk_id = str(uuid.uuid4())
-            processed_chunks.append(
-                {
-                    "chunk_id": chunk_id,
-                    "document_id": doc_id,
-                    "chunk_index": index,
-                    "text": text_chunk,
-                    "embedding": embedding,
-                }
-            )
+        with ThreadPoolExecutor(max_workers=INGESTION_EMBED_MAX_WORKERS) as executor:
+            for embedded_chunk in executor.map(_embed_chunk, embed_tasks):
+                if embedded_chunk:
+                    processed_chunks.append(embedded_chunk)
+
+        processed_chunks.sort(key=lambda chunk: chunk["chunk_index"])
 
     chunk_count = len(processed_chunks)
     if chunk_count == 0:
@@ -197,6 +209,7 @@ def ingest_document(path: str, conn, document_name: str | None = None) -> dict:
     doc_record["timings"] = timings.get_summary()
     doc_record["failed_pages"] = failed_pages
     doc_record["max_workers"] = INGESTION_MAX_WORKERS
+    doc_record["embed_max_workers"] = INGESTION_EMBED_MAX_WORKERS
 
     return doc_record
 
