@@ -17,6 +17,13 @@ def init_db(conn):
         chunk_count INTEGER NOT NULL,
         ingestion_method TEXT DEFAULT 'text',
         file_type TEXT DEFAULT 'pdf',
+        primary_extractor TEXT,
+        fallback_extractor TEXT,
+        failure_stage TEXT,
+        failure_reason TEXT,
+        raw_text_char_count INTEGER DEFAULT 0,
+        normalized_text_char_count INTEGER DEFAULT 0,
+        extraction_details_json TEXT,
         ocr_used BOOLEAN DEFAULT FALSE,
         ocr_char_count INTEGER DEFAULT 0,
         ocr_page_count INTEGER DEFAULT 0
@@ -28,6 +35,10 @@ def init_db(conn):
         document_id TEXT NOT NULL,
         chunk_index INTEGER NOT NULL,
         text TEXT NOT NULL,
+        region_type TEXT,
+        sheet_name TEXT,
+        row_index INTEGER,
+        cell_range TEXT,
         embedding BLOB NOT NULL,
         FOREIGN KEY(document_id) REFERENCES documents(document_id)
     );
@@ -40,6 +51,20 @@ def init_db(conn):
         conn.execute("ALTER TABLE documents ADD COLUMN ingestion_method TEXT DEFAULT 'text'")
     if "file_type" not in col_names:
         conn.execute("ALTER TABLE documents ADD COLUMN file_type TEXT DEFAULT 'pdf'")
+    if "primary_extractor" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN primary_extractor TEXT")
+    if "fallback_extractor" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN fallback_extractor TEXT")
+    if "failure_stage" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN failure_stage TEXT")
+    if "failure_reason" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN failure_reason TEXT")
+    if "raw_text_char_count" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN raw_text_char_count INTEGER DEFAULT 0")
+    if "normalized_text_char_count" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN normalized_text_char_count INTEGER DEFAULT 0")
+    if "extraction_details_json" not in col_names:
+        conn.execute("ALTER TABLE documents ADD COLUMN extraction_details_json TEXT")
     if "ocr_used" not in col_names:
         conn.execute("ALTER TABLE documents ADD COLUMN ocr_used BOOLEAN DEFAULT FALSE")
     if "ocr_char_count" not in col_names:
@@ -47,19 +72,39 @@ def init_db(conn):
     if "ocr_page_count" not in col_names:
         conn.execute("ALTER TABLE documents ADD COLUMN ocr_page_count INTEGER DEFAULT 0")
 
+    existing_chunk_cols_info = conn.execute("PRAGMA table_info('chunks')").fetchall()
+    chunk_col_names = [c[1] for c in existing_chunk_cols_info]
+    if "region_type" not in chunk_col_names:
+        conn.execute("ALTER TABLE chunks ADD COLUMN region_type TEXT")
+    if "sheet_name" not in chunk_col_names:
+        conn.execute("ALTER TABLE chunks ADD COLUMN sheet_name TEXT")
+    if "row_index" not in chunk_col_names:
+        conn.execute("ALTER TABLE chunks ADD COLUMN row_index INTEGER")
+    if "cell_range" not in chunk_col_names:
+        conn.execute("ALTER TABLE chunks ADD COLUMN cell_range TEXT")
+
 def insert_document(conn, doc: dict) -> None:
     conn.execute("""
         INSERT INTO documents (
             document_id, document_name, source_path, file_hash,
             file_size_bytes, ingested_at, chunk_count,
-            ingestion_method, file_type, ocr_used, ocr_char_count, ocr_page_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ingestion_method, file_type, primary_extractor, fallback_extractor,
+            failure_stage, failure_reason, raw_text_char_count, normalized_text_char_count,
+            extraction_details_json, ocr_used, ocr_char_count, ocr_page_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, [
         doc["document_id"], doc["document_name"], doc["source_path"],
         doc["file_hash"], doc["file_size_bytes"], doc["ingested_at"],
         doc["chunk_count"],
         doc.get("ingestion_method", "text"),
         doc.get("file_type", "pdf"),
+        doc.get("primary_extractor"),
+        doc.get("fallback_extractor"),
+        doc.get("failure_stage"),
+        doc.get("failure_reason"),
+        doc.get("raw_text_char_count", 0),
+        doc.get("normalized_text_char_count", 0),
+        doc.get("extraction_details_json"),
         doc.get("ocr_used", False),
         doc.get("ocr_char_count", 0),
         doc.get("ocr_page_count", 0)
@@ -70,8 +115,16 @@ def insert_chunk(conn, chunk: dict) -> None:
     embedding = chunk["embedding"]
     blob_data = struct.pack(f'{len(embedding)}f', *embedding)
     conn.execute(
-        "INSERT INTO chunks (chunk_id, document_id, chunk_index, text, embedding) VALUES (?, ?, ?, ?, ?)",
-        [chunk["chunk_id"], chunk["document_id"], chunk["chunk_index"], chunk["text"], blob_data]
+        """
+        INSERT INTO chunks (
+            chunk_id, document_id, chunk_index, text, region_type, sheet_name, row_index, cell_range, embedding
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            chunk["chunk_id"], chunk["document_id"], chunk["chunk_index"], chunk["text"],
+            chunk.get("region_type"), chunk.get("sheet_name"), chunk.get("row_index"), chunk.get("cell_range"),
+            blob_data
+        ]
     )
 
 def list_documents(conn) -> list[dict]:
@@ -79,7 +132,9 @@ def list_documents(conn) -> list[dict]:
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
         "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "file_type", "ocr_used", "ocr_char_count", "ocr_page_count"
+        "ingestion_method", "file_type", "primary_extractor", "fallback_extractor",
+        "failure_stage", "failure_reason", "raw_text_char_count", "normalized_text_char_count",
+        "extraction_details_json", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return [dict(zip(cols, r)) for r in results]
 
@@ -116,7 +171,9 @@ def get_document_by_id(conn, document_id: str) -> dict | None:
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
         "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "file_type", "ocr_used", "ocr_char_count", "ocr_page_count"
+        "ingestion_method", "file_type", "primary_extractor", "fallback_extractor",
+        "failure_stage", "failure_reason", "raw_text_char_count", "normalized_text_char_count",
+        "extraction_details_json", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return dict(zip(cols, result))
 
@@ -127,14 +184,16 @@ def get_document_by_hash(conn, file_hash: str) -> dict | None:
     cols = [
         "document_id", "document_name", "source_path", "file_hash",
         "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "file_type", "ocr_used", "ocr_char_count", "ocr_page_count"
+        "ingestion_method", "file_type", "primary_extractor", "fallback_extractor",
+        "failure_stage", "failure_reason", "raw_text_char_count", "normalized_text_char_count",
+        "extraction_details_json", "ocr_used", "ocr_char_count", "ocr_page_count"
     ]
     return dict(zip(cols, result))
 
 def get_all_embeddings(conn, document_ids: list[str] | None = None):
     query = """
         SELECT
-            c.text, c.embedding, c.chunk_index,
+            c.text, c.embedding, c.chunk_index, c.region_type, c.sheet_name, c.row_index, c.cell_range,
             d.document_id, d.document_name, d.ingested_at
         FROM chunks c
         JOIN documents d ON c.document_id = d.document_id
@@ -148,7 +207,7 @@ def get_all_embeddings(conn, document_ids: list[str] | None = None):
     results = conn.execute(query, params).fetchall()
 
     parsed_results = []
-    for text, blob, chunk_index, doc_id, doc_name, ingested_at in results:
+    for text, blob, chunk_index, region_type, sheet_name, row_index, cell_range, doc_id, doc_name, ingested_at in results:
         # Convert blob back to list of floats
         num_floats = len(blob) // 4 # 4 bytes per float32
         embedding = list(struct.unpack(f'{num_floats}f', blob))
@@ -156,6 +215,10 @@ def get_all_embeddings(conn, document_ids: list[str] | None = None):
             "text": text,
             "embedding": embedding,
             "chunk_index": chunk_index,
+            "region_type": region_type,
+            "sheet_name": sheet_name,
+            "row_index": row_index,
+            "cell_range": cell_range,
             "document_id": doc_id,
             "document_name": doc_name,
             "ingested_at": ingested_at
@@ -177,6 +240,10 @@ def find_exact_chunk(
             c.document_id,
             c.chunk_index,
             c.text,
+            c.region_type,
+            c.sheet_name,
+            c.row_index,
+            c.cell_range,
             d.document_name,
             d.ingested_at
         FROM chunks c
@@ -197,6 +264,10 @@ def find_exact_chunk(
         "document_id",
         "chunk_index",
         "text",
+        "region_type",
+        "sheet_name",
+        "row_index",
+        "cell_range",
         "document_name",
         "ingested_at",
     ]
@@ -204,11 +275,11 @@ def find_exact_chunk(
 
 def get_all_chunks_for_document(conn, document_id: str) -> list[dict]:
     results = conn.execute("""
-        SELECT chunk_id, document_id, chunk_index, text
+        SELECT chunk_id, document_id, chunk_index, text, region_type, sheet_name, row_index, cell_range
         FROM chunks
         WHERE document_id = ?
         ORDER BY chunk_index ASC
     """, [document_id]).fetchall()
 
-    cols = ["chunk_id", "document_id", "chunk_index", "text"]
+    cols = ["chunk_id", "document_id", "chunk_index", "text", "region_type", "sheet_name", "row_index", "cell_range"]
     return [dict(zip(cols, r)) for r in results]

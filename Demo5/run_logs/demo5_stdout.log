@@ -1,0 +1,11 @@
+INFO:     127.0.0.1:52340 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49361 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49361 - "GET /static/styles.css HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52622 - "GET /static/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52622 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50517 - "GET /api/docs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50362 - "GET /favicon.ico HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:50362 - "GET /api/stats HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49361 - "GET /api/models HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49361 - "GET /api/grounding HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60716 - "GET / HTTP/1.1" 200 OK

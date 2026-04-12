@@ -22,3 +22,25 @@ DEFAULT_TIMEZONE = None # If None, use system timezone
 import os
 INGESTION_MAX_WORKERS = min(4, os.cpu_count() or 1)
 INGESTION_EMBED_MAX_WORKERS = min(4, os.cpu_count() or 1)
+
+# Ingestion Extraction (Spec 022)
+ENABLE_MARKITDOWN = True
+PDF_MIN_TEXT_THRESHOLD_FOR_NO_OCR = 500
+
+# Upload Support (Spec 023)
+SUPPORTED_UPLOAD_EXTENSIONS = (
+    ".pdf",
+    ".docx",
+    ".pptx",
+    ".xlsx",
+    ".xls",
+    ".csv",
+    ".txt",
+    ".md",
+)
+SUPPORTED_UPLOAD_TYPES_DISPLAY = "PDF, DOCX, PPTX, XLSX, XLS, CSV, TXT, MD."
+
+# Spreadsheet / Layout Extraction (Spec 024)
+SPREADSHEET_HEADER_SCAN_LIMIT = 10
+LAYOUT_COLUMN_GAP_THRESHOLD = 8
+LAYOUT_SHORT_LINE_MAX = 80

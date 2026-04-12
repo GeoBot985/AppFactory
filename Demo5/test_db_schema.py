@@ -27,6 +27,14 @@ def test_db_schema():
         "ingested_at": "2023-01-01T00:00:00",
         "chunk_count": 5,
         "ingestion_method": "ocr",
+        "file_type": "pdf",
+        "primary_extractor": "markitdown",
+        "fallback_extractor": "ocr",
+        "failure_stage": None,
+        "failure_reason": None,
+        "raw_text_char_count": 5100,
+        "normalized_text_char_count": 5000,
+        "extraction_details_json": "{\"layout_mode\":\"plain\"}",
         "ocr_used": True,
         "ocr_char_count": 5000
     }
@@ -36,6 +44,11 @@ def test_db_schema():
     docs = list_documents(conn)
     assert len(docs) == 1
     assert docs[0]["ingestion_method"] == "ocr"
+    assert docs[0]["primary_extractor"] == "markitdown"
+    assert docs[0]["fallback_extractor"] == "ocr"
+    assert docs[0]["raw_text_char_count"] == 5100
+    assert docs[0]["normalized_text_char_count"] == 5000
+    assert docs[0]["extraction_details_json"] == "{\"layout_mode\":\"plain\"}"
     assert docs[0]["ocr_used"] == True
     assert docs[0]["ocr_char_count"] == 5000
 

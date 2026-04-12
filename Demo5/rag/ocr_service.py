@@ -8,8 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 import fitz
 import pytesseract
 from PIL import Image
-
-MIN_TEXT_THRESHOLD = 500
+from app.config import PDF_MIN_TEXT_THRESHOLD_FOR_NO_OCR
 
 
 def resolve_tesseract_cmd() -> str | None:
@@ -38,7 +37,7 @@ if TESSERACT_CMD:
     pytesseract.pytesseract.tesseract_cmd = TESSERACT_CMD
 
 def is_scanned_pdf(text_length: int) -> bool:
-    return text_length < MIN_TEXT_THRESHOLD
+    return text_length < PDF_MIN_TEXT_THRESHOLD_FOR_NO_OCR
 
 def render_pdf_page_to_image(pdf_path: str, page_index: int, dpi: int = 200) -> Image.Image:
     with fitz.open(pdf_path) as doc:
@@ -187,7 +186,7 @@ def extract_text_with_ocr(pdf_path: str, max_workers: int = 4) -> dict:
             "error": None
         }
 
-        if char_count < MIN_TEXT_THRESHOLD:
+        if char_count < PDF_MIN_TEXT_THRESHOLD_FOR_NO_OCR:
              res["error"] = "OCR failed: insufficient text extracted from scanned PDF."
 
         return res

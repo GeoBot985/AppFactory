@@ -3,6 +3,15 @@ import re
 from .db import get_all_embeddings
 from .embedder import embed_text
 
+
+def _query_region_mode(query: str) -> str:
+    q = (query or "").lower()
+    if any(term in q for term in ("top", "highest", "largest", "transactions", "expenses")):
+        return "table_row_preferred"
+    if any(term in q for term in ("total", "sum", "percentage")):
+        return "summary_allowed"
+    return "neutral"
+
 def cosine_similarity(a, b):
     a = np.array(a)
     b = np.array(b)
@@ -52,10 +61,13 @@ def search(conn, query: str, top_k=5, document_ids: list[str] | None = None,
 
     query_embedding = embed_text(query)
     all_embeddings_with_meta = get_all_embeddings(conn, document_ids=document_ids)
+    region_mode = _query_region_mode(query)
 
     # 1. Initial vector similarity search
     candidates = []
     for item in all_embeddings_with_meta:
+        if region_mode == "table_row_preferred" and item.get("region_type") in {"summary_block", "pivot_like"}:
+            continue
         v_score = cosine_similarity(query_embedding, item["embedding"])
         candidates.append({
             "item": item,
@@ -72,9 +84,17 @@ def search(conn, query: str, top_k=5, document_ids: list[str] | None = None,
         item = entry["item"]
         v_score = entry["vector_score"]
         l_score = score_lexical(query, item.get("text"), item.get("document_name"))
+        region_boost = 0.0
+        if region_mode == "table_row_preferred":
+            if item.get("region_type") == "table_row":
+                region_boost = 0.15
+            elif item.get("region_type") == "header":
+                region_boost = -0.05
+        elif region_mode == "summary_allowed" and item.get("region_type") in {"summary_block", "pivot_like"}:
+            region_boost = 0.1
 
         # Normalize scores (vector is already ~0-1, lexical is 0-1)
-        final_score = (vector_weight * v_score) + (lexical_weight * l_score)
+        final_score = (vector_weight * v_score) + (lexical_weight * l_score) + region_boost
 
         result = {
             "document_id": item["document_id"],
@@ -82,8 +102,13 @@ def search(conn, query: str, top_k=5, document_ids: list[str] | None = None,
             "ingested_at": item["ingested_at"],
             "chunk_index": item["chunk_index"],
             "text": item["text"],
+            "region_type": item.get("region_type"),
+            "sheet_name": item.get("sheet_name"),
+            "row_index": item.get("row_index"),
+            "cell_range": item.get("cell_range"),
             "vector_score": v_score,
             "lexical_score": l_score,
+            "region_boost": region_boost,
             "score": float(final_score)
         }
         scored_results.append(result)
@@ -109,6 +134,7 @@ def search(conn, query: str, top_k=5, document_ids: list[str] | None = None,
         "metrics": {
             "eligible_docs": len(set(item["document_id"] for item in all_embeddings_with_meta)),
             "candidate_count": len(all_embeddings_with_meta),
-            "pool_size": len(pool)
+            "pool_size": len(pool),
+            "region_mode": region_mode,
         }
     }

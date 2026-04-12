@@ -29,6 +29,8 @@ from app.services.personal_service import (
     retrieve_personal_store_records,
 )
 from app.services.personal_prompt_builder import build_personal_grounded_prompt
+from app.config import SUPPORTED_UPLOAD_TYPES_DISPLAY
+from rag.ingest import is_supported_upload_extension
 
 RAG_ENABLED = True
 WATCHER_ENABLED = True
@@ -69,11 +71,11 @@ async def api_ingest(file: UploadFile = File(...)):
 
     # Extension validation
     ext = os.path.splitext(safe_name)[1].lower()
-    if ext not in [".pdf", ".docx"]:
+    if not is_supported_upload_extension(ext):
         return JSONResponse(content={
             "ok": False,
             "status": "failed",
-            "error": "Unsupported file type. Supported types: PDF, DOCX."
+            "error": f"Unsupported file type. Supported types: {SUPPORTED_UPLOAD_TYPES_DISPLAY}"
         })
 
     try:

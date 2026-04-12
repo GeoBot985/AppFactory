@@ -98,6 +98,7 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
                 "eligible_docs": metrics.get("eligible_docs", 0),
                 "candidate_count": metrics.get("candidate_count", 0),
                 "pool_size": metrics.get("pool_size", 0),
+                "region_mode": metrics.get("region_mode", "neutral"),
                 "verification_attempts": attempt,
                 "verified_chunks": len(verified_chunks),
                 "discarded_unverified_chunks": total_discarded,

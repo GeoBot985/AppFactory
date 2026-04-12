@@ -10,7 +10,8 @@ if demo5_root not in sys.path:
     sys.path.append(demo5_root)
 
 from rag.db import get_connection, init_db, list_documents, get_document_by_hash
-from rag.ingest import ingest_document, get_file_hash
+from rag.ingest import ingest_document, get_file_hash, get_file_type, IngestionFailure
+from app.config import SUPPORTED_UPLOAD_TYPES_DISPLAY
 
 
 PERSISTENT_UPLOAD_DIR = os.path.abspath(
@@ -69,6 +70,15 @@ def ingest_file(path: str, document_name: str | None = None) -> dict:
             result["reason"] = "duplicate"
             result["document_id"] = existing_doc["document_id"]
             result["chunks_indexed"] = existing_doc["chunk_count"]
+            result["provenance"] = {
+                "status": "duplicate_skipped",
+                "document_id": existing_doc["document_id"],
+                "existing_chunk_count": existing_doc["chunk_count"],
+                "file_type": existing_doc.get("file_type"),
+                "ingestion_method": existing_doc.get("ingestion_method"),
+                "primary_extractor": existing_doc.get("primary_extractor"),
+                "ocr_used": existing_doc.get("ocr_used", False),
+            }
             return result
 
         persistent_path = _build_persistent_copy_path(path)
@@ -94,30 +104,49 @@ def ingest_file(path: str, document_name: str | None = None) -> dict:
         result["ocr_used"] = ingest_result.get("ocr_used", False)
         result["ocr_char_count"] = ingest_result.get("ocr_char_count", 0)
         result["ocr_page_count"] = ingest_result.get("ocr_page_count", 0)
-        result["ingestion_method"] = ingest_result.get("ingestion_method", "text")
+        result["ingestion_method"] = ingest_result.get("ingestion_method", "markitdown")
         result["file_type"] = ingest_result.get("file_type", "unknown")
         result["timings"] = ingest_result.get("timings", {})
         result["failed_pages"] = ingest_result.get("failed_pages", [])
         result["max_workers"] = ingest_result.get("max_workers")
+        result["provenance"] = ingest_result.get("provenance", {})
 
     except Exception as e:
+        provenance = e.provenance if isinstance(e, IngestionFailure) else {}
         error_str = str(e)
         ext = os.path.splitext(path)[1].lower()
+        file_type_label = get_file_type(path).upper()
         if "no extractable text" in error_str.lower() or "no non-empty chunks" in error_str.lower():
-            if ext == ".docx":
-                result["error"] = "No extractable text was found in this DOCX file."
+            if ext in {".docx", ".pptx", ".xlsx", ".xls", ".csv", ".txt", ".md"}:
+                result["error"] = f"No extractable text was found in this {file_type_label} file."
             else:
                 result["error"] = "No extractable text was found in this PDF."
+        elif "legacy .xls spreadsheets are not yet supported" in error_str.lower():
+            result["error"] = "Legacy .xls spreadsheets are not yet supported. Please save as .xlsx and retry."
+        elif "failed to read xlsx workbook" in error_str.lower():
+            result["error"] = "Failed to read XLSX workbook."
+        elif "xlsx workbook contained no extractable rows" in error_str.lower():
+            result["error"] = "XLSX workbook contained no extractable rows."
+        elif "xlsx workbook could not identify any usable sheets" in error_str.lower():
+            result["error"] = "XLSX workbook could not identify any usable sheets."
         elif "fitz" in error_str.lower() or "pdf" in error_str.lower() and "read" in error_str.lower():
             result["error"] = "Failed to read PDF."
+        elif "unsupported file type" in error_str.lower():
+            result["error"] = f"Unsupported file type. Supported types: {SUPPORTED_UPLOAD_TYPES_DISPLAY}"
+        elif "extraction failed with markitdown" in error_str.lower():
+            result["error"] = "Failed to read document."
         elif "docx" in error_str.lower() and "read" in error_str.lower():
-            result["error"] = "Failed to read DOCX file."
+            result["error"] = "Failed to read document."
         elif "embed" in error_str.lower() or "ollama" in error_str.lower():
             result["error"] = "Failed to generate embeddings."
         elif "sql" in error_str.lower() or "database" in error_str.lower() or "duckdb" in error_str.lower():
             result["error"] = "Failed to store document in knowledge base."
         else:
             result["error"] = f"Ingestion failed: {error_str}"
+
+        if provenance:
+            provenance["status"] = "failed"
+            result["provenance"] = provenance
     finally:
         try:
             conn.close()
