@@ -181,7 +181,11 @@ async def api_chat(request: ChatRequest):
                 # Calculate context tokens from chunks
                 context_text = "\n".join([c.get("text", "") for c in retrieval_chunks])
                 context_tokens = estimate_tokens(context_text)
-                final_prompt = build_grounded_prompt(request.message, retrieval_chunks)
+                final_prompt = build_grounded_prompt(
+                    request.message,
+                    retrieval_chunks,
+                    retrieval_mode=(retrieval_metrics or {}).get("retrieval_mode", "default"),
+                )
     elif effective_mode == "personal":
         persist_user_input(request.message, session_id=context.session_id)
         personal_input_persisted = True

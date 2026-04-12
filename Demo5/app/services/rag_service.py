@@ -12,11 +12,12 @@ from rag.db import (
     get_corpus_stats, get_document_by_id, get_all_chunks_for_document,
     find_exact_chunk
 )
-from rag.search import search
+from rag.search import search, detect_retrieval_mode
 from app.config import (
     DB_PATH, VECTOR_WEIGHT, LEXICAL_WEIGHT,
     CANDIDATE_POOL_SIZE, PER_DOC_CAP,
     SINGLE_DOC_CANDIDATE_POOL_SIZE, SINGLE_DOC_PER_DOC_CAP,
+    ENUMERATION_TOP_K, ENUMERATION_PER_DOC_CAP, ENUMERATION_LEXICAL_MATCH_CAP,
 )
 
 
@@ -75,10 +76,13 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
         conn = get_connection(DB_PATH)
 
         single_doc_mode = bool(document_ids) and len(document_ids) == 1
+        retrieval_mode = detect_retrieval_mode(query)
         base_candidate_pool_size = SINGLE_DOC_CANDIDATE_POOL_SIZE if single_doc_mode else CANDIDATE_POOL_SIZE
         base_per_doc_cap = SINGLE_DOC_PER_DOC_CAP if single_doc_mode else PER_DOC_CAP
+        effective_top_k = max(top_k, ENUMERATION_TOP_K) if retrieval_mode == "enumeration" else top_k
+        effective_per_doc_cap = max(base_per_doc_cap, ENUMERATION_PER_DOC_CAP) if retrieval_mode == "enumeration" else base_per_doc_cap
 
-        candidate_pool_size = max(base_candidate_pool_size, top_k)
+        candidate_pool_size = max(base_candidate_pool_size, effective_top_k)
         max_attempts = 3
         total_discarded = 0
 
@@ -86,12 +90,14 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
             search_data = search(
                 conn,
                 query,
-                top_k=top_k * attempt * 2,
+                top_k=effective_top_k * attempt * 2,
                 document_ids=document_ids,
                 vector_weight=VECTOR_WEIGHT,
                 lexical_weight=LEXICAL_WEIGHT,
                 candidate_pool_size=candidate_pool_size,
-                per_doc_cap=max(base_per_doc_cap, top_k * attempt),
+                per_doc_cap=max(effective_per_doc_cap, effective_top_k * attempt),
+                retrieval_mode=retrieval_mode,
+                lexical_match_cap=ENUMERATION_LEXICAL_MATCH_CAP if retrieval_mode == "enumeration" else max(effective_top_k * 2, 20),
             )
 
             raw_chunks = search_data.get("results", [])
@@ -103,25 +109,29 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
                 "eligible_docs": metrics.get("eligible_docs", 0),
                 "candidate_count": metrics.get("candidate_count", 0),
                 "pool_size": metrics.get("pool_size", 0),
+                "retrieval_mode": metrics.get("retrieval_mode", retrieval_mode),
                 "region_mode": metrics.get("region_mode", "neutral"),
                 "single_doc_mode": single_doc_mode,
-                "per_doc_cap": max(base_per_doc_cap, top_k * attempt),
+                "per_doc_cap": max(effective_per_doc_cap, effective_top_k * attempt),
+                "requested_top_k": top_k,
+                "effective_top_k": effective_top_k,
+                "lexical_match_cap": metrics.get("lexical_match_cap", 0),
                 "verification_attempts": attempt,
                 "verified_chunks": len(verified_chunks),
                 "discarded_unverified_chunks": total_discarded,
                 "verification_status": "passed" if verified_chunks else "empty",
             }
 
-            result["chunks"] = verified_chunks[:top_k]
+            result["chunks"] = verified_chunks[:effective_top_k]
 
-            if len(result["chunks"]) >= top_k:
+            if len(result["chunks"]) >= effective_top_k:
                 break
 
             candidate_count = metrics.get("candidate_count", 0)
             if candidate_count and candidate_pool_size >= candidate_count:
                 break
 
-            candidate_pool_size = max(candidate_pool_size * 2, top_k * (attempt + 1) * 2)
+            candidate_pool_size = max(candidate_pool_size * 2, effective_top_k * (attempt + 1) * 2)
 
         if not result["chunks"] and total_discarded > 0:
             result["metrics"]["verification_status"] = "all_discarded"

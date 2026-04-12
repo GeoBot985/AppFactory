@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional
 from app.services.session_grounding import get_session_grounding
 
-def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
+def build_grounded_prompt(query: str, retrieved_chunks: List[Dict], retrieval_mode: str = "default") -> str:
     """
     Constructs a strict but slightly more reasonable grounding prompt.
     """
@@ -34,6 +34,11 @@ def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
         context_blocks.append(block)
 
     context_str = "\n\n".join(context_blocks)
+    answer_instruction = (
+        "For lookup, list, enumeration, or reference questions, assemble the matching items into a list first and then optionally add a short summary sentence."
+        if retrieval_mode == "enumeration"
+        else "Answer directly and concisely. Start with 'Yes' or 'No', then give a brief explanation."
+    )
 
     return (
         f"{grounding_str}"
@@ -41,13 +46,15 @@ def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
         f"QUESTION:\n{query}\n\n"
         f"INSTRUCTIONS:\n"
         f"- Only use the provided context to answer the question.\n"
-        f"- Answer directly and concisely. Start with 'Yes' or 'No', then give a brief explanation.\n"
+        f"- {answer_instruction}\n"
         f"- You may make reasonable, minimal logical connections between closely related concepts present in the context "
         f"(for example, connecting 'least privilege' or access rights to the idea of using multiple accounts when the "
         f"relationship is directly implied by the text).\n"
         f"- If the answer is not supported by the context at all, say exactly: 'Insufficient information'.\n"
         f"- Do not claim that the document does not mention something unless the retrieved context explicitly supports that negative conclusion.\n"
         f"- If the question asks for an exact term or reference and the retrieved context does not show it directly, say exactly: 'Insufficient information'.\n"
+        f"- If the retrieved evidence only shows weak or near matches, use bounded wording such as 'No relevant matches were found in the retrieved evidence' or 'Insufficient information'.\n"
+        f"- For enumeration mode, preserve item-level references and present them as a list instead of collapsing them into one prose claim.\n"
         f"- Do not use any prior knowledge or external frameworks not explicitly present in the context.\n"
         f"- Do not guess or fill in large gaps.\n"
         f"- Cite your sources for every claim using the format [Doc: name | Chunk X].\n"
