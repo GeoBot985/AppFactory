@@ -152,47 +152,67 @@ class TestSpec022Ingestion(unittest.TestCase):
     @patch("rag.ingest.insert_chunk")
     @patch("rag.ingest.insert_document")
     @patch("rag.ingest.embed_text", return_value=[0.1, 0.2, 0.3])
-    @patch("rag.ingest.extract_with_markitdown")
+    @patch("rag.ingest.extract_docx_structured")
     def test_docx_uses_markitdown_without_ocr(
         self,
-        mock_markitdown,
+        mock_docx_extract,
         _mock_embed,
         _mock_insert_document,
         _mock_insert_chunk,
     ):
         docx_path = self._make_temp_file(".docx")
-        mock_markitdown.return_value = {
-            "text": "Document content " * 100,
+        mock_docx_extract.return_value = {
+            "text": "[DOCX | Block: 1 | Ref: Paragraph 1 | Region: paragraph]\nDocument content " * 20,
             "success": True,
             "error": None,
             "file_type": "docx",
-            "method": "markitdown",
+            "method": "python_docx_structured",
+            "paragraph_count": 1,
+            "table_count": 0,
+            "table_row_count": 0,
+            "blocks": [
+                {
+                    "region_type": "paragraph",
+                    "block_index": 1,
+                    "reference": "Paragraph 1",
+                    "text": "[DOCX | Block: 1 | Ref: Paragraph 1 | Region: paragraph]\nDocument content",
+                }
+            ],
+            "region_counts": {"paragraph": 1, "table_header": 0, "table_row": 0},
+            "warnings": [],
         }
 
         result = ingest_document(docx_path, MagicMock(), document_name="sample.docx")
 
         self.assertEqual(result["file_type"], "docx")
-        self.assertEqual(result["ingestion_method"], "markitdown")
+        self.assertEqual(result["ingestion_method"], "python_docx_structured")
         self.assertFalse(result["ocr_used"])
         self.assertEqual(result["failed_pages"], [])
-        self.assertIn("extract_markitdown", result["timings"])
+        self.assertIn("extract_docx", result["timings"])
         self.assertEqual(result["provenance"]["file_type"], "docx")
+        self.assertEqual(result["provenance"]["primary_extractor"], "python_docx_structured")
         self.assertEqual(result["provenance"]["chunk_count"], result["chunk_count"])
 
     @patch("rag.ingest.extract_text_with_ocr")
-    @patch("rag.ingest.extract_with_markitdown")
-    def test_docx_failure_does_not_attempt_ocr(self, mock_markitdown, mock_ocr):
+    @patch("rag.ingest.extract_docx_structured")
+    def test_docx_failure_does_not_attempt_ocr(self, mock_docx_extract, mock_ocr):
         docx_path = self._make_temp_file(".docx")
-        mock_markitdown.return_value = {
+        mock_docx_extract.return_value = {
             "text": "",
             "success": False,
-            "error": "conversion failure",
+            "error": "Failed to read DOCX file: conversion failure",
             "file_type": "docx",
-            "method": "markitdown",
+            "method": "python_docx_structured",
+            "paragraph_count": 0,
+            "table_count": 0,
+            "table_row_count": 0,
+            "blocks": [],
+            "region_counts": {"paragraph": 0, "table_header": 0, "table_row": 0},
+            "warnings": [],
         }
 
-        with self.assertRaisesRegex(Exception, "DOCX extraction failed with MarkItDown") as ctx:
+        with self.assertRaisesRegex(Exception, "Failed to read DOCX file") as ctx:
             ingest_document(docx_path, MagicMock(), document_name="bad.docx")
-        self.assertEqual(ctx.exception.provenance["failure_stage"], "extract_markitdown")
+        self.assertEqual(ctx.exception.provenance["failure_stage"], "extract_docx")
 
         mock_ocr.assert_not_called()

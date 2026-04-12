@@ -7,6 +7,7 @@ from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
 
 from .db import insert_chunk, insert_document
+from .docx_extractor import extract_docx_structured
 from .embedder import embed_text
 from .ocr_service import extract_text_with_ocr, is_scanned_pdf
 from .markitdown_extractor import extract_with_markitdown
@@ -190,6 +191,58 @@ def _extract_text_for_ingestion(path: str, ext: str, timings: IngestionTimings, 
             "ocr_page_count": 0,
             "ingestion_method": "openpyxl_structured",
             "file_type": "xlsx",
+            "failed_pages": [],
+        }
+
+    if ext == ".docx":
+        provenance["primary_extractor"] = "python_docx_structured"
+        provenance["fallback_extractor"] = None
+        provenance["primary_extractor_attempted"] = True
+        provenance["stage_reached"] = "extract_docx"
+        with StageTimer(timings, "extract_docx"):
+            docx_result = extract_docx_structured(path)
+
+        provenance["extraction_details"] = {
+            "paragraph_count": docx_result.get("paragraph_count", 0),
+            "table_count": docx_result.get("table_count", 0),
+            "table_row_count": docx_result.get("table_row_count", 0),
+            "warnings": docx_result.get("warnings", []),
+        }
+        provenance["region_counts"] = docx_result.get("region_counts", {})
+        provenance["has_table_rows"] = provenance["region_counts"].get("table_row", 0) > 0
+        provenance["has_summary_blocks"] = False
+
+        if not docx_result.get("success", False):
+            _raise_ingestion_failure(
+                provenance,
+                "extract_docx",
+                docx_result.get("error") or "unknown DOCX extraction error",
+                docx_result.get("error") or "Failed to read DOCX file.",
+            )
+
+        raw_text = docx_result.get("text", "") or ""
+        normalized_text = _normalize_extracted_text(raw_text)
+        provenance["primary_extractor_succeeded"] = True
+        provenance["raw_text_char_count"] = len(raw_text)
+        provenance["normalized_text_char_count"] = len(normalized_text)
+        if not normalized_text:
+            _raise_ingestion_failure(
+                provenance,
+                "extract_docx",
+                "DOCX file contained no extractable text.",
+                "No extractable text was found in this DOCX file.",
+            )
+
+        return {
+            "raw_text_char_count": len(raw_text),
+            "normalized_text_char_count": len(normalized_text),
+            "text": normalized_text,
+            "structured_chunks": docx_result.get("blocks", []),
+            "ocr_used": False,
+            "ocr_char_count": 0,
+            "ocr_page_count": 0,
+            "ingestion_method": "python_docx_structured",
+            "file_type": "docx",
             "failed_pages": [],
         }
 
