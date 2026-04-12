@@ -15,7 +15,8 @@ from rag.db import (
 from rag.search import search
 from app.config import (
     DB_PATH, VECTOR_WEIGHT, LEXICAL_WEIGHT,
-    CANDIDATE_POOL_SIZE, PER_DOC_CAP
+    CANDIDATE_POOL_SIZE, PER_DOC_CAP,
+    SINGLE_DOC_CANDIDATE_POOL_SIZE, SINGLE_DOC_PER_DOC_CAP,
 )
 
 
@@ -73,7 +74,11 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
         # Search function uses DuckDB connection to query chunks
         conn = get_connection(DB_PATH)
 
-        candidate_pool_size = max(CANDIDATE_POOL_SIZE, top_k)
+        single_doc_mode = bool(document_ids) and len(document_ids) == 1
+        base_candidate_pool_size = SINGLE_DOC_CANDIDATE_POOL_SIZE if single_doc_mode else CANDIDATE_POOL_SIZE
+        base_per_doc_cap = SINGLE_DOC_PER_DOC_CAP if single_doc_mode else PER_DOC_CAP
+
+        candidate_pool_size = max(base_candidate_pool_size, top_k)
         max_attempts = 3
         total_discarded = 0
 
@@ -86,7 +91,7 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
                 vector_weight=VECTOR_WEIGHT,
                 lexical_weight=LEXICAL_WEIGHT,
                 candidate_pool_size=candidate_pool_size,
-                per_doc_cap=max(PER_DOC_CAP, top_k * attempt),
+                per_doc_cap=max(base_per_doc_cap, top_k * attempt),
             )
 
             raw_chunks = search_data.get("results", [])
@@ -99,6 +104,8 @@ def get_rag_context(query: str, top_k: int = 3, document_ids: list[str] | None =
                 "candidate_count": metrics.get("candidate_count", 0),
                 "pool_size": metrics.get("pool_size", 0),
                 "region_mode": metrics.get("region_mode", "neutral"),
+                "single_doc_mode": single_doc_mode,
+                "per_doc_cap": max(base_per_doc_cap, top_k * attempt),
                 "verification_attempts": attempt,
                 "verified_chunks": len(verified_chunks),
                 "discarded_unverified_chunks": total_discarded,

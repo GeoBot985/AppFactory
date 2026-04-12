@@ -46,6 +46,8 @@ def build_grounded_prompt(query: str, retrieved_chunks: List[Dict]) -> str:
         f"(for example, connecting 'least privilege' or access rights to the idea of using multiple accounts when the "
         f"relationship is directly implied by the text).\n"
         f"- If the answer is not supported by the context at all, say exactly: 'Insufficient information'.\n"
+        f"- Do not claim that the document does not mention something unless the retrieved context explicitly supports that negative conclusion.\n"
+        f"- If the question asks for an exact term or reference and the retrieved context does not show it directly, say exactly: 'Insufficient information'.\n"
         f"- Do not use any prior knowledge or external frameworks not explicitly present in the context.\n"
         f"- Do not guess or fill in large gaps.\n"
         f"- Cite your sources for every claim using the format [Doc: name | Chunk X].\n"
