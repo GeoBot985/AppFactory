@@ -1,6 +1,20 @@
 import duckdb
 import struct
 
+
+def _rows_to_dicts(cursor) -> list[dict]:
+    cols = [desc[0] for desc in cursor.description]
+    rows = cursor.fetchall()
+    return [dict(zip(cols, row)) for row in rows]
+
+
+def _row_to_dict(cursor) -> dict | None:
+    row = cursor.fetchone()
+    if not row:
+        return None
+    cols = [desc[0] for desc in cursor.description]
+    return dict(zip(cols, row))
+
 def get_connection(db_path="rag_v2.db"):
     return duckdb.connect(db_path)
 
@@ -128,15 +142,8 @@ def insert_chunk(conn, chunk: dict) -> None:
     )
 
 def list_documents(conn) -> list[dict]:
-    results = conn.execute("SELECT * FROM documents ORDER BY ingested_at DESC").fetchall()
-    cols = [
-        "document_id", "document_name", "source_path", "file_hash",
-        "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "file_type", "primary_extractor", "fallback_extractor",
-        "failure_stage", "failure_reason", "raw_text_char_count", "normalized_text_char_count",
-        "extraction_details_json", "ocr_used", "ocr_char_count", "ocr_page_count"
-    ]
-    return [dict(zip(cols, r)) for r in results]
+    cursor = conn.execute("SELECT * FROM documents ORDER BY ingested_at DESC")
+    return _rows_to_dicts(cursor)
 
 def delete_document(conn, document_id: str) -> bool:
     # Manual cascade because DuckDB FK ON DELETE CASCADE might not be fully supported in all versions/setups
@@ -165,30 +172,12 @@ def get_corpus_stats(conn) -> dict:
     }
 
 def get_document_by_id(conn, document_id: str) -> dict | None:
-    result = conn.execute("SELECT * FROM documents WHERE document_id = ?", [document_id]).fetchone()
-    if not result:
-        return None
-    cols = [
-        "document_id", "document_name", "source_path", "file_hash",
-        "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "file_type", "primary_extractor", "fallback_extractor",
-        "failure_stage", "failure_reason", "raw_text_char_count", "normalized_text_char_count",
-        "extraction_details_json", "ocr_used", "ocr_char_count", "ocr_page_count"
-    ]
-    return dict(zip(cols, result))
+    cursor = conn.execute("SELECT * FROM documents WHERE document_id = ?", [document_id])
+    return _row_to_dict(cursor)
 
 def get_document_by_hash(conn, file_hash: str) -> dict | None:
-    result = conn.execute("SELECT * FROM documents WHERE file_hash = ?", [file_hash]).fetchone()
-    if not result:
-        return None
-    cols = [
-        "document_id", "document_name", "source_path", "file_hash",
-        "file_size_bytes", "ingested_at", "chunk_count",
-        "ingestion_method", "file_type", "primary_extractor", "fallback_extractor",
-        "failure_stage", "failure_reason", "raw_text_char_count", "normalized_text_char_count",
-        "extraction_details_json", "ocr_used", "ocr_char_count", "ocr_page_count"
-    ]
-    return dict(zip(cols, result))
+    cursor = conn.execute("SELECT * FROM documents WHERE file_hash = ?", [file_hash])
+    return _row_to_dict(cursor)
 
 def get_all_embeddings(conn, document_ids: list[str] | None = None):
     query = """

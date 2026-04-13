@@ -5,6 +5,14 @@ from .db import get_all_embeddings
 from .embedder import embed_text
 
 
+_QUERY_FOCUS_STOPWORDS = {
+    "show", "list", "extract", "summarize", "summary", "what", "which", "give", "provide",
+    "find", "from", "with", "that", "this", "there", "here", "into", "about", "under",
+    "records", "record", "rows", "entries", "all", "our", "the", "and", "for", "are",
+    "any", "please", "table", "tabulate",
+}
+
+
 def _query_region_mode(query: str) -> str:
     q = (query or "").lower()
     if any(term in q for term in ("top", "highest", "largest", "transactions", "expenses")):
@@ -100,6 +108,21 @@ def _extract_query_phrases(query: str) -> list[str]:
     return []
 
 
+def _extract_focus_tokens(query: str) -> set[str]:
+    original_tokens = _tokenize(query)
+    normalized = normalize_tokens(original_tokens)
+    focus_tokens = set()
+    for token in normalized:
+        if len(token) < 5:
+            continue
+        if token in _QUERY_FOCUS_STOPWORDS:
+            continue
+        if token.isdigit():
+            continue
+        focus_tokens.add(token)
+    return focus_tokens
+
+
 def score_lexical(query: str, text: str | None, document_name: str | None = None) -> float:
     if not query:
         return 0.0
@@ -173,8 +196,20 @@ def _score_lexical_full_corpus(query: str, item: dict) -> tuple[float, list[str]
 
 
 def _strong_lexical_hit(match_types: list[str]) -> bool:
-    strong = {"exact_token", "normalized_token", "exact_phrase"}
+    strong = {"exact_token", "normalized_token", "exact_phrase", "focus_token"}
     return any(match_type in strong for match_type in match_types)
+
+
+def _collect_corpus_focus_tokens(all_items: list[dict], focus_tokens: set[str]) -> set[str]:
+    supported = set()
+    for item in all_items:
+        text_tokens, normalized_text_tokens = tokenize_for_lexical_matching(item.get("text"))
+        doc_tokens, normalized_doc_tokens = tokenize_for_lexical_matching(item.get("document_name"))
+        available = text_tokens | normalized_text_tokens | doc_tokens | normalized_doc_tokens
+        for token in focus_tokens:
+            if token in available:
+                supported.add(token)
+    return supported
 
 
 def _collect_lexical_candidates(all_items: list[dict], query: str) -> tuple[list[dict], dict]:
@@ -185,11 +220,25 @@ def _collect_lexical_candidates(all_items: list[dict], query: str) -> tuple[list
     lexical_candidates = []
 
     normalized_query_tokens = sorted(normalize_tokens(_tokenize(query)))
+    focus_tokens = _extract_focus_tokens(query)
+    supported_focus_tokens = _collect_corpus_focus_tokens(all_items, focus_tokens)
 
     for item in all_items:
         lexical_score, match_types, debug = _score_lexical_full_corpus(query, item)
         if lexical_score <= 0:
             continue
+
+        matched_focus_tokens = sorted(
+            supported_focus_tokens.intersection(set(debug["matched_tokens_original"]) | set(debug["matched_tokens_normalized"]))
+        )
+        missing_focus_tokens = sorted(supported_focus_tokens - set(matched_focus_tokens))
+
+        if matched_focus_tokens:
+            lexical_score = min(1.0, lexical_score + min(0.25, 0.12 * len(matched_focus_tokens)))
+            match_types = list(dict.fromkeys(match_types + ["focus_token"]))
+        elif supported_focus_tokens:
+            lexical_score = max(0.0, lexical_score - min(0.25, 0.08 * len(supported_focus_tokens)))
+            match_types = list(dict.fromkeys(match_types + ["missing_focus_token"]))
 
         candidate = {
             "item": item,
@@ -197,6 +246,8 @@ def _collect_lexical_candidates(all_items: list[dict], query: str) -> tuple[list
             "match_types": match_types,
             "forced_include": _strong_lexical_hit(match_types),
             "lexical_debug": debug,
+            "matched_focus_tokens": matched_focus_tokens,
+            "missing_focus_tokens": missing_focus_tokens,
         }
         lexical_candidates.append(candidate)
 
@@ -218,6 +269,8 @@ def _collect_lexical_candidates(all_items: list[dict], query: str) -> tuple[list
         "identifier_like_terms": _detect_identifier_like_terms(query),
         "lexical_normalization_enabled": True,
         "normalized_query_tokens": normalized_query_tokens,
+        "focus_tokens": sorted(focus_tokens),
+        "supported_focus_tokens": sorted(supported_focus_tokens),
         "exact_lexical_hits": exact_hits,
         "normalized_lexical_hits": normalized_hits,
         "phrase_hits": phrase_hits,
@@ -240,6 +293,7 @@ def _merge_candidates(lexical_candidates: list[dict], vector_candidates: list[di
                 "match_types": candidate["match_types"],
                 "forced_include": True,
                 "lexical_debug": candidate["lexical_debug"],
+                "matched_focus_tokens": candidate["matched_focus_tokens"],
             }
 
     for candidate in vector_candidates[:candidate_pool_size]:
@@ -256,6 +310,7 @@ def _merge_candidates(lexical_candidates: list[dict], vector_candidates: list[di
                 "match_types": [],
                 "forced_include": False,
                 "lexical_debug": {"matched_tokens_original": [], "matched_tokens_normalized": []},
+                "matched_focus_tokens": [],
             }
 
     for candidate in lexical_candidates:
@@ -270,6 +325,9 @@ def _merge_candidates(lexical_candidates: list[dict], vector_candidates: list[di
             merged[key]["lexical_debug"]["matched_tokens_normalized"] = sorted(set(
                 merged[key]["lexical_debug"]["matched_tokens_normalized"] + candidate["lexical_debug"]["matched_tokens_normalized"]
             ))
+            merged[key]["matched_focus_tokens"] = sorted(set(
+                merged[key].get("matched_focus_tokens", []) + candidate.get("matched_focus_tokens", [])
+            ))
             continue
         if len(merged) >= candidate_pool_size + len([c for c in lexical_candidates if c["forced_include"]]):
             break
@@ -280,6 +338,7 @@ def _merge_candidates(lexical_candidates: list[dict], vector_candidates: list[di
                 "match_types": candidate["match_types"],
                 "forced_include": candidate["forced_include"],
                 "lexical_debug": candidate["lexical_debug"],
+                "matched_focus_tokens": candidate["matched_focus_tokens"],
             }
 
     return list(merged.values())
@@ -296,7 +355,7 @@ def _collect_enumeration_results(
 
     lexical_first = [
         result for result in scored_results
-        if {"exact_phrase", "exact_token", "normalized_token"}.intersection(result["match_types"])
+        if {"exact_phrase", "exact_token", "normalized_token", "focus_token"}.intersection(result["match_types"])
     ]
 
     for result in lexical_first[:lexical_match_cap]:
@@ -366,7 +425,8 @@ def search(conn, query: str, top_k=5, document_ids: list[str] | None = None,
             region_boost = 0.1
 
         lexical_priority_boost = 0.25 if candidate["forced_include"] else 0.0
-        final_score = (vector_weight * v_score) + (lexical_weight * l_score) + region_boost + lexical_priority_boost
+        focus_token_boost = min(0.2, 0.1 * len(candidate.get("matched_focus_tokens", [])))
+        final_score = (vector_weight * v_score) + (lexical_weight * l_score) + region_boost + lexical_priority_boost + focus_token_boost
 
         scored_results.append({
             "document_id": item["document_id"],
@@ -382,16 +442,20 @@ def search(conn, query: str, top_k=5, document_ids: list[str] | None = None,
             "lexical_score": l_score,
             "region_boost": region_boost,
             "lexical_priority_boost": lexical_priority_boost,
+            "focus_token_boost": focus_token_boost,
             "match_types": candidate["match_types"],
             "forced_include": candidate["forced_include"],
             "matched_tokens_original": candidate["lexical_debug"]["matched_tokens_original"],
             "matched_tokens_normalized": candidate["lexical_debug"]["matched_tokens_normalized"],
+            "matched_focus_tokens": candidate.get("matched_focus_tokens", []),
             "score": float(final_score),
         })
 
     scored_results.sort(
         key=lambda result: (
+            len(result.get("matched_focus_tokens", [])),
             result["forced_include"],
+            "focus_token" in result["match_types"],
             "exact_phrase" in result["match_types"],
             "exact_token" in result["match_types"],
             "normalized_token" in result["match_types"],
@@ -431,6 +495,8 @@ def search(conn, query: str, top_k=5, document_ids: list[str] | None = None,
             "lexical_prepass_run": True,
             "lexical_normalization_enabled": lexical_metrics["lexical_normalization_enabled"],
             "normalized_query_tokens": lexical_metrics["normalized_query_tokens"],
+            "focus_tokens": lexical_metrics["focus_tokens"],
+            "supported_focus_tokens": lexical_metrics["supported_focus_tokens"],
             "identifier_like_terms": lexical_metrics["identifier_like_terms"],
             "exact_lexical_hits": lexical_metrics["exact_lexical_hits"],
             "normalized_lexical_hits": lexical_metrics["normalized_lexical_hits"],

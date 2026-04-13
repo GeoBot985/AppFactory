@@ -19,6 +19,9 @@ from app.services.rag_service import (
 from app.services.ingest_service import ingest_file
 from app.services.watcher import inspect_chat_request, ChatRequestPayload
 from app.services.prompt_builder import build_grounded_prompt, build_chat_with_document_prompt
+from app.services.confidence import compute_document_confidence
+from app.services.document_coverage import detect_document_coverage_mode, explain_document_coverage_reason
+from app.services.response_format import detect_document_response_format, explain_document_response_format_rule
 from app.services.session_grounding import build_session_grounding, get_session_grounding, increment_session_usage
 from app.services.personal_service import (
     AMBIGUITY_RESPONSE,
@@ -153,9 +156,15 @@ async def api_chat(request: ChatRequest):
     retrieval_chunks = []
     retrieval_metrics = None
     retrieval_error = None
+    response_format_detected = None
+    response_format_reason = None
+    coverage_mode = None
+    coverage_reason = None
+    coverage_truncated = False
     final_prompt = request.message
     skip_llm = False
     reply_text = ""
+    confidence_payload = None
 
     # Personal mode data
     personal_context = None
@@ -165,12 +174,25 @@ async def api_chat(request: ChatRequest):
     personal_retrieval_metrics = None
 
     if effective_mode == "document":
+        response_format_detected = detect_document_response_format(request.message)
+        response_format_reason = explain_document_response_format_rule(request.message)
+        coverage_mode = detect_document_coverage_mode(request.message, response_format_detected)
+        coverage_reason = explain_document_coverage_reason(request.message, response_format_detected)
         if RAG_ENABLED:
-            rag_result = get_rag_context(request.message, top_k=3, document_ids=request.document_ids)
+            rag_result = get_rag_context(
+                request.message,
+                top_k=3,
+                document_ids=request.document_ids,
+                response_format=response_format_detected,
+            )
             retrieval_query = request.message
             retrieval_error = rag_result.get("error")
             retrieval_chunks = rag_result.get("chunks", [])
             retrieval_metrics = rag_result.get("metrics")
+            prompt_chunks = rag_result.get("chunks_for_prompt", retrieval_chunks)
+            coverage_mode = (retrieval_metrics or {}).get("coverage_mode", coverage_mode)
+            coverage_truncated = bool((retrieval_metrics or {}).get("coverage_truncated", False))
+            coverage_reason = (retrieval_metrics or {}).get("coverage_reason", coverage_reason)
 
             if not retrieval_chunks and not retrieval_error:
                 # Fallback if corpus is empty or nothing retrieved
@@ -179,12 +201,15 @@ async def api_chat(request: ChatRequest):
                 final_prompt = "No context provided."
             elif retrieval_chunks:
                 # Calculate context tokens from chunks
-                context_text = "\n".join([c.get("text", "") for c in retrieval_chunks])
+                context_text = "\n".join([c.get("text", "") for c in prompt_chunks])
                 context_tokens = estimate_tokens(context_text)
                 final_prompt = build_grounded_prompt(
                     request.message,
-                    retrieval_chunks,
+                    prompt_chunks,
+                    response_format=response_format_detected,
                     retrieval_mode=(retrieval_metrics or {}).get("retrieval_mode", "default"),
+                    coverage_mode=coverage_mode or "narrow_lookup",
+                    coverage_truncated=coverage_truncated,
                 )
     elif effective_mode == "personal":
         persist_user_input(request.message, session_id=context.session_id)
@@ -295,6 +320,13 @@ async def api_chat(request: ChatRequest):
     # Increment session usage
     increment_session_usage(prompt_tokens, response_tokens)
     session_grounding = get_session_grounding()
+    if session_grounding is None:
+        session_grounding = {
+            "session_turn_count": 1,
+            "session_prompt_tokens_est": prompt_tokens,
+            "session_response_tokens_est": response_tokens,
+            "session_total_tokens_est": prompt_tokens + response_tokens,
+        }
 
     # 4. Watcher Post-check
     watcher.post_check(context)
@@ -346,6 +378,16 @@ async def api_chat(request: ChatRequest):
         "retrieval_chunks": retrieval_chunks,
         "retrieval_metrics": retrieval_metrics,
         "retrieval_error": retrieval_error,
+        "response_format_detected": response_format_detected if effective_mode == "document" else None,
+        "response_format_rules_applied": True if effective_mode == "document" else False,
+        "response_format_reason": response_format_reason if effective_mode == "document" else None,
+        "coverage_mode": coverage_mode if effective_mode == "document" else None,
+        "coverage_required": coverage_mode == "coverage_required" if effective_mode == "document" else False,
+        "retrieval_top_k_requested": (retrieval_metrics or {}).get("retrieval_top_k_requested") if effective_mode == "document" else None,
+        "retrieval_verified_chunks_count": (retrieval_metrics or {}).get("retrieval_verified_chunks_count") if effective_mode == "document" else None,
+        "retrieval_chunks_used_for_prompt": (retrieval_metrics or {}).get("retrieval_chunks_used_for_prompt") if effective_mode == "document" else None,
+        "coverage_truncated": coverage_truncated if effective_mode == "document" else False,
+        "coverage_reason": coverage_reason if effective_mode == "document" else None,
         "personal_input_persisted": personal_input_persisted,
         "personal_status": personal_status,
         "personal_context": personal_context,
@@ -363,6 +405,18 @@ async def api_chat(request: ChatRequest):
         "response_preview": response_preview
     }
 
+    if effective_mode == "document":
+        confidence_payload = compute_document_confidence(
+            chunks_used_for_prompt=rag_result.get("chunks_for_prompt", retrieval_chunks) if 'rag_result' in locals() else retrieval_chunks,
+            retrieval_metrics=retrieval_metrics,
+            retrieval_error=retrieval_error,
+            coverage_mode=coverage_mode or "narrow_lookup",
+            coverage_truncated=coverage_truncated,
+            skip_llm=skip_llm,
+        )
+        if confidence_payload:
+            debug_payload["confidence_reason_codes"] = confidence_payload.get("reason_codes", [])
+
     token_usage = TokenUsage(
         mode=effective_mode,
         user_input_tokens_est=user_input_tokens,
@@ -379,6 +433,7 @@ async def api_chat(request: ChatRequest):
     return ChatResponse(
         reply=reply_text,
         evidence=retrieval_chunks if effective_mode == "document" else None,
+        confidence=confidence_payload if effective_mode == "document" else None,
         debug=debug_payload,
         token_usage=token_usage
     )

@@ -90,6 +90,154 @@ document.addEventListener('DOMContentLoaded', () => {
         return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
+    function renderInlineMarkdown(text) {
+        let html = escapeHtml(text || '');
+        html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+        html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+        return html;
+    }
+
+    function parseMarkdownTable(lines, startIndex) {
+        if (startIndex + 1 >= lines.length) return null;
+
+        const headerLine = lines[startIndex];
+        const separatorLine = lines[startIndex + 1];
+        if (!headerLine.includes('|') || !separatorLine.includes('|')) return null;
+
+        const separatorCells = separatorLine.split('|').map(cell => cell.trim()).filter(Boolean);
+        const isSeparator = separatorCells.length > 0 && separatorCells.every(cell => /^:?-{3,}:?$/.test(cell));
+        if (!isSeparator) return null;
+
+        const extractCells = line => line.split('|').map(cell => cell.trim()).filter((_, idx, arr) => !(idx === 0 && arr[idx] === '') && !(idx === arr.length - 1 && arr[idx] === ''));
+
+        const headers = extractCells(headerLine);
+        if (headers.length === 0) return null;
+
+        const rows = [];
+        let index = startIndex + 2;
+        while (index < lines.length && lines[index].includes('|') && lines[index].trim() !== '') {
+            const rowCells = extractCells(lines[index]);
+            if (rowCells.length === headers.length) {
+                rows.push(rowCells);
+                index += 1;
+            } else {
+                break;
+            }
+        }
+
+        if (rows.length === 0) return null;
+
+        let html = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+        headers.forEach(cell => {
+            html += `<th>${renderInlineMarkdown(cell)}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+        rows.forEach(row => {
+            html += '<tr>';
+            row.forEach(cell => {
+                html += `<td>${renderInlineMarkdown(cell)}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table></div>';
+
+        return { html, nextIndex: index };
+    }
+
+    function renderMarkdown(text) {
+        const normalized = String(text || '').replace(/\r\n/g, '\n');
+        const lines = normalized.split('\n');
+        const blocks = [];
+        let paragraphLines = [];
+        let inUl = false;
+        let inOl = false;
+
+        const flushParagraph = () => {
+            if (paragraphLines.length > 0) {
+                blocks.push(`<p>${paragraphLines.map(renderInlineMarkdown).join('<br>')}</p>`);
+                paragraphLines = [];
+            }
+        };
+
+        const closeLists = () => {
+            if (inUl) {
+                blocks.push('</ul>');
+                inUl = false;
+            }
+            if (inOl) {
+                blocks.push('</ol>');
+                inOl = false;
+            }
+        };
+
+        for (let i = 0; i < lines.length; i += 1) {
+            const line = lines[i];
+            const trimmed = line.trim();
+
+            if (trimmed === '') {
+                flushParagraph();
+                closeLists();
+                continue;
+            }
+
+            const table = parseMarkdownTable(lines, i);
+            if (table) {
+                flushParagraph();
+                closeLists();
+                blocks.push(table.html);
+                i = table.nextIndex - 1;
+                continue;
+            }
+
+            const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+            if (headingMatch) {
+                flushParagraph();
+                closeLists();
+                const level = Math.min(6, headingMatch[1].length);
+                blocks.push(`<h${level}>${renderInlineMarkdown(headingMatch[2])}</h${level}>`);
+                continue;
+            }
+
+            const ulMatch = trimmed.match(/^[-*]\s+(.*)$/);
+            if (ulMatch) {
+                flushParagraph();
+                if (inOl) {
+                    blocks.push('</ol>');
+                    inOl = false;
+                }
+                if (!inUl) {
+                    blocks.push('<ul>');
+                    inUl = true;
+                }
+                blocks.push(`<li>${renderInlineMarkdown(ulMatch[1])}</li>`);
+                continue;
+            }
+
+            const olMatch = trimmed.match(/^\d+\.\s+(.*)$/);
+            if (olMatch) {
+                flushParagraph();
+                if (inUl) {
+                    blocks.push('</ul>');
+                    inUl = false;
+                }
+                if (!inOl) {
+                    blocks.push('<ol>');
+                    inOl = true;
+                }
+                blocks.push(`<li>${renderInlineMarkdown(olMatch[1])}</li>`);
+                continue;
+            }
+
+            closeLists();
+            paragraphLines.push(trimmed);
+        }
+
+        flushParagraph();
+        closeLists();
+
+        return blocks.join('');
+    }
+
     function buildHighlightTerms(query) {
         if (!query) return [];
 
@@ -185,10 +333,30 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function appendMessage(role, text) {
+    function appendMessage(role, text, options = {}) {
         const msgDiv = document.createElement('div');
         msgDiv.className = `message ${role}`;
-        msgDiv.textContent = text;
+        if (role === 'assistant') {
+            msgDiv.innerHTML = renderMarkdown(text);
+            if (options.mode === 'document' && options.confidence) {
+                const metaDiv = document.createElement('div');
+                metaDiv.className = 'message-meta';
+                const score = typeof options.confidence.score === 'number'
+                    ? ` (${options.confidence.score.toFixed(2)})`
+                    : '';
+                metaDiv.textContent = `Confidence: ${String(options.confidence.label || 'low').replace(/^./, c => c.toUpperCase())}${score}`;
+                msgDiv.appendChild(metaDiv);
+
+                if (options.confidence.coverage_truncated) {
+                    const noteDiv = document.createElement('div');
+                    noteDiv.className = 'message-note';
+                    noteDiv.textContent = 'Answer may be partial; based on retrieved evidence subset.';
+                    msgDiv.appendChild(noteDiv);
+                }
+            }
+        } else {
+            msgDiv.textContent = text;
+        }
         chatArea.appendChild(msgDiv);
         chatArea.scrollTop = chatArea.scrollHeight;
     }
@@ -329,6 +497,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (payload.rag_enabled && payload.mode === 'document') {
             output += `Retrieval query:\n${payload.retrieval_query || 'N/A'}\n\n`;
+            output += '[RESPONSE FORMAT]\n';
+            output += `Detected: ${payload.response_format_detected || 'default'}\n`;
+            output += `Rules applied: ${payload.response_format_rules_applied ? 'true' : 'false'}\n`;
+            output += `Reason: ${payload.response_format_reason || 'N/A'}\n\n`;
+            output += '[COVERAGE]\n';
+            output += `Mode: ${payload.coverage_mode || 'narrow_lookup'}\n`;
+            output += `Coverage required: ${payload.coverage_required ? 'true' : 'false'}\n`;
+            output += `Top-k requested: ${payload.retrieval_top_k_requested ?? 'N/A'}\n`;
+            output += `Verified chunks: ${payload.retrieval_verified_chunks_count ?? 'N/A'}\n`;
+            output += `Chunks used for prompt: ${payload.retrieval_chunks_used_for_prompt ?? 'N/A'}\n`;
+            output += `Coverage truncated: ${payload.coverage_truncated ? 'true' : 'false'}\n`;
+            output += `Coverage reason: ${payload.coverage_reason || 'N/A'}\n`;
+            if (payload.confidence_reason_codes && payload.confidence_reason_codes.length > 0) {
+                output += `Confidence reasons: ${payload.confidence_reason_codes.join(', ')}\n`;
+            }
+            output += '\n';
 
             if (payload.retrieval_metrics) {
                 const metrics = payload.retrieval_metrics;
@@ -458,7 +642,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.debug && data.debug.error) {
                 appendMessage('assistant', `System Error: ${data.debug.error}`);
             } else if (data.reply) {
-                appendMessage('assistant', data.reply);
+                appendMessage('assistant', data.reply, { mode, confidence: data.confidence });
             } else {
                 appendMessage('assistant', 'Empty response.');
             }

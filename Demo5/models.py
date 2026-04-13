@@ -24,6 +24,7 @@ class TokenUsage(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     evidence: Optional[List[Dict[str, Any]]] = None
+    confidence: Optional[Dict[str, Any]] = None
     debug: Dict[str, Any]
     token_usage: Optional[TokenUsage] = None
 

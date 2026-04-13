@@ -75,7 +75,11 @@ class TestSpec029EnumerationRetrieval(unittest.TestCase):
     @patch("app.services.rag_service.get_connection")
     @patch("app.services.rag_service.os.path.exists", return_value=True)
     def test_get_rag_context_expands_top_k_for_enumeration(self, _mock_exists, mock_get_connection, mock_search, mock_verify):
-        mock_get_connection.return_value = object()
+        class _Conn:
+            def close(self):
+                return None
+
+        mock_get_connection.return_value = _Conn()
         mock_verify.side_effect = lambda _conn, chunks: (chunks, 0)
         mock_search.return_value = {
             "results": [
@@ -94,11 +98,43 @@ class TestSpec029EnumerationRetrieval(unittest.TestCase):
 
         result = get_rag_context("list all GP consultations", top_k=3, document_ids=["doc1"])
 
-        self.assertEqual(result["metrics"]["retrieval_mode"], "enumeration")
-        self.assertEqual(result["metrics"]["requested_top_k"], 3)
-        self.assertGreaterEqual(result["metrics"]["effective_top_k"], 20)
+        self.assertEqual(result["metrics"]["coverage_mode"], "coverage_required")
+        self.assertEqual(result["metrics"]["retrieval_top_k_requested"], 12)
+        self.assertGreaterEqual(result["metrics"]["effective_top_k"], 12)
         self.assertEqual(len(result["chunks"]), 20)
         self.assertEqual(mock_search.call_args.kwargs["retrieval_mode"], "enumeration")
+
+    @patch("app.services.rag_service.verify_retrieved_chunks")
+    @patch("app.services.rag_service.search")
+    @patch("app.services.rag_service.get_connection")
+    @patch("app.services.rag_service.os.path.exists", return_value=True)
+    def test_get_rag_context_keeps_narrow_lookup_small(self, _mock_exists, mock_get_connection, mock_search, mock_verify):
+        class _Conn:
+            def close(self):
+                return None
+
+        mock_get_connection.return_value = _Conn()
+        mock_verify.side_effect = lambda _conn, chunks: (chunks, 0)
+        mock_search.return_value = {
+            "results": [
+                {"document_id": "doc1", "document_name": "glossary.docx", "chunk_index": index, "text": f"row {index}", "score": 0.8}
+                for index in range(1, 5)
+            ],
+            "metrics": {
+                "eligible_docs": 1,
+                "candidate_count": 4,
+                "pool_size": 4,
+                "region_mode": "neutral",
+                "retrieval_mode": "default",
+                "lexical_match_cap": 20,
+            },
+        }
+
+        result = get_rag_context("what is APO13?", top_k=3, document_ids=["doc1"])
+
+        self.assertEqual(result["metrics"]["coverage_mode"], "narrow_lookup")
+        self.assertEqual(result["metrics"]["retrieval_top_k_requested"], 3)
+        self.assertEqual(len(result["chunks"]), 3)
 
     def test_prompt_builder_uses_list_instruction_for_enumeration(self):
         prompt = build_grounded_prompt(
