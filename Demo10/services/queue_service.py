@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime
+
+from services.bundle_service import WorkingSetBundle
+from services.selection_service import SelectionResult
+
+
+QUEUE_SIZE = 10
+
+
+@dataclass
+class QueueSlot:
+    slot_index: int
+    spec_text: str = ""
+    status: str = "empty"
+    started_at: str = ""
+    completed_at: str = ""
+    failure_reason: str = ""
+    selection_result: SelectionResult | None = None
+    bundle_result: WorkingSetBundle | None = None
+    notes_log_summary: list[str] = field(default_factory=list)
+
+
+@dataclass
+class SpecQueueState:
+    queue_slots: list[QueueSlot]
+    queue_status: str = "idle"
+    active_slot_index: int = -1
+    started_at: str = ""
+    completed_at: str = ""
+    stop_requested: bool = False
+    completed_count: int = 0
+    failed_count: int = 0
+    skipped_count: int = 0
+
+
+class QueueService:
+    def create_state(self) -> SpecQueueState:
+        return SpecQueueState(queue_slots=[QueueSlot(slot_index=i) for i in range(QUEUE_SIZE)])
+
+    def load_specs(self, state: SpecQueueState, specs: list[str]) -> None:
+        for idx, slot in enumerate(state.queue_slots):
+            spec = specs[idx].strip() if idx < len(specs) else ""
+            slot.spec_text = spec
+            if slot.status == "running":
+                slot.status = "ready" if spec else "empty"
+            elif slot.status in {"empty", "ready", "failed", "completed", "skipped", "stopped"}:
+                slot.status = "ready" if spec else "empty"
+            slot.failure_reason = ""
+            slot.selection_result = None
+            slot.bundle_result = None
+            slot.started_at = ""
+            slot.completed_at = ""
+            slot.notes_log_summary = []
+
+    def start(self, state: SpecQueueState) -> None:
+        state.queue_status = "running"
+        state.active_slot_index = -1
+        state.started_at = self._now()
+        state.completed_at = ""
+        state.stop_requested = False
+        state.completed_count = 0
+        state.failed_count = 0
+        state.skipped_count = 0
+        for slot in state.queue_slots:
+            slot.selection_result = None
+            slot.bundle_result = None
+            slot.failure_reason = ""
+            slot.started_at = ""
+            slot.completed_at = ""
+            slot.notes_log_summary = []
+            slot.status = "ready" if slot.spec_text.strip() else "empty"
+
+    def request_stop(self, state: SpecQueueState) -> None:
+        state.stop_requested = True
+
+    def mark_slot_running(self, state: SpecQueueState, slot: QueueSlot) -> None:
+        slot.status = "running"
+        slot.started_at = self._now()
+        state.active_slot_index = slot.slot_index
+
+    def mark_slot_completed(self, state: SpecQueueState, slot: QueueSlot) -> None:
+        slot.status = "completed"
+        slot.completed_at = self._now()
+        state.completed_count += 1
+
+    def mark_slot_failed(self, state: SpecQueueState, slot: QueueSlot, reason: str) -> None:
+        slot.status = "failed"
+        slot.failure_reason = reason
+        slot.completed_at = self._now()
+        state.failed_count += 1
+
+    def mark_slot_stopped(self, slot: QueueSlot, reason: str) -> None:
+        slot.status = "stopped"
+        slot.failure_reason = reason
+        slot.completed_at = self._now()
+
+    def finalize(self, state: SpecQueueState, status: str) -> None:
+        state.queue_status = status
+        state.completed_at = self._now()
+        state.active_slot_index = -1
+
+    def _now(self) -> str:
+        return datetime.now().isoformat(timespec="seconds")

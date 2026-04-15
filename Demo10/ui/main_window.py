@@ -1,0 +1,1193 @@
+from __future__ import annotations
+
+import queue
+import threading
+import time
+import tkinter as tk
+from pathlib import Path
+from tkinter import filedialog, ttk
+
+from services.file_service import FileService, TreeNode
+from services.log_service import LogService
+from services.bundle_service import BundleBuilder, WorkingSetBundle
+from services.index_service import ArchitectureIndex, IndexBuilder
+from services.ollama_service import OllamaRunSnapshot, OllamaService
+from services.process_service import ProcessResult, ProcessService
+from services.prompt_service import PromptBuilder, PromptRequest
+from services.queue_service import QueueService
+from services.restore_service import RestoreResult, RestoreService
+from services.run_state_service import RunStateService
+from services.selection_service import FileSelector, SelectionResult
+
+
+class AgentWorkbenchApp:
+    def __init__(self) -> None:
+        self.root = tk.Tk()
+        self.root.title("AgentWorkbench")
+        self.root.geometry("1600x950")
+        self.root.minsize(1200, 760)
+
+        self.file_service = FileService()
+        self.process_service = ProcessService()
+        self.ollama_service = OllamaService()
+        self.index_builder = IndexBuilder()
+        self.file_selector = FileSelector()
+        self.bundle_builder = BundleBuilder()
+        self.queue_service = QueueService()
+        self.restore_service = RestoreService()
+        self.log_service = LogService()
+        self.prompt_builder = PromptBuilder()
+        self.run_state_service = RunStateService()
+        self.ui_queue: queue.Queue[tuple[str, object]] = queue.Queue()
+
+        self.current_folder: Path | None = None
+        self.selected_file: Path | None = None
+        self.tree_paths: dict[str, Path] = {}
+        self.tree_build_thread: threading.Thread | None = None
+        self.model_load_thread: threading.Thread | None = None
+        self.llm_run_thread: threading.Thread | None = None
+        self.index_build_thread: threading.Thread | None = None
+        self.selection_thread: threading.Thread | None = None
+        self.queue_thread: threading.Thread | None = None
+        self.restore_thread: threading.Thread | None = None
+        self.llm_run_active = False
+        self.index_build_active = False
+        self.selection_active = False
+        self.queue_active = False
+        self.restore_active = False
+        self.llm_run_started_at = 0.0
+        self.llm_chunk_count = 0
+        self.llm_output_chars = 0
+        self.active_run_snapshot: OllamaRunSnapshot | None = None
+
+        self.folder_var = tk.StringVar(value="No folder selected")
+        self.model_var = tk.StringVar(value="")
+        self.selected_file_var = tk.StringVar(value="No file selected")
+        self.status_folder_var = tk.StringVar(value="Folder: none")
+        self.status_file_var = tk.StringVar(value="File: none")
+        self.status_model_var = tk.StringVar(value="Model: unavailable")
+        self.status_action_var = tk.StringVar(value="LLM: idle")
+        self.command_var = tk.StringVar()
+        self.active_slot_var = tk.StringVar(value="Active Slot: none")
+
+        self.spec_queue = self.queue_service.create_state()
+        self.run_state_service.set_queue_state(self.spec_queue)
+        self.queue_slot_widgets: list[tk.Text] = []
+        self.queue_slot_status_vars: list[tk.StringVar] = [tk.StringVar(value="empty") for _ in range(10)]
+
+        self._configure_style()
+        self._build_layout()
+        self.root.after(100, self._process_ui_queue)
+        self.root.after(150, self.refresh_models)
+
+    def run(self) -> None:
+        self.root.mainloop()
+
+    def _configure_style(self) -> None:
+        style = ttk.Style(self.root)
+        if "clam" in style.theme_names():
+            style.theme_use("clam")
+
+        bg = "#1e1e1e"
+        panel = "#252526"
+        border = "#3c3c3c"
+        fg = "#d4d4d4"
+        accent = "#0e639c"
+        self.root.configure(bg=bg)
+
+        style.configure(".", background=bg, foreground=fg, fieldbackground=panel)
+        style.configure("TFrame", background=bg)
+        style.configure("Panel.TFrame", background=panel, relief="flat")
+        style.configure("TLabel", background=bg, foreground=fg)
+        style.configure("Panel.TLabel", background=panel, foreground=fg)
+        style.configure("TButton", background=accent, foreground="white", padding=6)
+        style.map("TButton", background=[("active", "#1177bb")])
+        style.configure("Treeview", background=panel, foreground=fg, fieldbackground=panel, bordercolor=border)
+        style.configure("Treeview.Heading", background="#2d2d30", foreground=fg)
+        style.configure("TCombobox", fieldbackground=panel, background=panel, foreground=fg)
+        style.map("TCombobox", fieldbackground=[("readonly", panel)], foreground=[("readonly", fg)])
+
+    def _build_layout(self) -> None:
+        container = ttk.Frame(self.root, padding=8)
+        container.pack(fill="both", expand=True)
+        container.rowconfigure(1, weight=1)
+        container.columnconfigure(0, weight=1)
+
+        self._build_top_section(container)
+        self._build_main_section(container)
+        self._build_bottom_section(container)
+        self._build_status_bar(container)
+        self._refresh_prompt_preview()
+        self._refresh_response_view()
+        self._refresh_index_view()
+        self._refresh_selection_view()
+        self._refresh_bundle_view()
+        self._refresh_queue_view()
+        self._refresh_restore_view()
+
+    def _build_top_section(self, parent: ttk.Frame) -> None:
+        top = ttk.Frame(parent, style="Panel.TFrame", padding=10)
+        top.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
+        top.columnconfigure(1, weight=1)
+        top.columnconfigure(5, weight=1)
+        top.rowconfigure(1, weight=1)
+
+        ttk.Label(top, text="Project", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Entry(top, textvariable=self.folder_var).grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 8))
+        ttk.Button(top, text="Open Folder", command=self.open_folder).grid(row=0, column=3, padx=(0, 8))
+        ttk.Button(top, text="Refresh Tree", command=self.refresh_tree).grid(row=0, column=4, padx=(0, 16))
+
+        ttk.Label(top, text="Model", style="Panel.TLabel").grid(row=0, column=5, sticky="w")
+        self.model_combo = ttk.Combobox(top, textvariable=self.model_var, state="readonly", values=[])
+        self.model_combo.grid(row=0, column=6, sticky="ew", padx=(8, 8))
+        self.model_combo.bind("<<ComboboxSelected>>", self._on_model_selected)
+        ttk.Button(top, text="Refresh Models", command=self.refresh_models).grid(row=0, column=7)
+
+        ttk.Label(top, text="Specification", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        spec_frame = ttk.Frame(top, style="Panel.TFrame")
+        spec_frame.grid(row=1, column=1, columnspan=5, sticky="nsew", pady=(10, 0))
+        spec_frame.rowconfigure(0, weight=1)
+        spec_frame.columnconfigure(0, weight=1)
+
+        self.spec_text = tk.Text(
+            spec_frame,
+            wrap="word",
+            height=8,
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        spec_scroll = ttk.Scrollbar(spec_frame, orient="vertical", command=self.spec_text.yview)
+        self.spec_text.configure(yscrollcommand=spec_scroll.set)
+        self.spec_text.grid(row=0, column=0, sticky="nsew")
+        spec_scroll.grid(row=0, column=1, sticky="ns")
+        self.spec_text.bind("<KeyRelease>", self._on_spec_changed)
+        queue_frame = ttk.Frame(top, style="Panel.TFrame")
+        queue_frame.grid(row=1, column=6, columnspan=2, sticky="nsew", pady=(10, 0), padx=(10, 0))
+        queue_frame.rowconfigure(1, weight=1)
+        queue_frame.columnconfigure(0, weight=1)
+        ttk.Label(queue_frame, text="Spec Queue (10 Slots)", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        self.queue_status_label = ttk.Label(queue_frame, textvariable=self.active_slot_var, style="Panel.TLabel")
+        self.queue_status_label.grid(row=0, column=1, sticky="e")
+        queue_slots_frame = ttk.Frame(queue_frame, style="Panel.TFrame")
+        queue_slots_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(6, 0))
+        for idx in range(10):
+            queue_slots_frame.rowconfigure(idx, weight=1)
+        queue_slots_frame.columnconfigure(2, weight=1)
+        for idx in range(10):
+            slot_label = ttk.Label(queue_slots_frame, text=f"{idx + 1}.", style="Panel.TLabel")
+            slot_label.grid(row=idx, column=0, sticky="nw", padx=(0, 4))
+            status_label = ttk.Label(queue_slots_frame, textvariable=self.queue_slot_status_vars[idx], style="Panel.TLabel")
+            status_label.grid(row=idx, column=1, sticky="nw", padx=(0, 6))
+            slot_text = tk.Text(
+                queue_slots_frame,
+                height=2,
+                wrap="word",
+                bg="#1b1b1c",
+                fg="#d4d4d4",
+                insertbackground="#d4d4d4",
+                font=("Consolas", 9),
+                relief="flat",
+            )
+            slot_text.grid(row=idx, column=2, sticky="ew", pady=(0, 4))
+            self.queue_slot_widgets.append(slot_text)
+        action_row = ttk.Frame(top, style="Panel.TFrame")
+        action_row.grid(row=2, column=6, columnspan=2, sticky="e", pady=(8, 0))
+        self.run_llm_button = ttk.Button(action_row, text="Run LLM", command=self.run_llm)
+        self.run_llm_button.pack(side="left", padx=(0, 8))
+        self.build_index_button = ttk.Button(action_row, text="Build Index", command=self.build_index)
+        self.build_index_button.pack(side="left", padx=(0, 8))
+        self.select_files_button = ttk.Button(action_row, text="Select Files", command=self.select_files)
+        self.select_files_button.pack(side="left", padx=(0, 8))
+        self.restore_bundle_button = ttk.Button(action_row, text="Restore Bundle", command=self.restore_bundle)
+        self.restore_bundle_button.pack(side="left", padx=(0, 8))
+        self.start_queue_button = ttk.Button(action_row, text="Start Queue", command=self.start_queue)
+        self.start_queue_button.pack(side="left", padx=(0, 8))
+        self.stop_queue_button = ttk.Button(action_row, text="Stop Queue", command=self.stop_queue)
+        self.stop_queue_button.pack(side="left", padx=(0, 8))
+        self.stop_queue_button.state(["disabled"])
+        ttk.Button(action_row, text="Submit Spec", command=self.submit_spec).pack(side="left")
+
+    def _build_main_section(self, parent: ttk.Frame) -> None:
+        main = ttk.PanedWindow(parent, orient="horizontal")
+        main.grid(row=1, column=0, sticky="nsew", pady=(0, 8))
+
+        left = ttk.Frame(main, style="Panel.TFrame", padding=8)
+        center = ttk.Frame(main, style="Panel.TFrame", padding=8)
+        right = ttk.Frame(main, style="Panel.TFrame", padding=8)
+
+        for panel in (left, center, right):
+            panel.rowconfigure(1, weight=1)
+            panel.columnconfigure(0, weight=1)
+
+        main.add(left, weight=1)
+        main.add(center, weight=3)
+        main.add(right, weight=2)
+
+        ttk.Label(left, text="Project Tree", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        tree_frame = ttk.Frame(left, style="Panel.TFrame")
+        tree_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        tree_frame.rowconfigure(0, weight=1)
+        tree_frame.columnconfigure(0, weight=1)
+        self.tree = ttk.Treeview(tree_frame, show="tree")
+        self.tree.bind("<<TreeviewSelect>>", self._on_tree_selected)
+        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", command=self.tree.yview)
+        self.tree.configure(yscrollcommand=tree_scroll.set)
+        self.tree.grid(row=0, column=0, sticky="nsew")
+        tree_scroll.grid(row=0, column=1, sticky="ns")
+
+        ttk.Label(center, text="Workspace Views", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        notebook = ttk.Notebook(center)
+        notebook.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+
+        viewer_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        prompt_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        response_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        index_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        selection_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        bundle_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        restore_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        notebook.add(viewer_frame, text="File Viewer")
+        notebook.add(prompt_frame, text="Prompt Preview")
+        notebook.add(response_frame, text="Latest Response")
+        notebook.add(index_frame, text="Architecture Index")
+        notebook.add(selection_frame, text="File Selection")
+        notebook.add(bundle_frame, text="Bundle Preview")
+        notebook.add(restore_frame, text="Restore Result")
+
+        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, restore_frame):
+            frame.rowconfigure(0, weight=1)
+            frame.columnconfigure(0, weight=1)
+
+        self.viewer = tk.Text(
+            viewer_frame,
+            wrap="none",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        viewer_y = ttk.Scrollbar(viewer_frame, orient="vertical", command=self.viewer.yview)
+        viewer_x = ttk.Scrollbar(viewer_frame, orient="horizontal", command=self.viewer.xview)
+        self.viewer.configure(yscrollcommand=viewer_y.set, xscrollcommand=viewer_x.set)
+        self.viewer.grid(row=0, column=0, sticky="nsew")
+        viewer_y.grid(row=0, column=1, sticky="ns")
+        viewer_x.grid(row=1, column=0, sticky="ew")
+        self.viewer.insert("1.0", "Select a text file to preview it here.")
+        self.viewer.configure(state="disabled")
+
+        self.prompt_preview = tk.Text(
+            prompt_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#4ec9b0",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        prompt_scroll = ttk.Scrollbar(prompt_frame, orient="vertical", command=self.prompt_preview.yview)
+        self.prompt_preview.configure(yscrollcommand=prompt_scroll.set)
+        self.prompt_preview.grid(row=0, column=0, sticky="nsew")
+        prompt_scroll.grid(row=0, column=1, sticky="ns")
+        self.prompt_preview.configure(state="disabled")
+
+        self.response_view = tk.Text(
+            response_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#ce9178",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        response_scroll = ttk.Scrollbar(response_frame, orient="vertical", command=self.response_view.yview)
+        self.response_view.configure(yscrollcommand=response_scroll.set)
+        self.response_view.grid(row=0, column=0, sticky="nsew")
+        response_scroll.grid(row=0, column=1, sticky="ns")
+        self.response_view.configure(state="disabled")
+
+        self.index_view = tk.Text(
+            index_frame,
+            wrap="none",
+            bg="#1b1b1c",
+            fg="#dcdcaa",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        index_y = ttk.Scrollbar(index_frame, orient="vertical", command=self.index_view.yview)
+        index_x = ttk.Scrollbar(index_frame, orient="horizontal", command=self.index_view.xview)
+        self.index_view.configure(yscrollcommand=index_y.set, xscrollcommand=index_x.set)
+        self.index_view.grid(row=0, column=0, sticky="nsew")
+        index_y.grid(row=0, column=1, sticky="ns")
+        index_x.grid(row=1, column=0, sticky="ew")
+        self.index_view.configure(state="disabled")
+
+        self.selection_view = tk.Text(
+            selection_frame,
+            wrap="none",
+            bg="#1b1b1c",
+            fg="#c586c0",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        selection_y = ttk.Scrollbar(selection_frame, orient="vertical", command=self.selection_view.yview)
+        selection_x = ttk.Scrollbar(selection_frame, orient="horizontal", command=self.selection_view.xview)
+        self.selection_view.configure(yscrollcommand=selection_y.set, xscrollcommand=selection_x.set)
+        self.selection_view.grid(row=0, column=0, sticky="nsew")
+        selection_y.grid(row=0, column=1, sticky="ns")
+        selection_x.grid(row=1, column=0, sticky="ew")
+        self.selection_view.configure(state="disabled")
+
+        self.bundle_view = tk.Text(
+            bundle_frame,
+            wrap="none",
+            bg="#1b1b1c",
+            fg="#9cdcfe",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        bundle_y = ttk.Scrollbar(bundle_frame, orient="vertical", command=self.bundle_view.yview)
+        bundle_x = ttk.Scrollbar(bundle_frame, orient="horizontal", command=self.bundle_view.xview)
+        self.bundle_view.configure(yscrollcommand=bundle_y.set, xscrollcommand=bundle_x.set)
+        self.bundle_view.grid(row=0, column=0, sticky="nsew")
+        bundle_y.grid(row=0, column=1, sticky="ns")
+        bundle_x.grid(row=1, column=0, sticky="ew")
+        self.bundle_view.configure(state="disabled")
+
+        self.restore_view = tk.Text(
+            restore_frame,
+            wrap="none",
+            bg="#1b1b1c",
+            fg="#d7ba7d",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        restore_y = ttk.Scrollbar(restore_frame, orient="vertical", command=self.restore_view.yview)
+        restore_x = ttk.Scrollbar(restore_frame, orient="horizontal", command=self.restore_view.xview)
+        self.restore_view.configure(yscrollcommand=restore_y.set, xscrollcommand=restore_x.set)
+        self.restore_view.grid(row=0, column=0, sticky="nsew")
+        restore_y.grid(row=0, column=1, sticky="ns")
+        restore_x.grid(row=1, column=0, sticky="ew")
+        self.restore_view.configure(state="disabled")
+
+        ttk.Label(right, text="Activity Log", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        log_frame = ttk.Frame(right, style="Panel.TFrame")
+        log_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        log_frame.rowconfigure(0, weight=1)
+        log_frame.columnconfigure(0, weight=1)
+        self.log_text = tk.Text(
+            log_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        log_scroll = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=log_scroll.set, state="disabled")
+        self.log_text.tag_configure("system", foreground="#9cdcfe")
+        self.log_text.tag_configure("model", foreground="#ce9178")
+        self.log_text.tag_configure("separator", foreground="#6a9955")
+        self.log_text.grid(row=0, column=0, sticky="nsew")
+        log_scroll.grid(row=0, column=1, sticky="ns")
+
+    def _build_bottom_section(self, parent: ttk.Frame) -> None:
+        bottom = ttk.Frame(parent, style="Panel.TFrame", padding=8)
+        bottom.grid(row=2, column=0, sticky="nsew", pady=(0, 8))
+        bottom.columnconfigure(1, weight=1)
+        bottom.rowconfigure(1, weight=1)
+
+        ttk.Label(bottom, text="PowerShell", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        entry = ttk.Entry(bottom, textvariable=self.command_var)
+        entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
+        entry.bind("<Return>", lambda _event: self.run_command())
+        ttk.Button(bottom, text="Run", command=self.run_command).grid(row=0, column=2)
+
+        output_frame = ttk.Frame(bottom, style="Panel.TFrame")
+        output_frame.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+        output_frame.rowconfigure(0, weight=1)
+        output_frame.columnconfigure(0, weight=1)
+        self.output_text = tk.Text(
+            output_frame,
+            wrap="word",
+            height=10,
+            bg="#111214",
+            fg="#ce9178",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        output_scroll = ttk.Scrollbar(output_frame, orient="vertical", command=self.output_text.yview)
+        self.output_text.configure(yscrollcommand=output_scroll.set, state="disabled")
+        self.output_text.grid(row=0, column=0, sticky="nsew")
+        output_scroll.grid(row=0, column=1, sticky="ns")
+
+    def _build_status_bar(self, parent: ttk.Frame) -> None:
+        status = ttk.Frame(parent, style="Panel.TFrame", padding=(8, 6))
+        status.grid(row=3, column=0, sticky="ew")
+        for idx in range(4):
+            status.columnconfigure(idx, weight=1)
+
+        ttk.Label(status, textvariable=self.status_folder_var, style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(status, textvariable=self.status_file_var, style="Panel.TLabel").grid(row=0, column=1, sticky="w")
+        ttk.Label(status, textvariable=self.status_model_var, style="Panel.TLabel").grid(row=0, column=2, sticky="w")
+        ttk.Label(status, textvariable=self.status_action_var, style="Panel.TLabel").grid(row=0, column=3, sticky="w")
+
+    def log_event(self, message: str) -> None:
+        entry = self.log_service.create_entry(message)
+        line = f"[{entry.timestamp}] {entry.message}\n"
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", line, ("system",))
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
+
+    def append_model_output(self, text: str) -> None:
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", text, ("model",))
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
+
+    def append_log_separator(self, title: str) -> None:
+        entry = self.log_service.create_entry(title)
+        line = f"\n[{entry.timestamp}] ===== {title} =====\n"
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", line, ("separator",))
+        self.log_text.see("end")
+        self.log_text.configure(state="disabled")
+
+    def set_status_action(self, message: str) -> None:
+        self.status_action_var.set(f"State: {message}")
+
+    def _on_spec_changed(self, _event: object) -> None:
+        self._refresh_prompt_preview()
+
+    def _current_project_folder_text(self) -> str:
+        return str(self.current_folder) if self.current_folder else "not selected"
+
+    def _build_prompt_from_ui(self) -> str:
+        request = PromptRequest(
+            model_name=self.model_var.get().strip() or "not selected",
+            project_folder=self._current_project_folder_text(),
+            spec_text=self.spec_text.get("1.0", "end-1c"),
+        )
+        return self.prompt_builder.build(request)
+
+    def _set_text_widget_content(self, widget: tk.Text, content: str) -> None:
+        widget.configure(state="normal")
+        widget.delete("1.0", "end")
+        widget.insert("1.0", content)
+        widget.configure(state="disabled")
+
+    def _refresh_prompt_preview(self) -> None:
+        try:
+            prompt = self._build_prompt_from_ui()
+        except Exception as exc:
+            prompt = f"Prompt preview unavailable: {exc}"
+        self._set_text_widget_content(self.prompt_preview, prompt)
+
+    def _refresh_response_view(self) -> None:
+        run = self.run_state_service.latest_run
+        if run.status == "idle" and not run.final_response_text:
+            content = "No captured response yet."
+        else:
+            content = (
+                f"Status: {run.status}\n"
+                f"Model: {run.model_name or 'not selected'}\n"
+                f"Project folder: {run.project_folder}\n"
+                f"Started: {run.started_at or '-'}\n"
+                f"Completed: {run.completed_at or '-'}\n"
+                f"Failure: {run.failure_reason or '-'}\n\n"
+                "[FINAL RESPONSE]\n"
+                f"{run.final_response_text or '(no response captured)'}"
+            )
+        self._set_text_widget_content(self.response_view, content)
+
+    def _refresh_index_view(self) -> None:
+        index_state = self.run_state_service.index_state
+        architecture_index = index_state.latest_index
+        if architecture_index is None:
+            if index_state.status == "failed":
+                content = f"Index build failed.\nReason: {index_state.failure_reason or '-'}"
+            elif index_state.status == "building":
+                content = "Architecture index build in progress..."
+            else:
+                content = "No architecture index built yet."
+        else:
+            content = architecture_index.to_preview_text()
+        self._set_text_widget_content(self.index_view, content)
+
+    def _refresh_selection_view(self) -> None:
+        selection_state = self.run_state_service.selection_state
+        selection_result = selection_state.latest_selection
+        if selection_result is None:
+            if selection_state.status == "failed":
+                content = f"File selection failed.\nReason: {selection_state.failure_reason or '-'}"
+            elif selection_state.status == "selecting":
+                content = "Deterministic file selection in progress..."
+            else:
+                content = "No file selection result yet."
+        else:
+            content = selection_result.to_preview_text()
+        self._set_text_widget_content(self.selection_view, content)
+
+    def _refresh_bundle_view(self) -> None:
+        bundle_state = self.run_state_service.bundle_state
+        bundle = bundle_state.latest_bundle
+        if bundle is None:
+            if bundle_state.status == "failed":
+                content = f"Bundle build failed.\nReason: {bundle_state.failure_reason or '-'}"
+            elif bundle_state.status == "building":
+                content = "Bundle build in progress..."
+            else:
+                content = "No working-set bundle built yet."
+        else:
+            content = self.restore_service.preview_bundle(bundle) + "\n\n" + bundle.to_preview_text()
+        self._set_text_widget_content(self.bundle_view, content)
+
+    def _refresh_restore_view(self) -> None:
+        restore_state = self.run_state_service.restore_state
+        restore = restore_state.latest_restore
+        if restore is None:
+            if restore_state.status == "failed":
+                content = f"Restore failed.\nReason: {restore_state.failure_reason or '-'}"
+            elif restore_state.status == "restoring":
+                content = "Restore in progress..."
+            else:
+                content = "No restore result yet."
+        else:
+            content = restore.to_preview_text()
+        self._set_text_widget_content(self.restore_view, content)
+
+    def _refresh_queue_view(self) -> None:
+        queue_state = self.spec_queue
+        active = queue_state.active_slot_index + 1 if queue_state.active_slot_index >= 0 else "none"
+        self.active_slot_var.set(f"Active Slot: {active} | Queue: {queue_state.queue_status}")
+        for idx, (slot, widget) in enumerate(zip(queue_state.queue_slots, self.queue_slot_widgets)):
+            self.queue_slot_status_vars[idx].set(slot.status)
+            current = widget.get("1.0", "end-1c")
+            if current != slot.spec_text:
+                widget.delete("1.0", "end")
+                widget.insert("1.0", slot.spec_text)
+            if slot.status == "running":
+                widget.configure(bg="#263238")
+            elif slot.status == "completed":
+                widget.configure(bg="#1f3b2d")
+            elif slot.status == "failed":
+                widget.configure(bg="#4b1f1f")
+            elif slot.status == "stopped":
+                widget.configure(bg="#4a3b1f")
+            else:
+                widget.configure(bg="#1b1b1c")
+            widget.configure(fg="#d4d4d4", insertbackground="#d4d4d4")
+
+    def _capture_queue_specs(self) -> list[str]:
+        return [widget.get("1.0", "end-1c") for widget in self.queue_slot_widgets]
+
+    def open_folder(self) -> None:
+        folder = filedialog.askdirectory(initialdir=str(self.current_folder or Path.cwd()))
+        if not folder:
+            return
+        self.current_folder = Path(folder)
+        self.folder_var.set(str(self.current_folder))
+        self.status_folder_var.set(f"Folder: {self.current_folder}")
+        self.log_event(f"Project folder selected: {self.current_folder}")
+        self._refresh_prompt_preview()
+        self.refresh_tree()
+
+    def refresh_tree(self) -> None:
+        if not self.current_folder:
+            self.log_event("Refresh tree skipped: no project folder selected.")
+            return
+        self.log_event(f"Refreshing tree for {self.current_folder}")
+        self.tree.delete(*self.tree.get_children())
+        self.tree_paths.clear()
+        thread = threading.Thread(target=self._load_tree_worker, args=(self.current_folder,), daemon=True)
+        self.tree_build_thread = thread
+        thread.start()
+
+    def _load_tree_worker(self, folder: Path) -> None:
+        try:
+            tree_data = self.file_service.build_tree(folder)
+            self.ui_queue.put(("tree_loaded", tree_data))
+        except Exception as exc:
+            self.ui_queue.put(("tree_error", str(exc)))
+
+    def _render_tree(self, node: TreeNode) -> None:
+        self.tree.delete(*self.tree.get_children())
+        self.tree_paths.clear()
+        root_id = self.tree.insert("", "end", text=node.name, open=True)
+        self.tree_paths[root_id] = node.path
+        self._insert_tree_children(root_id, node)
+
+    def _insert_tree_children(self, parent_id: str, node: TreeNode) -> None:
+        for child in node.children:
+            child_id = self.tree.insert(parent_id, "end", text=child.name, open=False)
+            self.tree_paths[child_id] = child.path
+            if child.is_dir:
+                self._insert_tree_children(child_id, child)
+
+    def _on_tree_selected(self, _event: object) -> None:
+        selected = self.tree.selection()
+        if not selected:
+            return
+        path = self.tree_paths.get(selected[0])
+        if not path or path.is_dir():
+            return
+        self.selected_file = path
+        self.selected_file_var.set(str(path))
+        self.status_file_var.set(f"File: {path.name}")
+        success, content = self.file_service.read_text_file(path)
+        self.viewer.configure(state="normal")
+        self.viewer.delete("1.0", "end")
+        self.viewer.insert("1.0", content)
+        self.viewer.configure(state="disabled")
+        if success:
+            self.log_event(f"Loaded file preview: {path}")
+        else:
+            self.log_event(f"Preview fallback for {path}: {content}")
+
+    def refresh_models(self) -> None:
+        self.log_event("Refreshing Ollama model list")
+        thread = threading.Thread(target=self._load_models_worker, daemon=True)
+        self.model_load_thread = thread
+        thread.start()
+
+    def _load_models_worker(self) -> None:
+        try:
+            models = self.ollama_service.list_models()
+            self.ui_queue.put(("models_loaded", models))
+        except Exception as exc:
+            self.ui_queue.put(("models_error", str(exc)))
+
+    def _on_model_selected(self, _event: object) -> None:
+        model = self.model_var.get().strip() or "none"
+        self.status_model_var.set(f"Model: {model}")
+        self.log_event(f"Model selected: {model}")
+        self._refresh_prompt_preview()
+
+    def submit_spec(self) -> None:
+        spec = self.spec_text.get("1.0", "end-1c")
+        model = self.model_var.get().strip() or "(none)"
+        folder = str(self.current_folder) if self.current_folder else "(none)"
+        self.log_event("spec received")
+        self.log_event(f"spec length: {len(spec)}")
+        self.log_event(f"current project folder: {folder}")
+        self.log_event(f"selected model: {model}")
+
+    def run_command(self) -> None:
+        command = self.command_var.get().strip()
+        if not command:
+            self.log_event("PowerShell run skipped: no command entered.")
+            return
+        self.log_event(f"Running PowerShell command: {command}")
+        self.process_service.run_powershell(
+            command=command,
+            on_complete=lambda result: self.ui_queue.put(("command_done", result)),
+            on_error=lambda exc: self.ui_queue.put(("command_error", str(exc))),
+        )
+
+    def build_index(self) -> None:
+        if self.index_build_active:
+            self.log_event("Build Index blocked: an index build is already in progress.")
+            return
+        if not self.current_folder:
+            self.log_event("Build Index blocked: no project folder selected.")
+            self.set_status_action("index failed")
+            return
+
+        self.index_build_active = True
+        self.build_index_button.state(["disabled"])
+        self.run_state_service.begin_index_build()
+        self._refresh_index_view()
+        self.log_event("index build started")
+        self.log_event(f"project root used: {self.current_folder}")
+        self.set_status_action("index building")
+        thread = threading.Thread(target=self._build_index_worker, args=(self.current_folder,), daemon=True)
+        self.index_build_thread = thread
+        thread.start()
+
+    def _build_index_worker(self, folder: Path) -> None:
+        try:
+            architecture_index = self.index_builder.build(folder)
+            self.ui_queue.put(("index_done", architecture_index))
+        except Exception as exc:
+            self.ui_queue.put(("index_failed", str(exc)))
+
+    def build_bundle(self, selection_result: SelectionResult) -> WorkingSetBundle:
+        self.run_state_service.begin_bundle_build()
+        bundle = self.bundle_builder.build(selection_result)
+        self.run_state_service.complete_bundle_build(bundle)
+        self._refresh_bundle_view()
+        return bundle
+
+    def _set_active_artifacts(self, selection_result: SelectionResult | None, bundle: WorkingSetBundle | None) -> None:
+        if selection_result is not None:
+            self.run_state_service.complete_selection(selection_result)
+            self._refresh_selection_view()
+        if bundle is not None:
+            self.run_state_service.complete_bundle_build(bundle)
+            self._refresh_bundle_view()
+
+    def _active_bundle(self) -> WorkingSetBundle | None:
+        queue_state = self.spec_queue
+        if queue_state.active_slot_index >= 0:
+            active_slot = queue_state.queue_slots[queue_state.active_slot_index]
+            if active_slot.bundle_result is not None:
+                return active_slot.bundle_result
+        return self.run_state_service.bundle_state.latest_bundle
+
+    def select_files(self) -> None:
+        if self.selection_active:
+            self.log_event("Select Files blocked: a selection is already in progress.")
+            return
+        architecture_index = self.run_state_service.index_state.latest_index
+        if architecture_index is None:
+            self.log_event("Select Files blocked: no architecture index available.")
+            self.set_status_action("selection failed")
+            return
+        spec = self.spec_text.get("1.0", "end-1c").strip()
+        if not spec:
+            self.log_event("Select Files blocked: spec textbox is empty.")
+            self.set_status_action("selection failed")
+            return
+
+        self.selection_active = True
+        self.select_files_button.state(["disabled"])
+        self.run_state_service.begin_selection()
+        self._refresh_selection_view()
+        term_count = len(self.file_selector._tokenize(spec))
+        self.log_event("selection started")
+        self.log_event(f"spec length: {len(spec)}")
+        self.log_event(f"normalized term count: {term_count}")
+        self.log_event("index availability confirmed")
+        self.set_status_action("selection running")
+        thread = threading.Thread(target=self._select_files_worker, args=(spec, architecture_index), daemon=True)
+        self.selection_thread = thread
+        thread.start()
+
+    def _select_files_worker(self, spec: str, architecture_index: ArchitectureIndex) -> None:
+        try:
+            selection_result = self.file_selector.select(spec, architecture_index)
+            self.ui_queue.put(("selection_done", selection_result))
+        except Exception as exc:
+            self.ui_queue.put(("selection_failed", str(exc)))
+
+    def start_queue(self) -> None:
+        if self.queue_active:
+            self.log_event("Start Queue blocked: queue execution already in progress.")
+            return
+        specs = self._capture_queue_specs()
+        self.queue_service.load_specs(self.spec_queue, specs)
+        self.queue_service.start(self.spec_queue)
+        self.run_state_service.set_queue_state(self.spec_queue, status="running")
+        self.queue_active = True
+        self.start_queue_button.state(["disabled"])
+        self.stop_queue_button.state(["!disabled"])
+        self._refresh_queue_view()
+        self.log_event("queue started")
+        self.set_status_action("queue running")
+        thread = threading.Thread(target=self._run_queue_worker, daemon=True)
+        self.queue_thread = thread
+        thread.start()
+
+    def stop_queue(self) -> None:
+        self.queue_service.request_stop(self.spec_queue)
+        self.log_event("queue stop requested")
+        self.set_status_action("queue stopping")
+
+    def _run_queue_worker(self) -> None:
+        for slot in self.spec_queue.queue_slots:
+            if self.spec_queue.stop_requested:
+                if slot.status == "ready":
+                    self.queue_service.mark_slot_stopped(slot, "stop requested before slot start")
+                    self.ui_queue.put(("queue_slot_stopped", (slot.slot_index, slot.failure_reason)))
+                continue
+            if not slot.spec_text.strip():
+                slot.status = "empty"
+                continue
+
+            self.queue_service.mark_slot_running(self.spec_queue, slot)
+            self.ui_queue.put(("queue_slot_state", slot.slot_index))
+            self.ui_queue.put(("queue_log", f"active slot changed: {slot.slot_index + 1}"))
+            self.ui_queue.put(("queue_log", f"slot started: {slot.slot_index + 1}"))
+
+            try:
+                if not self.current_folder:
+                    raise RuntimeError("project folder not selected")
+                architecture_index = self.run_state_service.index_state.latest_index
+                if architecture_index is None:
+                    raise RuntimeError("architecture index not available")
+
+                selection_result = self.file_selector.select(slot.spec_text, architecture_index)
+                slot.selection_result = selection_result
+                self.ui_queue.put(("queue_slot_selection", (slot.slot_index, selection_result)))
+                if selection_result.total_selected_count == 0:
+                    raise RuntimeError("selection returned no bounded working-set files")
+                bundle = self.bundle_builder.build(selection_result)
+                slot.bundle_result = bundle
+                slot.notes_log_summary.append(f"bundle_files={bundle.total_files}")
+                self.ui_queue.put(("queue_slot_bundle", (slot.slot_index, bundle)))
+                self.queue_service.mark_slot_completed(self.spec_queue, slot)
+                self.ui_queue.put(("queue_slot_completed", slot.slot_index))
+            except Exception as exc:
+                self.queue_service.mark_slot_failed(self.spec_queue, slot, str(exc))
+                self.ui_queue.put(("queue_slot_failed", (slot.slot_index, str(exc))))
+
+        final_status = "stopped" if self.spec_queue.stop_requested else "completed"
+        self.queue_service.finalize(self.spec_queue, final_status)
+        self.ui_queue.put(("queue_finished", final_status))
+
+    def restore_bundle(self) -> None:
+        if self.restore_active:
+            self.log_event("Restore Bundle blocked: restore already in progress.")
+            return
+        if not self.current_folder:
+            self.log_event("Restore Bundle blocked: no project folder selected.")
+            self.set_status_action("restore failed")
+            return
+        bundle = self._active_bundle()
+        if bundle is None:
+            self.log_event("Restore Bundle blocked: no bundle available.")
+            self.set_status_action("restore failed")
+            return
+        if bundle.total_files == 0:
+            self.log_event("Restore Bundle blocked: bundle has no files to restore.")
+            self.set_status_action("restore failed")
+            return
+
+        self.restore_active = True
+        self.restore_bundle_button.state(["disabled"])
+        self.run_state_service.begin_restore()
+        self._refresh_restore_view()
+        self.log_event("restore started")
+        self.log_event(f"project root used: {self.current_folder}")
+        self.log_event(f"bundle file count: {bundle.total_files}")
+        self.set_status_action("restoring")
+        thread = threading.Thread(target=self._restore_bundle_worker, args=(Path(self.current_folder), bundle), daemon=True)
+        self.restore_thread = thread
+        thread.start()
+
+    def _restore_bundle_worker(self, project_root: Path, bundle: WorkingSetBundle) -> None:
+        try:
+            result = self.restore_service.restore_bundle(project_root, bundle)
+            self.ui_queue.put(("restore_done", result))
+        except Exception as exc:
+            self.ui_queue.put(("restore_failed", str(exc)))
+
+    def run_llm(self) -> None:
+        if self.llm_run_active:
+            self.log_event("Run LLM blocked: a run is already in progress.")
+            return
+
+        model = self.model_var.get().strip()
+        if not model:
+            self.log_event("Run LLM blocked: no model selected.")
+            self.set_status_action("failed")
+            return
+
+        spec = self.spec_text.get("1.0", "end-1c").strip()
+        if not spec:
+            self.log_event("Run LLM blocked: spec textbox is empty.")
+            self.set_status_action("failed")
+            return
+
+        self.log_event("prompt assembly started")
+        try:
+            assembled_prompt = self._build_prompt_from_ui()
+        except Exception as exc:
+            self.log_event(f"prompt assembly failed: {exc}")
+            self.set_status_action("failed")
+            return
+        self.log_event("prompt assembly completed")
+        self._set_text_widget_content(self.prompt_preview, assembled_prompt)
+
+        project_folder = self._current_project_folder_text()
+        run_state = self.run_state_service.begin_run(
+            model_name=model,
+            project_folder=project_folder,
+            spec_text=spec,
+            assembled_prompt=assembled_prompt,
+        )
+        self._refresh_response_view()
+        snapshot = self.ollama_service.create_snapshot(model, assembled_prompt)
+        self.active_run_snapshot = snapshot
+        self.llm_run_active = True
+        self.llm_run_started_at = time.time()
+        self.llm_chunk_count = 0
+        self.llm_output_chars = 0
+        self.run_llm_button.state(["disabled"])
+        self.append_log_separator("LLM Run")
+        self.log_event("run started")
+        self.log_event(f"selected model: {snapshot.model}")
+        self.log_event(f"prompt length: {len(run_state.assembled_prompt)}")
+        self.log_event("prompt submitted")
+        self.set_status_action("running")
+
+        thread = threading.Thread(target=self._run_llm_worker, args=(snapshot,), daemon=True)
+        self.llm_run_thread = thread
+        thread.start()
+
+    def _run_llm_worker(self, snapshot: OllamaRunSnapshot) -> None:
+        try:
+            self.ui_queue.put(("llm_streaming_started", snapshot.model))
+            for event in self.ollama_service.run_prompt_stream(snapshot):
+                self.ui_queue.put(("llm_event", event))
+        except Exception as exc:
+            self.ui_queue.put(("llm_failed", str(exc)))
+
+    def _append_output(self, text: str) -> None:
+        self.output_text.configure(state="normal")
+        self.output_text.insert("end", text)
+        self.output_text.see("end")
+        self.output_text.configure(state="disabled")
+
+    def _process_ui_queue(self) -> None:
+        while True:
+            try:
+                message, payload = self.ui_queue.get_nowait()
+            except queue.Empty:
+                break
+            self._handle_ui_message(message, payload)
+        self.root.after(100, self._process_ui_queue)
+
+    def _handle_ui_message(self, message: str, payload: object) -> None:
+        if message == "tree_loaded":
+            self._render_tree(payload)  # type: ignore[arg-type]
+            self.log_event("Project tree refreshed.")
+            return
+        if message == "tree_error":
+            self.log_event(f"Tree refresh failed: {payload}")
+            return
+        if message == "models_loaded":
+            models = payload if isinstance(payload, list) else []
+            self.model_combo["values"] = models
+            if models:
+                current = self.model_var.get()
+                if current not in models:
+                    self.model_var.set(models[0])
+                self.model_combo.state(["!disabled", "readonly"])
+                self.status_model_var.set(f"Model: {self.model_var.get()}")
+                self.log_event(f"Loaded {len(models)} Ollama model(s).")
+                self._refresh_prompt_preview()
+            else:
+                self.model_var.set("")
+                self.model_combo.state(["disabled"])
+                self.status_model_var.set("Model: unavailable")
+                self.log_event("No local Ollama models found.")
+                self._refresh_prompt_preview()
+            return
+        if message == "models_error":
+            self.model_combo["values"] = []
+            self.model_var.set("")
+            self.model_combo.state(["disabled"])
+            self.status_model_var.set("Model: unavailable")
+            self.log_event(f"Ollama model refresh failed: {payload}")
+            self._refresh_prompt_preview()
+            return
+        if message == "command_done":
+            result = payload
+            if not isinstance(result, ProcessResult):
+                return
+            output_parts = [f"\nPS> {result.command}\n"]
+            if result.stdout:
+                output_parts.append(result.stdout)
+                if not result.stdout.endswith("\n"):
+                    output_parts.append("\n")
+            if result.stderr:
+                output_parts.append(result.stderr)
+                if not result.stderr.endswith("\n"):
+                    output_parts.append("\n")
+            output_parts.append(f"[exit code: {result.return_code}]\n")
+            self._append_output("".join(output_parts))
+            if result.return_code == 0:
+                self.log_event(f"Command completed successfully: {result.command}")
+            else:
+                self.log_event(f"Command failed with exit code {result.return_code}: {result.command}")
+            return
+        if message == "command_error":
+            self._append_output(f"\n[command error] {payload}\n")
+            self.log_event(f"Command execution error: {payload}")
+            return
+        if message == "index_done":
+            architecture_index = payload
+            if not isinstance(architecture_index, ArchitectureIndex):
+                return
+            self.index_build_active = False
+            self.build_index_button.state(["!disabled"])
+            self.run_state_service.complete_index_build(architecture_index)
+            self._refresh_index_view()
+            self.log_event(f"files scanned count: {architecture_index.file_count}")
+            self.log_event(f"files indexed count: {architecture_index.indexed_file_count}")
+            self.log_event(f"skipped files count: {architecture_index.skipped_file_count}")
+            self.log_event(f"parse error count: {architecture_index.parse_error_count}")
+            self.log_event("index build completed")
+            self.set_status_action("index completed")
+            return
+        if message == "index_failed":
+            self.index_build_active = False
+            self.build_index_button.state(["!disabled"])
+            self.run_state_service.fail_index_build(str(payload))
+            self._refresh_index_view()
+            self.log_event(f"index build failed: {payload}")
+            self.set_status_action("index failed")
+            return
+        if message == "selection_done":
+            selection_result = payload
+            if not isinstance(selection_result, SelectionResult):
+                return
+            self.selection_active = False
+            self.select_files_button.state(["!disabled"])
+            self.run_state_service.complete_selection(selection_result)
+            self._refresh_selection_view()
+            self.log_event(f"primary files selected count: {selection_result.selected_primary_count}")
+            self.log_event(f"context files selected count: {selection_result.selected_context_count}")
+            self.log_event(f"unmatched terms count: {len(selection_result.unmatched_terms)}")
+            self.log_event("selection completed")
+            self.set_status_action("selection completed")
+            return
+        if message == "selection_failed":
+            self.selection_active = False
+            self.select_files_button.state(["!disabled"])
+            self.run_state_service.fail_selection(str(payload))
+            self._refresh_selection_view()
+            self.log_event(f"selection failed: {payload}")
+            self.set_status_action("selection failed")
+            return
+        if message == "queue_slot_state":
+            self._refresh_queue_view()
+            return
+        if message == "queue_log":
+            self.log_event(str(payload))
+            return
+        if message == "queue_slot_selection":
+            if not isinstance(payload, tuple) or len(payload) != 2:
+                return
+            slot_index, selection_result = payload
+            if not isinstance(slot_index, int) or not isinstance(selection_result, SelectionResult):
+                return
+            self._set_active_artifacts(selection_result, None)
+            self._refresh_queue_view()
+            self.log_event(f"slot selection completed: {slot_index + 1}")
+            return
+        if message == "queue_slot_bundle":
+            if not isinstance(payload, tuple) or len(payload) != 2:
+                return
+            slot_index, bundle = payload
+            if not isinstance(slot_index, int) or not isinstance(bundle, WorkingSetBundle):
+                return
+            self._set_active_artifacts(None, bundle)
+            self._refresh_queue_view()
+            self.log_event(f"slot bundle built: {slot_index + 1}")
+            self.log_event(f"slot bundle file count: {bundle.total_files}")
+            return
+        if message == "queue_slot_completed":
+            if not isinstance(payload, int):
+                return
+            self._refresh_queue_view()
+            self.log_event(f"slot completed: {payload + 1}")
+            return
+        if message == "queue_slot_failed":
+            if not isinstance(payload, tuple) or len(payload) != 2:
+                return
+            slot_index, reason = payload
+            if not isinstance(slot_index, int):
+                return
+            self._refresh_queue_view()
+            self.log_event(f"slot failed: {slot_index + 1}")
+            self.log_event(f"failure reason: {reason}")
+            return
+        if message == "queue_slot_stopped":
+            if not isinstance(payload, tuple) or len(payload) != 2:
+                return
+            slot_index, reason = payload
+            if not isinstance(slot_index, int):
+                return
+            self._refresh_queue_view()
+            self.log_event(f"slot stopped: {slot_index + 1}")
+            self.log_event(f"stop reason: {reason}")
+            return
+        if message == "queue_finished":
+            final_status = str(payload)
+            self.queue_active = False
+            self.start_queue_button.state(["!disabled"])
+            self.stop_queue_button.state(["disabled"])
+            self.run_state_service.set_queue_state(self.spec_queue, status=final_status)
+            self._refresh_queue_view()
+            self.log_event(f"queue {final_status}")
+            self.set_status_action(f"queue {final_status}")
+            return
+        if message == "restore_done":
+            restore_result = payload
+            if not isinstance(restore_result, RestoreResult):
+                return
+            self.restore_active = False
+            self.restore_bundle_button.state(["!disabled"])
+            self.run_state_service.complete_restore(restore_result)
+            self._refresh_restore_view()
+            self.log_event(f"files written count: {restore_result.written_file_count}")
+            self.log_event(f"files skipped count: {restore_result.skipped_file_count}")
+            self.log_event(f"files failed count: {restore_result.failed_file_count}")
+            self.log_event(f"restore {restore_result.status}")
+            self.set_status_action(f"restore {restore_result.status}")
+            self.refresh_tree()
+            return
+        if message == "restore_failed":
+            self.restore_active = False
+            self.restore_bundle_button.state(["!disabled"])
+            self.run_state_service.fail_restore(str(payload))
+            self._refresh_restore_view()
+            self.log_event(f"restore failed: {payload}")
+            self.set_status_action("restore failed")
+            return
+        if message == "llm_streaming_started":
+            self.log_event(f"streaming began for model: {payload}")
+            return
+        if message == "llm_event":
+            if not isinstance(payload, dict):
+                return
+            event_type = payload.get("type")
+            if event_type == "chunk":
+                chunk = str(payload.get("text", ""))
+                self.llm_chunk_count += 1
+                self.llm_output_chars += len(chunk)
+                self.run_state_service.append_chunk(chunk)
+                self.append_model_output(chunk)
+                if self.llm_chunk_count == 1:
+                    self.append_model_output("\n")
+                if self.llm_chunk_count % 10 == 0:
+                    self.log_event(f"streaming chunks received: {self.llm_chunk_count}")
+                self._refresh_response_view()
+                return
+            if event_type == "warning":
+                self.log_event(str(payload.get("message", "Streaming warning received.")))
+                return
+            if event_type == "done":
+                elapsed = time.time() - self.llm_run_started_at
+                self.llm_run_active = False
+                self.run_llm_button.state(["!disabled"])
+                self.append_model_output("\n")
+                self.log_event(f"streaming chunks received: {self.llm_chunk_count}")
+                self.log_event(f"run completed in {elapsed:.1f}s")
+                self.log_event(f"output size: {self.llm_output_chars} chars")
+                self.run_state_service.complete_run()
+                self.log_event("response captured")
+                self._refresh_response_view()
+                self.set_status_action("completed")
+                self.active_run_snapshot = None
+                return
+        if message == "llm_failed":
+            self.llm_run_active = False
+            self.run_llm_button.state(["!disabled"])
+            self.log_event(f"run failed: {payload}")
+            self.run_state_service.fail_run(str(payload))
+            self._refresh_response_view()
+            self.set_status_action("failed")
+            self.active_run_snapshot = None
