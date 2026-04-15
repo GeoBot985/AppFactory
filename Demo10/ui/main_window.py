@@ -229,6 +229,7 @@ class AgentWorkbenchApp:
         ttk.Label(queue_frame, text="Execution Queue", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
         self.queue_status_label = ttk.Label(queue_frame, textvariable=self.active_slot_var, style="Panel.TLabel")
         self.queue_status_label.grid(row=0, column=1, sticky="e")
+        ttk.Label(queue_frame, text="Queue Mode: AUTO-RESTORE", style="Panel.TLabel", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="e", padx=(0, 150))
         queue_slots_frame = ttk.Frame(queue_frame, style="Panel.TFrame")
         queue_slots_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(6, 0))
         for idx in range(10):
@@ -1266,6 +1267,8 @@ class AgentWorkbenchApp:
 
     def _run_queue_worker(self) -> None:
         self.ui_queue.put(("queue_log", "Queue started"))
+        model_name = self.model_var.get().strip()
+
         for slot in self.spec_queue.queue_slots:
             if self.spec_queue.stop_requested:
                 if slot.status == "ready":
@@ -1279,8 +1282,18 @@ class AgentWorkbenchApp:
             self.queue_service.mark_slot_running(self.spec_queue, slot)
             self.ui_queue.put(("queue_slot_state", slot.slot_index))
             self.ui_queue.put(("queue_log", f"Active slot changed to {slot.slot_index + 1}"))
+            self.ui_queue.put(("queue_log", f"Slot {slot.slot_index + 1} started"))
 
-            stages = ["Spec Intake", "Index Available", "File Selection", "Bundle Build", "LLM Edit", "Validation", "Restore"]
+            stages = [
+                "Spec Intake",
+                "Index Check / Build",
+                "File Selection",
+                "Bundle Build",
+                "LLM Edit",
+                "Validation",
+                "Restore Preview",
+                "Restore"
+            ]
             current_stage_idx = -1
 
             def update_stage(name: str, status: str, message: str = ""):
@@ -1290,21 +1303,30 @@ class AgentWorkbenchApp:
                     current_stage_idx = stages.index(name)
                 self.ui_queue.put(("pipeline_update", None))
 
+            def check_stop():
+                if self.spec_queue.stop_requested:
+                    raise InterruptedError("stop requested")
+
             try:
                 # 1. Spec Intake
                 update_stage("Spec Intake", "running")
                 if not slot.spec_text.strip():
-                    raise RuntimeError("empty spec")
+                    raise RuntimeError("no spec")
                 update_stage("Spec Intake", "completed")
+                check_stop()
 
-                # 2. Index Available
-                update_stage("Index Available", "running")
+                # 2. Index Check / Build
+                update_stage("Index Check / Build", "running")
                 if not self.current_folder:
-                    raise RuntimeError("project folder not selected")
+                    raise RuntimeError("no project folder")
                 architecture_index = self.run_state_service.index_state.latest_index
                 if architecture_index is None:
-                    raise RuntimeError("architecture index not available")
-                update_stage("Index Available", "completed")
+                    self.ui_queue.put(("queue_log", "Index missing, building..."))
+                    architecture_index = self.index_builder.build(self.current_folder)
+                    self.ui_queue.put(("index_done", architecture_index))
+                self.ui_queue.put(("queue_log", "Index check/build complete"))
+                update_stage("Index Check / Build", "completed")
+                check_stop()
 
                 # 3. File Selection
                 update_stage("File Selection", "running")
@@ -1312,23 +1334,111 @@ class AgentWorkbenchApp:
                 slot.selection_result = selection_result
                 self.ui_queue.put(("queue_slot_selection", (slot.slot_index, selection_result)))
                 if selection_result.total_selected_count == 0:
-                    raise RuntimeError("selection returned no bounded working-set files")
+                    raise RuntimeError("empty selection")
+                self.ui_queue.put(("queue_log", f"Selection complete ({selection_result.total_selected_count} files)"))
                 update_stage("File Selection", "completed", f"selected={selection_result.total_selected_count}")
+                check_stop()
 
                 # 4. Bundle Build
                 update_stage("Bundle Build", "running")
                 bundle = self.bundle_builder.build(selection_result)
                 slot.bundle_result = bundle
-                slot.notes_log_summary.append(f"bundle_files={bundle.total_files}")
                 self.ui_queue.put(("queue_slot_bundle", (slot.slot_index, bundle)))
+                self.ui_queue.put(("queue_log", f"Bundle built ({bundle.total_files} files)"))
                 update_stage("Bundle Build", "completed", f"files={bundle.total_files}")
+                check_stop()
 
-                # 5-7. Pending / Skipped for now
-                for s_name in stages[4:]:
-                    update_stage(s_name, "skipped", "not implemented in queue yet")
+                # 5. LLM Edit
+                update_stage("LLM Edit", "running")
+                if not model_name:
+                    raise RuntimeError("LLM failure: no model selected")
+
+                request = PromptRequest(
+                    model_name=model_name,
+                    project_folder=str(self.current_folder),
+                    spec_text=slot.spec_text
+                )
+                assembled_prompt = self.bundle_prompt_builder.build(request, bundle)
+
+                edit_run = BundleEditRun(
+                    run_id=f"run_{int(time.time())}",
+                    slot_index=slot.slot_index,
+                    model_name=model_name,
+                    spec_text=slot.spec_text,
+                    source_bundle=bundle,
+                    assembled_prompt=assembled_prompt,
+                    started_at=self.run_state_service._now(),
+                    status="running"
+                )
+                slot.llm_edit_run = edit_run
+
+                self.ui_queue.put(("queue_log", "LLM edit started"))
+                snapshot = self.ollama_service.create_snapshot(model_name, assembled_prompt)
+                accumulator = []
+                for event in self.ollama_service.run_prompt_stream(snapshot):
+                    if event["type"] == "chunk":
+                        accumulator.append(event["text"])
+                    elif event["type"] == "done":
+                        break
+
+                raw_output = "".join(accumulator)
+                edit_run.raw_model_output = raw_output
+                self.ui_queue.put(("queue_log", "LLM edit complete"))
+
+                try:
+                    candidate = self.bundle_parser.parse(raw_output)
+                    edit_run.candidate_bundle = candidate
+                except Exception as exc:
+                    raise RuntimeError(f"malformed LLM output: {exc}")
+
+                update_stage("LLM Edit", "completed")
+                check_stop()
+
+                # 6. Validation
+                update_stage("Validation", "running")
+                errors = self.bundle_validator.validate(candidate, bundle, str(self.current_folder))
+                if errors:
+                    edit_run.validation_status = "failed"
+                    edit_run.validation_errors = errors
+                    self.ui_queue.put(("queue_log", "Validation failed"))
+                    raise RuntimeError(f"validation failure: {errors[0]}")
+
+                edit_run.validation_status = "passed"
+                self.ui_queue.put(("queue_log", "Validation passed"))
+                update_stage("Validation", "completed")
+                check_stop()
+
+                # 7. Restore Preview
+                update_stage("Restore Preview", "running")
+                _preview = self.restore_service.compute_candidate_preview(self.current_folder, candidate)
+                self.ui_queue.put(("queue_log", "Restore preview generated"))
+                update_stage("Restore Preview", "completed")
+                check_stop()
+
+                # 8. Restore
+                update_stage("Restore", "running")
+                restore_result = self.restore_service.restore_candidate_bundle(self.current_folder, candidate)
+                slot.restore_result = restore_result
+                edit_run.restore_status = restore_result.status
+
+                if restore_result.status != "completed":
+                    self.ui_queue.put(("queue_log", "Restore failed"))
+                    raise RuntimeError(f"restore failure: {restore_result.status}")
+
+                self.ui_queue.put(("queue_log", "Restore completed"))
+                update_stage("Restore", "completed", f"written={restore_result.written_file_count}")
+
+                edit_run.status = "completed"
+                edit_run.completed_at = self.run_state_service._now()
 
                 self.queue_service.mark_slot_completed(self.spec_queue, slot)
                 self.ui_queue.put(("queue_slot_completed", slot.slot_index))
+                self.ui_queue.put(("queue_log", f"Slot {slot.slot_index + 1} completed"))
+
+            except InterruptedError:
+                self.queue_service.mark_slot_stopped(slot, "stop requested")
+                self.ui_queue.put(("queue_slot_stopped", (slot.slot_index, "stop requested")))
+                self.ui_queue.put(("queue_log", f"Slot {slot.slot_index + 1} stopped"))
             except Exception as exc:
                 if current_stage_idx >= 0:
                     failed_stage = stages[current_stage_idx]
@@ -1336,8 +1446,14 @@ class AgentWorkbenchApp:
                     for s_name in stages[current_stage_idx + 1:]:
                         update_stage(s_name, "skipped", "upstream failure")
 
+                run = getattr(slot, "llm_edit_run", None)
+                if run:
+                    run.status = "failed"
+                    run.completed_at = self.run_state_service._now()
+
                 self.queue_service.mark_slot_failed(self.spec_queue, slot, str(exc))
                 self.ui_queue.put(("queue_slot_failed", (slot.slot_index, str(exc))))
+                self.ui_queue.put(("queue_log", f"Slot {slot.slot_index + 1} failed"))
 
         final_status = "stopped" if self.spec_queue.stop_requested else "completed"
         self.queue_service.finalize(self.spec_queue, final_status)
