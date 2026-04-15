@@ -6,7 +6,7 @@ from datetime import datetime
 from services.index_service import ArchitectureIndex
 from services.bundle_service import WorkingSetBundle
 from services.queue_service import SpecQueueState
-from services.restore_service import RestoreResult
+from services.restore_service import RestoreResult, RestorePreview
 from services.selection_service import SelectionResult
 from services.bundle_edit_service import BundleEditRun
 
@@ -56,6 +56,7 @@ class QueueRuntimeState:
 @dataclass
 class RestoreState:
     latest_restore: RestoreResult | None = None
+    latest_preview: RestorePreview | None = None
     status: str = "idle"
     failure_reason: str = ""
 
@@ -145,11 +146,18 @@ class RunStateService:
     def set_queue_state(self, spec_queue: SpecQueueState, status: str = "idle", failure_reason: str = "") -> None:
         self.queue_runtime = QueueRuntimeState(spec_queue=spec_queue, status=status, failure_reason=failure_reason)
 
+    def set_restore_preview(self, preview: RestorePreview) -> None:
+        self.restore_state.latest_preview = preview
+
     def begin_restore(self) -> None:
-        self.restore_state = RestoreState(latest_restore=None, status="restoring", failure_reason="")
+        self.restore_state.latest_restore = None
+        self.restore_state.status = "restoring"
+        self.restore_state.failure_reason = ""
 
     def complete_restore(self, restore_result: RestoreResult) -> RestoreResult:
-        self.restore_state = RestoreState(latest_restore=restore_result, status=restore_result.status, failure_reason="")
+        self.restore_state.latest_restore = restore_result
+        self.restore_state.status = restore_result.status
+        self.restore_state.failure_reason = ""
         return restore_result
 
     def fail_restore(self, reason: str) -> None:
