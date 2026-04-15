@@ -5,6 +5,8 @@ from datetime import datetime
 
 from services.bundle_service import WorkingSetBundle
 from services.selection_service import SelectionResult
+from services.restore_service import RestoreResult
+from services.bundle_edit_service import BundleEditRun
 
 
 QUEUE_SIZE = 10
@@ -20,6 +22,8 @@ class QueueSlot:
     failure_reason: str = ""
     selection_result: SelectionResult | None = None
     bundle_result: WorkingSetBundle | None = None
+    restore_result: RestoreResult | None = None
+    llm_edit_run: BundleEditRun | None = None
     notes_log_summary: list[str] = field(default_factory=list)
 
 
@@ -51,6 +55,8 @@ class QueueService:
             slot.failure_reason = ""
             slot.selection_result = None
             slot.bundle_result = None
+            slot.restore_result = None
+            slot.llm_edit_run = None
             slot.started_at = ""
             slot.completed_at = ""
             slot.notes_log_summary = []
@@ -67,6 +73,8 @@ class QueueService:
         for slot in state.queue_slots:
             slot.selection_result = None
             slot.bundle_result = None
+            slot.restore_result = None
+            slot.llm_edit_run = None
             slot.failure_reason = ""
             slot.started_at = ""
             slot.completed_at = ""
