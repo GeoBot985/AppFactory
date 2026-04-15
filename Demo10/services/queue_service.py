@@ -60,13 +60,10 @@ class QueueService:
     def _initialize_pipeline(self, slot: QueueSlot) -> None:
         slot.pipeline_stages = [
             PipelineStage(name="Spec Intake"),
-            PipelineStage(name="Index Check / Build"),
-            PipelineStage(name="File Selection"),
-            PipelineStage(name="Bundle Build"),
-            PipelineStage(name="LLM Edit"),
+            PipelineStage(name="Spec Parsing"),
+            PipelineStage(name="Task Execution"),
             PipelineStage(name="Validation"),
-            PipelineStage(name="Restore Preview"),
-            PipelineStage(name="Restore"),
+            PipelineStage(name="Logging / Audit"),
         ]
 
     def load_specs(self, state: SpecQueueState, specs: list[str]) -> None:
