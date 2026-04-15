@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 from services.bundle_service import BundleFile, WorkingSetBundle
+from services.bundle_edit_service import CandidateBundle, CandidateFile
 
 
 @dataclass
@@ -62,7 +63,7 @@ class RestoreService:
 
         bundle_files = bundle.primary_files + bundle.context_files
         for entry in bundle_files:
-            ok, target_or_reason = self._validate_target(root, entry)
+            ok, target_or_reason = self._validate_target(root, entry.relative_path, entry.file_content, entry.selection_kind)
             if not ok:
                 failed_files.append(entry.relative_path)
                 failure_reasons.append(target_or_reason)
@@ -98,17 +99,64 @@ class RestoreService:
             failure_reasons=failure_reasons,
         )
 
-    def _validate_target(self, root: Path, entry: BundleFile) -> tuple[bool, str]:
-        if not entry.relative_path or entry.file_content is None or not entry.selection_kind:
-            return False, f"{entry.relative_path or '(missing path)'}: malformed bundle entry"
-        relative = Path(entry.relative_path)
+    def restore_candidate_bundle(self, project_root: str | Path, candidate: CandidateBundle) -> RestoreResult:
+        root = Path(project_root).expanduser().resolve()
+        started = self._now()
+        written_files: list[str] = []
+        failed_files: list[str] = []
+        failure_reasons: list[str] = []
+        skipped_file_count = 0
+
+        for entry in candidate.files:
+            ok, target_or_reason = self._validate_target(root, entry.relative_path, entry.file_content, entry.selection_kind)
+            if not ok:
+                failed_files.append(entry.relative_path)
+                failure_reasons.append(target_or_reason)
+                continue
+
+            # For candidate bundles, we assume everything in there is intended to be written if it has content
+            # and status isn't explicitly blocked (though parser/validator should have caught that)
+            if entry.content_status == "blocked":
+                skipped_file_count += 1
+                continue
+
+            target = Path(target_or_reason)
+            try:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(entry.file_content, encoding="utf-8", newline="")
+                written_files.append(entry.relative_path)
+            except OSError as exc:
+                failed_files.append(entry.relative_path)
+                failure_reasons.append(f"{entry.relative_path}: {exc}")
+
+        failed_count = len(failed_files)
+        written_count = len(written_files)
+        status = "completed" if failed_count == 0 else ("failed" if written_count == 0 else "completed_with_failures")
+        return RestoreResult(
+            project_root=str(root),
+            started_at=started,
+            completed_at=self._now(),
+            status=status,
+            attempted_file_count=len(candidate.files),
+            written_file_count=written_count,
+            failed_file_count=failed_count,
+            skipped_file_count=skipped_file_count,
+            written_files=written_files,
+            failed_files=failed_files,
+            failure_reasons=failure_reasons,
+        )
+
+    def _validate_target(self, root: Path, relative_path: str, file_content: str, selection_kind: str) -> tuple[bool, str]:
+        if not relative_path or file_content is None or not selection_kind:
+            return False, f"{relative_path or '(missing path)'}: malformed bundle entry"
+        relative = Path(relative_path)
         if relative.is_absolute():
-            return False, f"{entry.relative_path}: absolute paths are not allowed"
+            return False, f"{relative_path}: absolute paths are not allowed"
         target = (root / relative).resolve()
         try:
             target.relative_to(root)
         except ValueError:
-            return False, f"{entry.relative_path}: path escapes project root"
+            return False, f"{relative_path}: path escapes project root"
         return True, str(target)
 
     def _now(self) -> str:

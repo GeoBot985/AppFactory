@@ -8,6 +8,7 @@ from services.bundle_service import WorkingSetBundle
 from services.queue_service import SpecQueueState
 from services.restore_service import RestoreResult
 from services.selection_service import SelectionResult
+from services.bundle_edit_service import BundleEditRun
 
 
 @dataclass
@@ -59,6 +60,13 @@ class RestoreState:
     failure_reason: str = ""
 
 
+@dataclass
+class BundleEditState:
+    latest_edit_run: BundleEditRun | None = None
+    status: str = "idle"
+    failure_reason: str = ""
+
+
 class RunStateService:
     def __init__(self) -> None:
         self.latest_run = RunState()
@@ -67,6 +75,7 @@ class RunStateService:
         self.bundle_state = BundleState()
         self.queue_runtime = QueueRuntimeState()
         self.restore_state = RestoreState()
+        self.bundle_edit_state = BundleEditState()
 
     def begin_run(self, model_name: str, project_folder: str, spec_text: str, assembled_prompt: str) -> RunState:
         self.latest_run = RunState(
@@ -146,6 +155,15 @@ class RunStateService:
     def fail_restore(self, reason: str) -> None:
         self.restore_state.status = "failed"
         self.restore_state.failure_reason = reason
+
+    def begin_bundle_edit(self, edit_run: BundleEditRun) -> None:
+        self.bundle_edit_state = BundleEditState(latest_edit_run=edit_run, status="running", failure_reason="")
+
+    def complete_bundle_edit(self, edit_run: BundleEditRun) -> None:
+        self.bundle_edit_state = BundleEditState(latest_edit_run=edit_run, status="completed", failure_reason="")
+
+    def fail_bundle_edit(self, edit_run: BundleEditRun, reason: str) -> None:
+        self.bundle_edit_state = BundleEditState(latest_edit_run=edit_run, status="failed", failure_reason=reason)
 
     def _now(self) -> str:
         return datetime.now().isoformat(timespec="seconds")
