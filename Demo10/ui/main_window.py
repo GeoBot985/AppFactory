@@ -133,6 +133,7 @@ class AgentWorkbenchApp:
         self._refresh_candidate_view()
         self._refresh_queue_view()
         self._refresh_restore_view()
+        self._refresh_pipeline_view()
 
     def _build_top_section(self, parent: ttk.Frame) -> None:
         top = ttk.Frame(parent, style="Panel.TFrame", padding=10)
@@ -239,9 +240,13 @@ class AgentWorkbenchApp:
         center = ttk.Frame(main, style="Panel.TFrame", padding=8)
         right = ttk.Frame(main, style="Panel.TFrame", padding=8)
 
-        for panel in (left, center, right):
+        for panel in (left, center):
             panel.rowconfigure(1, weight=1)
             panel.columnconfigure(0, weight=1)
+
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(1, weight=0)  # Active Pipeline
+        right.rowconfigure(3, weight=1)  # Activity Log
 
         main.add(left, weight=1)
         main.add(center, weight=3)
@@ -456,9 +461,34 @@ class AgentWorkbenchApp:
         self.slot_detail_view.tag_configure("success", foreground="#6a9955")
         self.slot_detail_view.tag_configure("dim", foreground="#808080")
 
-        ttk.Label(right, text="Activity Log", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        # Active Pipeline
+        ttk.Label(right, text="Active Pipeline", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        pipeline_frame = ttk.Frame(right, style="Panel.TFrame")
+        pipeline_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 16))
+        pipeline_frame.rowconfigure(0, weight=1)
+        pipeline_frame.columnconfigure(0, weight=1)
+
+        self.pipeline_view = tk.Text(
+            pipeline_frame,
+            wrap="word",
+            height=10,
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10, "bold"),
+            relief="flat",
+        )
+        self.pipeline_view.grid(row=0, column=0, sticky="nsew")
+        self.pipeline_view.configure(state="disabled")
+        self.pipeline_view.tag_configure("pending", foreground="#808080")
+        self.pipeline_view.tag_configure("running", foreground="#569cd6")
+        self.pipeline_view.tag_configure("completed", foreground="#6a9955")
+        self.pipeline_view.tag_configure("failed", foreground="#f44747")
+        self.pipeline_view.tag_configure("skipped", foreground="#d7ba7d")
+
+        ttk.Label(right, text="Activity Log", style="Panel.TLabel").grid(row=2, column=0, sticky="w")
         log_frame = ttk.Frame(right, style="Panel.TFrame")
-        log_frame.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        log_frame.grid(row=3, column=0, sticky="nsew", pady=(8, 0))
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.log_text = tk.Text(
@@ -682,6 +712,41 @@ class AgentWorkbenchApp:
         else:
             content = restore.to_preview_text()
         self._set_text_widget_content(self.restore_view, content)
+
+    def _refresh_pipeline_view(self) -> None:
+        queue_state = self.spec_queue
+        active_idx = queue_state.active_slot_index
+
+        self.pipeline_view.configure(state="normal")
+        self.pipeline_view.delete("1.0", "end")
+
+        if active_idx < 0:
+            if queue_state.queue_status == "idle":
+                self.pipeline_view.insert("end", "\n  [ Queue Idle ]", "pending")
+            else:
+                self.pipeline_view.insert("end", "\n  [ No Active Slot ]", "pending")
+            self.pipeline_view.configure(state="disabled")
+            return
+
+        slot = queue_state.queue_slots[active_idx]
+        self.pipeline_view.insert("end", f" Slot {active_idx + 1} Pipeline:\n\n", "completed")
+
+        for stage in slot.pipeline_stages:
+            status_sym = "[ ]"
+            if stage.status == "running":
+                status_sym = "[→]"
+            elif stage.status == "completed":
+                status_sym = "[✔]"
+            elif stage.status == "failed":
+                status_sym = "[✘]"
+            elif stage.status == "skipped":
+                status_sym = "[-]"
+
+            self.pipeline_view.insert("end", f"  {status_sym} {stage.name}\n", stage.status)
+            if stage.last_message:
+                self.pipeline_view.insert("end", f"      > {stage.last_message}\n", "pending")
+
+        self.pipeline_view.configure(state="disabled")
 
     def _refresh_slot_detail_view(self) -> None:
         idx = self.selected_slot_index
@@ -1079,25 +1144,62 @@ class AgentWorkbenchApp:
             self.ui_queue.put(("queue_slot_state", slot.slot_index))
             self.ui_queue.put(("queue_log", f"Active slot changed to {slot.slot_index + 1}"))
 
+            stages = ["Spec Intake", "Index Available", "File Selection", "Bundle Build", "LLM Edit", "Validation", "Restore"]
+            current_stage_idx = -1
+
+            def update_stage(name: str, status: str, message: str = ""):
+                nonlocal current_stage_idx
+                self.queue_service.update_stage_status(slot, name, status, message)
+                if status == "running":
+                    current_stage_idx = stages.index(name)
+                self.ui_queue.put(("pipeline_update", None))
+
             try:
+                # 1. Spec Intake
+                update_stage("Spec Intake", "running")
+                if not slot.spec_text.strip():
+                    raise RuntimeError("empty spec")
+                update_stage("Spec Intake", "completed")
+
+                # 2. Index Available
+                update_stage("Index Available", "running")
                 if not self.current_folder:
                     raise RuntimeError("project folder not selected")
                 architecture_index = self.run_state_service.index_state.latest_index
                 if architecture_index is None:
                     raise RuntimeError("architecture index not available")
+                update_stage("Index Available", "completed")
 
+                # 3. File Selection
+                update_stage("File Selection", "running")
                 selection_result = self.file_selector.select(slot.spec_text, architecture_index)
                 slot.selection_result = selection_result
                 self.ui_queue.put(("queue_slot_selection", (slot.slot_index, selection_result)))
                 if selection_result.total_selected_count == 0:
                     raise RuntimeError("selection returned no bounded working-set files")
+                update_stage("File Selection", "completed", f"selected={selection_result.total_selected_count}")
+
+                # 4. Bundle Build
+                update_stage("Bundle Build", "running")
                 bundle = self.bundle_builder.build(selection_result)
                 slot.bundle_result = bundle
                 slot.notes_log_summary.append(f"bundle_files={bundle.total_files}")
                 self.ui_queue.put(("queue_slot_bundle", (slot.slot_index, bundle)))
+                update_stage("Bundle Build", "completed", f"files={bundle.total_files}")
+
+                # 5-7. Pending / Skipped for now
+                for s_name in stages[4:]:
+                    update_stage(s_name, "skipped", "not implemented in queue yet")
+
                 self.queue_service.mark_slot_completed(self.spec_queue, slot)
                 self.ui_queue.put(("queue_slot_completed", slot.slot_index))
             except Exception as exc:
+                if current_stage_idx >= 0:
+                    failed_stage = stages[current_stage_idx]
+                    update_stage(failed_stage, "failed", str(exc))
+                    for s_name in stages[current_stage_idx + 1:]:
+                        update_stage(s_name, "skipped", "upstream failure")
+
                 self.queue_service.mark_slot_failed(self.spec_queue, slot, str(exc))
                 self.ui_queue.put(("queue_slot_failed", (slot.slot_index, str(exc))))
 
@@ -1456,6 +1558,10 @@ class AgentWorkbenchApp:
             return
         if message == "queue_slot_state":
             self._refresh_queue_view()
+            self._refresh_pipeline_view()
+            return
+        if message == "pipeline_update":
+            self._refresh_pipeline_view()
             return
         if message == "queue_log":
             self.log_event(str(payload))
@@ -1516,6 +1622,7 @@ class AgentWorkbenchApp:
             self.stop_queue_button.state(["disabled"])
             self.run_state_service.set_queue_state(self.spec_queue, status=final_status)
             self._refresh_queue_view()
+            self._refresh_pipeline_view()
             self.log_event(f"queue {final_status}")
             self.set_status_action(f"queue {final_status}")
             return
