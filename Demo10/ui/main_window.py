@@ -19,6 +19,12 @@ from services.queue_service import QueueService
 from services.restore_service import RestoreResult, RestoreService
 from services.run_state_service import RunStateService
 from services.selection_service import FileSelector, SelectionResult
+from services.task_service import Task, TaskType, TaskStatus, TaskResult
+from services.file_ops_service import FileOpsService
+from services.spec_parser_service import SpecParserService
+from services.task_executor_service import TaskExecutorService
+from services.validation_service import ValidationService
+from services.audit_log_service import AuditLogService
 
 
 class Tooltip:
@@ -78,6 +84,9 @@ class AgentWorkbenchApp:
         self.bundle_prompt_builder = BundleEditPromptBuilder()
         self.bundle_parser = BundleOutputParser()
         self.bundle_validator = BundleValidator()
+        self.spec_parser = SpecParserService()
+        self.validation_service = ValidationService()
+        self.audit_log_service = AuditLogService(Path.cwd())
         self.run_state_service = RunStateService()
         self.ui_queue: queue.Queue[tuple[str, object]] = queue.Queue()
 
@@ -1286,13 +1295,10 @@ class AgentWorkbenchApp:
 
             stages = [
                 "Spec Intake",
-                "Index Check / Build",
-                "File Selection",
-                "Bundle Build",
-                "LLM Edit",
+                "Spec Parsing",
+                "Task Execution",
                 "Validation",
-                "Restore Preview",
-                "Restore"
+                "Logging / Audit",
             ]
             current_stage_idx = -1
 
@@ -1315,121 +1321,66 @@ class AgentWorkbenchApp:
                 update_stage("Spec Intake", "completed")
                 check_stop()
 
-                # 2. Index Check / Build
-                update_stage("Index Check / Build", "running")
+                # 2. Spec Parsing
+                update_stage("Spec Parsing", "running")
+                tasks = self.spec_parser.parse(slot.spec_text)
+                if not tasks:
+                    self.ui_queue.put(("queue_log", "No tasks found in spec"))
+                else:
+                    self.ui_queue.put(("queue_log", f"Parsed {len(tasks)} tasks"))
+                update_stage("Spec Parsing", "completed", f"tasks={len(tasks)}")
+                check_stop()
+
+                # 3. Task Execution
+                update_stage("Task Execution", "running")
                 if not self.current_folder:
                     raise RuntimeError("no project folder")
-                architecture_index = self.run_state_service.index_state.latest_index
-                if architecture_index is None:
-                    self.ui_queue.put(("queue_log", "Index missing, building..."))
-                    architecture_index = self.index_builder.build(self.current_folder)
-                    self.ui_queue.put(("index_done", architecture_index))
-                self.ui_queue.put(("queue_log", "Index check/build complete"))
-                update_stage("Index Check / Build", "completed")
+
+                file_ops = FileOpsService(self.current_folder)
+                executor = TaskExecutorService(file_ops, self.ollama_service, self.process_service, model_name)
+
+                all_changes = []
+                for task in tasks:
+                    self.ui_queue.put(("queue_log", f"Executing task: {task.type.value} {task.target}"))
+                    result = executor.execute(task)
+                    if not result.success:
+                        raise RuntimeError(f"Task failed: {result.message}")
+                    all_changes.extend(result.changes)
+
+                update_stage("Task Execution", "completed", f"changes={len(all_changes)}")
                 check_stop()
 
-                # 3. File Selection
-                update_stage("File Selection", "running")
-                selection_result = self.file_selector.select(slot.spec_text, architecture_index)
-                slot.selection_result = selection_result
-                self.ui_queue.put(("queue_slot_selection", (slot.slot_index, selection_result)))
-                if selection_result.total_selected_count == 0:
-                    raise RuntimeError("empty selection")
-                self.ui_queue.put(("queue_log", f"Selection complete ({selection_result.total_selected_count} files)"))
-                update_stage("File Selection", "completed", f"selected={selection_result.total_selected_count}")
-                check_stop()
-
-                # 4. Bundle Build
-                update_stage("Bundle Build", "running")
-                bundle = self.bundle_builder.build(selection_result)
-                slot.bundle_result = bundle
-                self.ui_queue.put(("queue_slot_bundle", (slot.slot_index, bundle)))
-                self.ui_queue.put(("queue_log", f"Bundle built ({bundle.total_files} files)"))
-                update_stage("Bundle Build", "completed", f"files={bundle.total_files}")
-                check_stop()
-
-                # 5. LLM Edit
-                update_stage("LLM Edit", "running")
-                if not model_name:
-                    raise RuntimeError("LLM failure: no model selected")
-
-                request = PromptRequest(
-                    model_name=model_name,
-                    project_folder=str(self.current_folder),
-                    spec_text=slot.spec_text
-                )
-                assembled_prompt = self.bundle_prompt_builder.build(request, bundle)
-
-                edit_run = BundleEditRun(
-                    run_id=f"run_{int(time.time())}",
-                    slot_index=slot.slot_index,
-                    model_name=model_name,
-                    spec_text=slot.spec_text,
-                    source_bundle=bundle,
-                    assembled_prompt=assembled_prompt,
-                    started_at=self.run_state_service._now(),
-                    status="running"
-                )
-                slot.llm_edit_run = edit_run
-
-                self.ui_queue.put(("queue_log", "LLM edit started"))
-                snapshot = self.ollama_service.create_snapshot(model_name, assembled_prompt)
-                accumulator = []
-                for event in self.ollama_service.run_prompt_stream(snapshot):
-                    if event["type"] == "chunk":
-                        accumulator.append(event["text"])
-                    elif event["type"] == "done":
-                        break
-
-                raw_output = "".join(accumulator)
-                edit_run.raw_model_output = raw_output
-                self.ui_queue.put(("queue_log", "LLM edit complete"))
-
-                try:
-                    candidate = self.bundle_parser.parse(raw_output)
-                    edit_run.candidate_bundle = candidate
-                except Exception as exc:
-                    raise RuntimeError(f"malformed LLM output: {exc}")
-
-                update_stage("LLM Edit", "completed")
-                check_stop()
-
-                # 6. Validation
+                # 4. Validation
                 update_stage("Validation", "running")
-                errors = self.bundle_validator.validate(candidate, bundle, str(self.current_folder))
-                if errors:
-                    edit_run.validation_status = "failed"
-                    edit_run.validation_errors = errors
-                    self.ui_queue.put(("queue_log", "Validation failed"))
-                    raise RuntimeError(f"validation failure: {errors[0]}")
+                for change in all_changes:
+                    # Skip validation for files that were deleted
+                    target_path = self.current_folder / change
+                    if not target_path.exists():
+                        continue
 
-                edit_run.validation_status = "passed"
-                self.ui_queue.put(("queue_log", "Validation passed"))
+                    if change.endswith(".py"):
+                        ok, msg = self.validation_service.validate_python_syntax(target_path)
+                        if not ok:
+                            raise RuntimeError(f"Validation failed for {change}: {msg}")
                 update_stage("Validation", "completed")
                 check_stop()
 
-                # 7. Restore Preview
-                update_stage("Restore Preview", "running")
-                _preview = self.restore_service.compute_candidate_preview(self.current_folder, candidate)
-                self.ui_queue.put(("queue_log", "Restore preview generated"))
-                update_stage("Restore Preview", "completed")
+                # 5. Logging / Audit
+                update_stage("Logging / Audit", "running")
+                run_folder = self.audit_log_service.create_run_folder(slot.slot_index + 1)
+                self.audit_log_service.log_artifact(run_folder, "spec.txt", slot.spec_text)
+                self.audit_log_service.log_artifact(run_folder, "tasks.json", [{"id": t.id, "type": t.type.value, "target": t.target, "status": t.status.value} for t in tasks])
+
+                # Simplified log for audit
+                execution_log = [f"{t.type.value} {t.target}: {t.status.value}" for t in tasks]
+                self.audit_log_service.log_artifact(run_folder, "execution.log", "\n".join(execution_log))
+
+                for change in all_changes:
+                    self.audit_log_service.capture_file_change(run_folder, self.current_folder, change)
+
+                self.ui_queue.put(("queue_log", f"Audit logs saved to: {run_folder}"))
+                update_stage("Logging / Audit", "completed")
                 check_stop()
-
-                # 8. Restore
-                update_stage("Restore", "running")
-                restore_result = self.restore_service.restore_candidate_bundle(self.current_folder, candidate)
-                slot.restore_result = restore_result
-                edit_run.restore_status = restore_result.status
-
-                if restore_result.status != "completed":
-                    self.ui_queue.put(("queue_log", "Restore failed"))
-                    raise RuntimeError(f"restore failure: {restore_result.status}")
-
-                self.ui_queue.put(("queue_log", "Restore completed"))
-                update_stage("Restore", "completed", f"written={restore_result.written_file_count}")
-
-                edit_run.status = "completed"
-                edit_run.completed_at = self.run_state_service._now()
 
                 self.queue_service.mark_slot_completed(self.spec_queue, slot)
                 self.ui_queue.put(("queue_slot_completed", slot.slot_index))
@@ -1445,11 +1396,6 @@ class AgentWorkbenchApp:
                     update_stage(failed_stage, "failed", str(exc))
                     for s_name in stages[current_stage_idx + 1:]:
                         update_stage(s_name, "skipped", "upstream failure")
-
-                run = getattr(slot, "llm_edit_run", None)
-                if run:
-                    run.status = "failed"
-                    run.completed_at = self.run_state_service._now()
 
                 self.queue_service.mark_slot_failed(self.spec_queue, slot, str(exc))
                 self.ui_queue.put(("queue_slot_failed", (slot.slot_index, str(exc))))
