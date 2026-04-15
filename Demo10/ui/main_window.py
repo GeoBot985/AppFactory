@@ -21,6 +21,43 @@ from services.run_state_service import RunStateService
 from services.selection_service import FileSelector, SelectionResult
 
 
+class Tooltip:
+    def __init__(self, widget: tk.Widget, text: str):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.widget.bind("<Enter>", self.show_tip)
+        self.widget.bind("<Leave>", self.hide_tip)
+
+    def show_tip(self, _event=None):
+        if self.tip_window or not self.text:
+            return
+        x = self.widget.winfo_rootx() + 20
+        y = self.widget.winfo_rooty() + self.widget.winfo_height() + 5
+        self.tip_window = tw = tk.Toplevel(self.widget)
+        tw.wm_overrideredirect(1)
+        tw.wm_geometry(f"+{x}+{y}")
+        label = tk.Label(
+            tw,
+            text=self.text,
+            justify=tk.LEFT,
+            background="#2d2d30",
+            foreground="#d4d4d4",
+            relief=tk.SOLID,
+            borderwidth=1,
+            font=("Segoe UI", 9),
+            padx=5,
+            pady=3
+        )
+        label.pack(ipadx=1)
+
+    def hide_tip(self, _event=None):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
+
+
 class AgentWorkbenchApp:
     def __init__(self) -> None:
         self.root = tk.Tk()
@@ -61,6 +98,7 @@ class AgentWorkbenchApp:
         self.selection_active = False
         self.queue_active = False
         self.restore_active = False
+        self.pending_restore_type: str = "none"  # "none", "bundle", "candidate"
         self.llm_run_started_at = 0.0
         self.llm_chunk_count = 0
         self.llm_output_chars = 0
@@ -133,6 +171,7 @@ class AgentWorkbenchApp:
         self._refresh_candidate_view()
         self._refresh_queue_view()
         self._refresh_restore_view()
+        self._refresh_restore_preview()
         self._refresh_pipeline_view()
 
     def _build_top_section(self, parent: ttk.Frame) -> None:
@@ -144,14 +183,23 @@ class AgentWorkbenchApp:
 
         ttk.Label(top, text="Project", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Entry(top, textvariable=self.folder_var).grid(row=0, column=1, columnspan=2, sticky="ew", padx=(8, 8))
-        ttk.Button(top, text="Open Folder", command=self.open_folder).grid(row=0, column=3, padx=(0, 8))
-        ttk.Button(top, text="Refresh Tree", command=self.refresh_tree).grid(row=0, column=4, padx=(0, 16))
+        open_btn = ttk.Button(top, text="Open Folder", command=self.open_folder)
+        open_btn.grid(row=0, column=3, padx=(0, 8))
+        Tooltip(open_btn, "Select the project folder to work on. All indexing and file operations use this root.")
+
+        refresh_tree_btn = ttk.Button(top, text="Refresh Tree", command=self.refresh_tree)
+        refresh_tree_btn.grid(row=0, column=4, padx=(0, 16))
+        Tooltip(refresh_tree_btn, "Reload the project file tree from disk.")
 
         ttk.Label(top, text="Model", style="Panel.TLabel").grid(row=0, column=5, sticky="w")
         self.model_combo = ttk.Combobox(top, textvariable=self.model_var, state="readonly", values=[])
         self.model_combo.grid(row=0, column=6, sticky="ew", padx=(8, 8))
         self.model_combo.bind("<<ComboboxSelected>>", self._on_model_selected)
-        ttk.Button(top, text="Refresh Models", command=self.refresh_models).grid(row=0, column=7)
+        Tooltip(self.model_combo, "Select the local Ollama model used for LLM operations.")
+
+        refresh_models_btn = ttk.Button(top, text="Refresh Models", command=self.refresh_models)
+        refresh_models_btn.grid(row=0, column=7)
+        Tooltip(refresh_models_btn, "Query the local Ollama instance for available models.")
 
         ttk.Label(top, text="Spec Editor", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
         spec_frame = ttk.Frame(top, style="Panel.TFrame")
@@ -212,25 +260,48 @@ class AgentWorkbenchApp:
         action_row.grid(row=2, column=6, columnspan=2, sticky="e", pady=(8, 0))
         self.run_llm_button = ttk.Button(action_row, text="Run LLM", command=self.run_llm)
         self.run_llm_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.run_llm_button, "Send the current spec to the selected model for analysis or response (no file changes).")
+
         self.edit_bundle_button = ttk.Button(action_row, text="Edit Bundle with LLM", command=self.run_bundle_edit)
         self.edit_bundle_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.edit_bundle_button, "Request the model to propose edits for files in the current bundle based on the spec.")
+
         self.build_index_button = ttk.Button(action_row, text="Build Index", command=self.build_index)
         self.build_index_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.build_index_button, "Scan the project and build a structural index used for deterministic selection.")
+
         self.select_files_button = ttk.Button(action_row, text="Select Files", command=self.select_files)
         self.select_files_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.select_files_button, "Select relevant files for the current spec using deterministic rules and the architecture index.")
+
         self.restore_bundle_button = ttk.Button(action_row, text="Restore Bundle", command=self.restore_bundle)
         self.restore_bundle_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.restore_bundle_button, "Write the current bundle to the project folder. Preview changes before confirming.")
+
         self.restore_candidate_button = ttk.Button(action_row, text="Restore Candidate", command=self.restore_candidate)
         self.restore_candidate_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.restore_candidate_button, "Write the candidate bundle (model output) to the project folder. Preview changes before confirming.")
+
         self.start_queue_button = ttk.Button(action_row, text="Start Queue", command=self.start_queue)
         self.start_queue_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.start_queue_button, "Execute queued specs sequentially (selection → bundle → optional edit → restore).")
+
         self.stop_queue_button = ttk.Button(action_row, text="Stop Queue", command=self.stop_queue)
         self.stop_queue_button.pack(side="left", padx=(0, 8))
         self.stop_queue_button.state(["disabled"])
+        Tooltip(self.stop_queue_button, "Stop execution after the current slot finishes or reaches a safe boundary.")
+
         self.submit_spec_button = ttk.Button(action_row, text="Submit to Selected Slot", command=self.submit_spec)
         self.submit_spec_button.pack(side="left", padx=(0, 8))
-        ttk.Button(action_row, text="Load Slot to Editor", command=self.load_slot_to_editor).pack(side="left", padx=(0, 8))
-        ttk.Button(action_row, text="Clear Slot", command=self.clear_slot).pack(side="left")
+        Tooltip(self.submit_spec_button, "Copy the current spec into the selected queue slot.")
+
+        load_to_editor_btn = ttk.Button(action_row, text="Load Slot to Editor", command=self.load_slot_to_editor)
+        load_to_editor_btn.pack(side="left", padx=(0, 8))
+        Tooltip(load_to_editor_btn, "Load the spec and state from the selected queue slot back into the editor.")
+
+        clear_slot_btn = ttk.Button(action_row, text="Clear Slot", command=self.clear_slot)
+        clear_slot_btn.pack(side="left")
+        Tooltip(clear_slot_btn, "Remove the spec and all associated results from the selected queue slot.")
 
     def _build_main_section(self, parent: ttk.Frame) -> None:
         main = ttk.PanedWindow(parent, orient="horizontal")
@@ -275,6 +346,7 @@ class AgentWorkbenchApp:
         selection_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         bundle_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         candidate_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        restore_preview_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         restore_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         slot_detail_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         notebook.add(viewer_frame, text="File Viewer")
@@ -284,10 +356,12 @@ class AgentWorkbenchApp:
         notebook.add(selection_frame, text="File Selection")
         notebook.add(bundle_frame, text="Bundle Preview")
         notebook.add(candidate_frame, text="Candidate Bundle")
+        notebook.add(restore_preview_frame, text="Restore Preview")
         notebook.add(restore_frame, text="Restore Result")
         notebook.add(slot_detail_frame, text="Slot Detail")
+        self.notebook = notebook
 
-        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_frame, slot_detail_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_preview_frame, restore_frame, slot_detail_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -407,6 +481,38 @@ class AgentWorkbenchApp:
         candidate_x.grid(row=1, column=0, sticky="ew")
         self.candidate_view.configure(state="disabled")
 
+        # Restore Preview Tab
+        restore_preview_frame.rowconfigure(0, weight=1)
+        restore_preview_frame.rowconfigure(1, weight=0)
+
+        self.restore_preview_view = tk.Text(
+            restore_preview_frame,
+            wrap="none",
+            bg="#1b1b1c",
+            fg="#d7ba7d",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        preview_y = ttk.Scrollbar(restore_preview_frame, orient="vertical", command=self.restore_preview_view.yview)
+        preview_x = ttk.Scrollbar(restore_preview_frame, orient="horizontal", command=self.restore_preview_view.xview)
+        self.restore_preview_view.configure(yscrollcommand=preview_y.set, xscrollcommand=preview_x.set)
+        self.restore_preview_view.grid(row=0, column=0, sticky="nsew")
+        preview_y.grid(row=0, column=1, sticky="ns")
+        preview_x.grid(row=2, column=0, sticky="ew")
+        self.restore_preview_view.configure(state="disabled")
+
+        self.restore_preview_view.tag_configure("new", foreground="#6a9955")
+        self.restore_preview_view.tag_configure("modified", foreground="#d7ba7d")
+        self.restore_preview_view.tag_configure("unchanged", foreground="#808080")
+        self.restore_preview_view.tag_configure("skipped", foreground="#f44747")
+        self.restore_preview_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 10, "bold"))
+
+        confirm_frame = ttk.Frame(restore_preview_frame, style="Panel.TFrame")
+        confirm_frame.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self.confirm_restore_button = ttk.Button(confirm_frame, text="Confirm Restore", command=self.confirm_restore, state="disabled")
+        self.confirm_restore_button.pack(side="right")
+
         self.restore_view = tk.Text(
             restore_frame,
             wrap="none",
@@ -437,7 +543,9 @@ class AgentWorkbenchApp:
         self.slot_detail_status_var = tk.StringVar(value="Status: -")
         ttk.Label(self.slot_detail_header, textvariable=self.slot_detail_status_var, style="Panel.TLabel").pack(side="left", padx=(0, 20))
 
-        ttk.Button(self.slot_detail_header, text="Load Spec to Editor", command=self.load_slot_to_editor).pack(side="right")
+        load_spec_btn = ttk.Button(self.slot_detail_header, text="Load Spec to Editor", command=self.load_slot_to_editor)
+        load_spec_btn.pack(side="right")
+        Tooltip(load_spec_btn, "Load the spec from this slot back into the editor for refinement.")
 
         self.slot_detail_view = tk.Text(
             slot_detail_frame,
@@ -518,7 +626,9 @@ class AgentWorkbenchApp:
         entry = ttk.Entry(bottom, textvariable=self.command_var)
         entry.grid(row=0, column=1, sticky="ew", padx=(8, 8))
         entry.bind("<Return>", lambda _event: self.run_command())
-        ttk.Button(bottom, text="Run", command=self.run_command).grid(row=0, column=2)
+        ps_run_btn = ttk.Button(bottom, text="Run", command=self.run_command)
+        ps_run_btn.grid(row=0, column=2)
+        Tooltip(ps_run_btn, "Execute the entered PowerShell command in the project root.")
 
         output_frame = ttk.Frame(bottom, style="Panel.TFrame")
         output_frame.grid(row=1, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
@@ -712,6 +822,32 @@ class AgentWorkbenchApp:
         else:
             content = restore.to_preview_text()
         self._set_text_widget_content(self.restore_view, content)
+
+    def _refresh_restore_preview(self) -> None:
+        preview = self.run_state_service.restore_state.latest_preview
+        if preview is None:
+            content = "No restore preview available. Trigger a restore to see changes here."
+            self._set_text_widget_content(self.restore_preview_view, content)
+            self.confirm_restore_button.state(["disabled"])
+            return
+
+        self.restore_preview_view.configure(state="normal")
+        self.restore_preview_view.delete("1.0", "end")
+
+        self.restore_preview_view.insert("end", f"Project: {preview.project_root}\n", "header")
+        self.restore_preview_view.insert("end", f"Generated: {preview.generated_at}\n", "header")
+        self.restore_preview_view.insert("end", f"Summary: total={preview.total_files}, new={preview.new_count}, modified={preview.modified_count}, unchanged={preview.unchanged_count}, skipped={preview.skipped_count}\n\n", "header")
+
+        self.restore_preview_view.insert("end", f"{'PATH':<60} | {'CHANGE':<12} | {'SIZE (OLD -> NEW)':<20} | {'LINES':<10}\n", "header")
+        self.restore_preview_view.insert("end", "-" * 110 + "\n", "header")
+
+        for f in preview.files:
+            size_str = f"{f.old_size} -> {f.new_size}"
+            line = f"{f.relative_path[:60]:<60} | {f.change_type:<12} | {size_str:<20} | {f.new_line_count:<10}\n"
+            self.restore_preview_view.insert("end", line, f.change_type)
+
+        self.restore_preview_view.configure(state="disabled")
+        self.confirm_restore_button.state(["!disabled"])
 
     def _refresh_pipeline_view(self) -> None:
         queue_state = self.spec_queue
@@ -1225,17 +1361,19 @@ class AgentWorkbenchApp:
             self.set_status_action("restore failed")
             return
 
-        self.restore_active = True
-        self.restore_bundle_button.state(["disabled"])
-        self.run_state_service.begin_restore()
-        self._refresh_restore_view()
-        self.log_event("restore started")
-        self.log_event(f"project root used: {self.current_folder}")
-        self.log_event(f"bundle file count: {bundle.total_files}")
-        self.set_status_action("restoring")
-        thread = threading.Thread(target=self._restore_bundle_worker, args=(Path(self.current_folder), bundle, self.selected_slot_index), daemon=True)
-        self.restore_thread = thread
-        thread.start()
+        self.log_event("computing restore preview (bundle)")
+        preview = self.restore_service.compute_bundle_preview(self.current_folder, bundle)
+        self.run_state_service.set_restore_preview(preview)
+        self.pending_restore_type = "bundle"
+        self._refresh_restore_preview()
+
+        # Switch to preview tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Restore Preview" in self.notebook.tab(tabid, "text"):
+                self.notebook.select(i)
+                break
+
+        self.log_event("restore preview ready - please confirm restore")
 
     def _restore_bundle_worker(self, project_root: Path, bundle: WorkingSetBundle, slot_index: int) -> None:
         try:
@@ -1260,21 +1398,59 @@ class AgentWorkbenchApp:
             self.log_event("Restore Candidate blocked: candidate bundle failed validation.")
             return
 
-        self.restore_active = True
-        self.restore_candidate_button.state(["disabled"])
-        self.run_state_service.begin_restore()
-        self._refresh_restore_view()
-        run.restore_status = "started"
-        self._refresh_candidate_view()
+        self.log_event("computing restore preview (candidate)")
+        preview = self.restore_service.compute_candidate_preview(self.current_folder, run.candidate_bundle)
+        self.run_state_service.set_restore_preview(preview)
+        self.pending_restore_type = "candidate"
+        self._refresh_restore_preview()
 
-        self.log_event("restore started (candidate)")
-        self.log_event(f"project root used: {self.current_folder}")
-        self.log_event(f"candidate file count: {len(run.candidate_bundle.files)}")
-        self.set_status_action("restoring candidate")
+        # Switch to preview tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Restore Preview" in self.notebook.tab(tabid, "text"):
+                self.notebook.select(i)
+                break
 
-        thread = threading.Thread(target=self._restore_candidate_worker, args=(Path(self.current_folder), run, self.selected_slot_index), daemon=True)
-        self.restore_thread = thread
-        thread.start()
+        self.log_event("restore preview ready - please confirm restore")
+
+    def confirm_restore(self) -> None:
+        if self.restore_active:
+            return
+        if not self.current_folder:
+            return
+
+        if self.pending_restore_type == "bundle":
+            bundle = self._active_bundle()
+            if not bundle:
+                return
+            self.restore_active = True
+            self.confirm_restore_button.state(["disabled"])
+            self.restore_bundle_button.state(["disabled"])
+            self.run_state_service.begin_restore()
+            self._refresh_restore_view()
+            self.log_event("restore confirmed (bundle)")
+            self.set_status_action("restoring")
+            thread = threading.Thread(target=self._restore_bundle_worker, args=(Path(self.current_folder), bundle, self.selected_slot_index), daemon=True)
+            self.restore_thread = thread
+            thread.start()
+        elif self.pending_restore_type == "candidate":
+            edit_state = self.run_state_service.bundle_edit_state
+            run = edit_state.latest_edit_run
+            if not run or not run.candidate_bundle:
+                return
+            self.restore_active = True
+            self.confirm_restore_button.state(["disabled"])
+            self.restore_candidate_button.state(["disabled"])
+            self.run_state_service.begin_restore()
+            self._refresh_restore_view()
+            run.restore_status = "started"
+            self._refresh_candidate_view()
+            self.log_event("restore confirmed (candidate)")
+            self.set_status_action("restoring candidate")
+            thread = threading.Thread(target=self._restore_candidate_worker, args=(Path(self.current_folder), run, self.selected_slot_index), daemon=True)
+            self.restore_thread = thread
+            thread.start()
+
+        self.pending_restore_type = "none"
 
     def _restore_candidate_worker(self, project_root: Path, edit_run: BundleEditRun, slot_index: int) -> None:
         try:
