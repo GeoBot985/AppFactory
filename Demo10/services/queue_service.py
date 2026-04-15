@@ -13,6 +13,15 @@ QUEUE_SIZE = 10
 
 
 @dataclass
+class PipelineStage:
+    name: str
+    status: str = "pending"  # pending, running, completed, failed, skipped
+    started_at: str = ""
+    completed_at: str = ""
+    last_message: str = ""
+
+
+@dataclass
 class QueueSlot:
     slot_index: int
     spec_text: str = ""
@@ -25,6 +34,7 @@ class QueueSlot:
     restore_result: RestoreResult | None = None
     llm_edit_run: BundleEditRun | None = None
     notes_log_summary: list[str] = field(default_factory=list)
+    pipeline_stages: list[PipelineStage] = field(default_factory=list)
 
 
 @dataclass
@@ -42,7 +52,21 @@ class SpecQueueState:
 
 class QueueService:
     def create_state(self) -> SpecQueueState:
-        return SpecQueueState(queue_slots=[QueueSlot(slot_index=i) for i in range(QUEUE_SIZE)])
+        state = SpecQueueState(queue_slots=[QueueSlot(slot_index=i) for i in range(QUEUE_SIZE)])
+        for slot in state.queue_slots:
+            self._initialize_pipeline(slot)
+        return state
+
+    def _initialize_pipeline(self, slot: QueueSlot) -> None:
+        slot.pipeline_stages = [
+            PipelineStage(name="Spec Intake"),
+            PipelineStage(name="Index Available"),
+            PipelineStage(name="File Selection"),
+            PipelineStage(name="Bundle Build"),
+            PipelineStage(name="LLM Edit"),
+            PipelineStage(name="Validation"),
+            PipelineStage(name="Restore"),
+        ]
 
     def load_specs(self, state: SpecQueueState, specs: list[str]) -> None:
         for idx, slot in enumerate(state.queue_slots):
@@ -60,6 +84,7 @@ class QueueService:
             slot.started_at = ""
             slot.completed_at = ""
             slot.notes_log_summary = []
+            self._initialize_pipeline(slot)
 
     def start(self, state: SpecQueueState) -> None:
         state.queue_status = "running"
@@ -88,6 +113,29 @@ class QueueService:
         slot.status = "running"
         slot.started_at = self._now()
         state.active_slot_index = slot.slot_index
+        for stage in slot.pipeline_stages:
+            stage.status = "pending"
+            stage.started_at = ""
+            stage.completed_at = ""
+            stage.last_message = ""
+
+    def update_stage_status(
+        self,
+        slot: QueueSlot,
+        stage_name: str,
+        status: str,
+        message: str = "",
+    ) -> None:
+        for stage in slot.pipeline_stages:
+            if stage.name == stage_name:
+                stage.status = status
+                if status == "running":
+                    stage.started_at = self._now()
+                elif status in {"completed", "failed", "skipped"}:
+                    stage.completed_at = self._now()
+                if message:
+                    stage.last_message = message
+                break
 
     def mark_slot_completed(self, state: SpecQueueState, slot: QueueSlot) -> None:
         slot.status = "completed"
