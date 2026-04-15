@@ -1,0 +1,2025 @@
+
+app.py
+
+from pathlib import Path
+
+from src.pipeline import discover_input_images, process_image
+
+
+def main() -> int:
+    base_dir = Path(__file__).resolve().parent
+    image_paths = discover_input_images(base_dir)
+
+    if not image_paths:
+        print("No input images found.")
+        return 0
+
+    for image_path in image_paths:
+        result = process_image(image_path, base_dir / "outputs")
+        print(
+            f"{image_path.name}: elements={result.element_count} "
+            f"contours={result.contour_count} connectors={result.connector_count} "
+            f"verification={result.verification_status}"
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+================================================================================
+
+src\connectors.py
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+import cv2
+import numpy as np
+
+from .grid import snap_point, snap_points
+from .models import Node
+
+
+Point = tuple[int, int]
+
+
+@dataclass
+class ConnectorFragment:
+    points: list[Point]
+    length: float
+    angle: float
+    bbox: tuple[int, int, int, int]
+
+
+def _segment_length(points: list[Point]) -> float:
+    return math.dist(points[0], points[-1])
+
+
+def _segment_angle(points: list[Point]) -> float:
+    dx = points[-1][0] - points[0][0]
+    dy = points[-1][1] - points[0][1]
+    return math.degrees(math.atan2(dy, dx))
+
+
+def _bbox(points: list[Point]) -> tuple[int, int, int, int]:
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    return min_x, min_y, max_x - min_x, max_y - min_y
+
+
+def _orientation_bucket(angle: float, slanted_angle_tolerance: float) -> str:
+    normalized = abs(angle) % 180.0
+    if normalized <= slanted_angle_tolerance or abs(normalized - 180.0) <= slanted_angle_tolerance:
+        return "horizontal"
+    if abs(normalized - 90.0) <= slanted_angle_tolerance:
+        return "vertical"
+    return "slanted"
+
+
+def extract_connector_fragments(
+    line_mask: np.ndarray,
+    hough_threshold: int,
+    min_line_length: int,
+    max_line_gap: int,
+    orientation_tolerance: float,
+) -> list[ConnectorFragment]:
+    segments = cv2.HoughLinesP(
+        line_mask,
+        1,
+        np.pi / 180,
+        threshold=hough_threshold,
+        minLineLength=min_line_length,
+        maxLineGap=max_line_gap,
+    )
+    if segments is None:
+        return []
+
+    fragments: list[ConnectorFragment] = []
+    for segment in segments:
+        coords = segment.reshape(-1, 2)
+        points = [snap_point((int(coords[0][0]), int(coords[0][1]))), snap_point((int(coords[1][0]), int(coords[1][1])))]
+        length = _segment_length(points)
+        if length < min_line_length:
+            continue
+        angle = _segment_angle(points)
+        fragments.append(
+            ConnectorFragment(
+                points=points,
+                length=length,
+                angle=angle,
+                bbox=_bbox(points),
+            )
+        )
+
+    unique_fragments: list[ConnectorFragment] = []
+    for fragment in fragments:
+        is_duplicate = False
+        for existing in unique_fragments:
+            if (
+                _orientation_bucket(fragment.angle, orientation_tolerance)
+                == _orientation_bucket(existing.angle, orientation_tolerance)
+                and math.dist(fragment.points[0], existing.points[0]) <= 6
+                and math.dist(fragment.points[-1], existing.points[-1]) <= 6
+            ):
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            unique_fragments.append(fragment)
+    return unique_fragments
+
+
+def _normalize_direction(points: list[Point]) -> list[Point]:
+    return points if points[0] <= points[-1] else list(reversed(points))
+
+
+def _can_merge(
+    first: list[Point],
+    second: list[Point],
+    endpoint_gap_threshold: int,
+    collinear_angle_tolerance: float,
+) -> bool:
+    first_angle = _segment_angle(first)
+    second_angle = _segment_angle(second)
+    angle_delta = abs(first_angle - second_angle)
+    angle_delta = min(angle_delta, abs(angle_delta - 180.0))
+    if angle_delta > collinear_angle_tolerance:
+        return False
+
+    endpoint_pairs = [
+        (first[0], second[0]),
+        (first[0], second[-1]),
+        (first[-1], second[0]),
+        (first[-1], second[-1]),
+    ]
+    if min(math.dist(a, b) for a, b in endpoint_pairs) <= endpoint_gap_threshold:
+        return True
+
+    first_box = _bbox(first)
+    second_box = _bbox(second)
+    overlap_x = min(first_box[0] + first_box[2], second_box[0] + second_box[2]) - max(first_box[0], second_box[0])
+    overlap_y = min(first_box[1] + first_box[3], second_box[1] + second_box[3]) - max(first_box[1], second_box[1])
+    return overlap_x >= -endpoint_gap_threshold or overlap_y >= -endpoint_gap_threshold
+
+
+def _merge_two_paths(first: list[Point], second: list[Point]) -> list[Point]:
+    candidates = [
+        _normalize_direction(first) + _normalize_direction(second),
+        _normalize_direction(first) + list(reversed(_normalize_direction(second))),
+        list(reversed(_normalize_direction(first))) + _normalize_direction(second),
+        list(reversed(_normalize_direction(first))) + list(reversed(_normalize_direction(second))),
+    ]
+    best = min(candidates, key=lambda path: sum(math.dist(path[i], path[i + 1]) for i in range(len(path) - 1)))
+    merged: list[Point] = []
+    for point in best:
+        snapped = snap_point(point)
+        if not merged or merged[-1] != snapped:
+            merged.append(snapped)
+    return merged
+
+
+def merge_connector_fragments(
+    fragments: list[ConnectorFragment],
+    endpoint_gap_threshold: int,
+    collinear_angle_tolerance: float,
+    min_merged_path_length: int,
+) -> tuple[list[list[Point]], list[int]]:
+    paths = [_normalize_direction(fragment.points) for fragment in fragments]
+    merge_group_ids = list(range(1, len(paths) + 1))
+
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(paths)):
+            if changed:
+                break
+            for j in range(i + 1, len(paths)):
+                if _can_merge(paths[i], paths[j], endpoint_gap_threshold, collinear_angle_tolerance):
+                    paths[i] = _merge_two_paths(paths[i], paths[j])
+                    merge_group_ids[i] = min(merge_group_ids[i], merge_group_ids[j])
+                    del paths[j]
+                    del merge_group_ids[j]
+                    changed = True
+                    break
+
+    merged_paths: list[list[Point]] = []
+    kept_group_ids: list[int] = []
+    for path, group_id in zip(paths, merge_group_ids):
+        length = sum(math.dist(path[i], path[i + 1]) for i in range(len(path) - 1))
+        if length < min_merged_path_length:
+            continue
+        merged_paths.append(path)
+        kept_group_ids.append(group_id)
+    return merged_paths, kept_group_ids
+
+
+def build_protected_node_mask(
+    image_width: int,
+    image_height: int,
+    nodes: list[Node],
+    inward_padding: int,
+    gate_padding: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    protected_mask = np.zeros((image_height, image_width), dtype=np.uint8)
+    gate_mask = np.zeros((image_height, image_width), dtype=np.uint8)
+
+    for node in nodes:
+        x, y, w, h = node.bbox
+        ex, ey, ew, eh = node.expanded_bbox
+        cv2.rectangle(protected_mask, (ex, ey), (ex + ew, ey + eh), 255, thickness=cv2.FILLED)
+        inner_x = min(max(x + inward_padding, 0), image_width - 1)
+        inner_y = min(max(y + inward_padding, 0), image_height - 1)
+        inner_w = max(w - 2 * inward_padding, 1)
+        inner_h = max(h - 2 * inward_padding, 1)
+        cv2.rectangle(
+            protected_mask,
+            (inner_x, inner_y),
+            (min(inner_x + inner_w, image_width - 1), min(inner_y + inner_h, image_height - 1)),
+            255,
+            thickness=cv2.FILLED,
+        )
+
+        for segment in node.gate_segments.values():
+            p1, p2 = segment
+            cv2.line(gate_mask, p1, p2, 255, thickness=max(1, gate_padding))
+
+    protected_mask = cv2.bitwise_and(protected_mask, cv2.bitwise_not(gate_mask))
+    return protected_mask, gate_mask
+
+
+def connector_space_from_masks(line_mask: np.ndarray, protected_node_mask: np.ndarray, gate_mask: np.ndarray) -> np.ndarray:
+    outside_nodes = cv2.bitwise_and(line_mask, cv2.bitwise_not(protected_node_mask))
+    return cv2.bitwise_or(outside_nodes, gate_mask)
+
+
+def _endpoint_direction(path: list[Point], at_start: bool) -> tuple[float, float]:
+    if len(path) < 2:
+        return (0.0, 0.0)
+    if at_start:
+        origin, target = path[0], path[1]
+    else:
+        origin, target = path[-1], path[-2]
+    return float(origin[0] - target[0]), float(origin[1] - target[1])
+
+
+def _direction_compatible(side: str, direction: tuple[float, float], min_axis_ratio: float) -> bool:
+    dx, dy = direction
+    abs_dx = abs(dx)
+    abs_dy = abs(dy)
+    if side in {"left", "right"}:
+        return abs_dx >= max(1.0, abs_dy * min_axis_ratio)
+    return abs_dy >= max(1.0, abs_dx * min_axis_ratio)
+
+
+def snap_connector_endpoints_to_nodes(
+    paths: list[list[Point]],
+    nodes: list[Node],
+    snap_distance_tolerance: int,
+    directional_axis_ratio: float,
+) -> tuple[list[dict[str, object]], list[Point], list[list[Point]]]:
+    snapped_records: list[dict[str, object]] = []
+    endpoint_candidates: list[Point] = []
+    snapped_paths: list[list[Point]] = []
+
+    gate_records: list[dict[str, object]] = []
+    for node in nodes:
+        for side, point in node.gates.items():
+            gate_records.append({"node_id": node.id, "side": side, "point": point})
+
+    for path in paths:
+        if len(path) < 2:
+            continue
+        snapped_path = snap_points(path)
+        endpoint_candidates.extend([snapped_path[0], snapped_path[-1]])
+        attachments: list[dict[str, object] | None] = []
+
+        for at_start in (True, False):
+            endpoint = snapped_path[0] if at_start else snapped_path[-1]
+            direction = _endpoint_direction(snapped_path, at_start)
+            matches: list[tuple[float, dict[str, object]]] = []
+            for gate in gate_records:
+                if not _direction_compatible(str(gate["side"]), direction, directional_axis_ratio):
+                    continue
+                distance = math.dist(endpoint, gate["point"])
+                if distance <= snap_distance_tolerance:
+                    matches.append((distance, gate))
+            if matches:
+                matches.sort(key=lambda item: item[0])
+                distance, gate = matches[0]
+                snapped_point = snap_point(gate["point"])
+                if at_start:
+                    snapped_path[0] = snapped_point
+                else:
+                    snapped_path[-1] = snapped_point
+                attachments.append(
+                    {
+                        "node_id": gate["node_id"],
+                        "side": gate["side"],
+                        "distance": round(distance, 2),
+                        "snapped": True,
+                    }
+                )
+            else:
+                attachments.append(None)
+
+        snapped_paths.append(snapped_path)
+        src_attachment = attachments[0]
+        dst_attachment = attachments[1]
+        attachment_count = sum(1 for item in attachments if item is not None)
+        confidence = 0.45 + 0.2 * attachment_count
+        snapped_records.append(
+            {
+                "points": snapped_path,
+                "src_node_id": None if src_attachment is None else src_attachment["node_id"],
+                "src_side": None if src_attachment is None else src_attachment["side"],
+                "dst_node_id": None if dst_attachment is None else dst_attachment["node_id"],
+                "dst_side": None if dst_attachment is None else dst_attachment["side"],
+                "confidence": min(confidence, 0.95),
+                "debug": {
+                    "src_attachment": src_attachment,
+                    "dst_attachment": dst_attachment,
+                    "orphan": attachment_count == 0,
+                },
+            }
+        )
+
+    return snapped_records, endpoint_candidates, snapped_paths
+
+================================================================================
+
+src\contours.py
+
+from __future__ import annotations
+
+import math
+
+import cv2
+
+from .geometry import build_connector_element, build_shape_element, build_unknown_element
+from .models import Element
+from .separation import SeparationCandidate
+
+
+def _segment_length(path: list[tuple[int, int]]) -> float:
+    return math.dist(path[0], path[-1])
+
+
+def _segment_angle(path: list[tuple[int, int]]) -> float:
+    dx = path[-1][0] - path[0][0]
+    dy = path[-1][1] - path[0][1]
+    return math.degrees(math.atan2(dy, dx))
+
+
+def _segment_midpoint(path: list[tuple[int, int]]) -> tuple[float, float]:
+    return ((path[0][0] + path[-1][0]) / 2.0, (path[0][1] + path[-1][1]) / 2.0)
+
+
+def _is_duplicate_path(
+    path: list[tuple[int, int]],
+    existing_paths: list[list[tuple[int, int]]],
+    midpoint_tolerance: float = 10.0,
+    angle_tolerance: float = 8.0,
+    length_ratio_tolerance: float = 0.2,
+) -> bool:
+    candidate_mid = _segment_midpoint(path)
+    candidate_angle = _segment_angle(path)
+    candidate_length = max(_segment_length(path), 1.0)
+
+    for existing in existing_paths:
+        existing_mid = _segment_midpoint(existing)
+        existing_angle = _segment_angle(existing)
+        existing_length = max(_segment_length(existing), 1.0)
+        midpoint_distance = math.dist(candidate_mid, existing_mid)
+        angle_delta = abs(candidate_angle - existing_angle)
+        angle_delta = min(angle_delta, abs(angle_delta - 180.0))
+        length_delta_ratio = abs(candidate_length - existing_length) / max(candidate_length, existing_length)
+        if (
+            midpoint_distance <= midpoint_tolerance
+            and angle_delta <= angle_tolerance
+            and length_delta_ratio <= length_ratio_tolerance
+        ):
+            return True
+    return False
+
+
+def extract_primitives(
+    shape_candidates: list[SeparationCandidate],
+    connector_paths: list[list[tuple[int, int]]],
+    connector_group_ids: list[int],
+    min_contour_area: int,
+    contour_epsilon_ratio: float,
+    min_connector_path_length: int,
+) -> tuple[list[Element], list, list[list[tuple[int, int]]]]:
+    elements: list[Element] = []
+    kept_contours: list = []
+
+    shape_index = 1
+    unknown_index = 1
+
+    for candidate in shape_candidates:
+        contour = candidate.contour
+        area = cv2.contourArea(contour)
+        if area < min_contour_area:
+            continue
+
+        kept_contours.append(contour)
+        perimeter = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, max(1.0, perimeter * contour_epsilon_ratio), True)
+        is_closed = len(approx) >= 3
+
+        debug = {
+            "source_mask": "shape_mask",
+            "parent_shape_id": candidate.parent_shape_id,
+            "is_internal_noise": False,
+            "rejection_reason": None,
+            "separation_metrics": candidate.metrics,
+        }
+
+        if is_closed:
+            element = build_shape_element(f"shape_{shape_index:03d}", contour, contour_epsilon_ratio)
+            element.debug.update(debug)
+            elements.append(element)
+            shape_index += 1
+        else:
+            element = build_unknown_element(f"unknown_{unknown_index:03d}", contour, contour_epsilon_ratio)
+            element.debug.update(debug)
+            elements.append(element)
+            unknown_index += 1
+
+    line_paths: list[list[tuple[int, int]]] = []
+    connector_index = 1
+    for path, group_id in zip(connector_paths, connector_group_ids):
+        if len(path) < 2:
+            continue
+        if _segment_length(path) < float(min_connector_path_length):
+            continue
+        if _is_duplicate_path(path, line_paths):
+            continue
+        line_paths.append(path)
+        element = build_connector_element(f"connector_{connector_index:03d}", path, closed=False)
+        element.debug.update(
+            {
+                "source_mask": "line_mask",
+                "parent_shape_id": None,
+                "is_internal_noise": False,
+                "merge_group_id": int(group_id),
+                "rejection_reason": None,
+                "separation_metrics": {
+                    "line_length": round(_segment_length(path), 2),
+                    "aspect_ratio": round(
+                        max(abs(path[-1][0] - path[0][0]), abs(path[-1][1] - path[0][1]))
+                        / max(min(max(abs(path[-1][0] - path[0][0]), 1), max(abs(path[-1][1] - path[0][1]), 1)), 1),
+                        4,
+                    ),
+                    "bbox_fill_ratio": 0.0,
+                    "border_touch_count": 0,
+                },
+            }
+        )
+        elements.append(element)
+        connector_index += 1
+
+    return elements, kept_contours, line_paths
+
+================================================================================
+
+src\debug_outputs.py
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+
+def ensure_output_dir(output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def write_image(output_dir: Path, filename: str, image: np.ndarray) -> None:
+    ensure_output_dir(output_dir)
+    cv2.imwrite(str(output_dir / filename), image)
+
+
+def write_text(output_dir: Path, filename: str, text: str) -> None:
+    ensure_output_dir(output_dir)
+    (output_dir / filename).write_text(text, encoding="utf-8")
+
+================================================================================
+
+src\edges.py
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+
+def detect_edges(
+    normalized_grayscale: np.ndarray,
+    canny_low: int,
+    canny_high: int,
+    aperture_size: int,
+) -> np.ndarray:
+    return cv2.Canny(
+        normalized_grayscale,
+        canny_low,
+        canny_high,
+        apertureSize=aperture_size,
+        L2gradient=True,
+    )
+
+================================================================================
+
+src\geometry.py
+
+from __future__ import annotations
+
+import math
+
+import cv2
+import numpy as np
+
+from .grid import snap_point, snap_points
+from .models import Connector, Element, InterpretedGeometry, Node, RawGeometry
+
+
+def contour_to_points(contour: np.ndarray) -> list[tuple[int, int]]:
+    return snap_points([(int(p[0][0]), int(p[0][1])) for p in contour])
+
+
+def simplify_contour(contour: np.ndarray, epsilon_ratio: float) -> np.ndarray:
+    perimeter = cv2.arcLength(contour, True)
+    epsilon = max(1.0, perimeter * epsilon_ratio)
+    return cv2.approxPolyDP(contour, epsilon, True)
+
+
+def bbox_and_center(points: list[tuple[int, int]]) -> tuple[tuple[int, int, int, int], tuple[int, int]]:
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    bbox = (int(min_x), int(min_y), int(max_x - min_x), int(max_y - min_y))
+    center = (int(round((min_x + max_x) / 2)), int(round((min_y + max_y) / 2)))
+    return bbox, center
+
+
+def classify_shape(contour: np.ndarray, simplified: np.ndarray) -> tuple[str, float]:
+    area = cv2.contourArea(contour)
+    perimeter = cv2.arcLength(contour, True)
+    if area <= 0 or perimeter <= 0:
+        return "unknown-shape", 0.2
+
+    approx_vertices = len(simplified)
+    x, y, w, h = cv2.boundingRect(contour)
+    bbox_area = max(w * h, 1)
+    fill_ratio = area / bbox_area
+    circularity = (4.0 * math.pi * area) / max(perimeter * perimeter, 1.0)
+
+    if approx_vertices == 4 and fill_ratio >= 0.55:
+        return "rectangle-like", 0.9
+    if approx_vertices >= 8 and circularity >= 0.68:
+        return "ellipse-like", 0.78
+    if 3 <= approx_vertices <= 10:
+        return "polygon-like", 0.7
+    return "unknown-shape", 0.35
+
+
+def classify_path(is_closed: bool) -> tuple[str, float]:
+    if is_closed:
+        return "closed-path", 0.7
+    return "polyline", 0.72
+
+
+def build_shape_element(
+    element_id: str,
+    contour: np.ndarray,
+    epsilon_ratio: float,
+) -> Element:
+    simplified = simplify_contour(contour, epsilon_ratio)
+    raw_points = contour_to_points(contour)
+    render_points = contour_to_points(simplified)
+    bbox, center = bbox_and_center(render_points or raw_points)
+    shape_type, confidence = classify_shape(contour, simplified)
+    raw_geometry = RawGeometry(
+        outline_points=raw_points,
+        contour_area=int(round(cv2.contourArea(contour))),
+        perimeter=int(round(cv2.arcLength(contour, True))),
+    )
+    interpreted_geometry = InterpretedGeometry(
+        shape_type=shape_type,
+        render_points=render_points,
+        closed=True,
+    )
+    return Element(
+        id=element_id,
+        element_type="shape_candidate",
+        raw_geometry=raw_geometry,
+        interpreted_geometry=interpreted_geometry,
+        bbox=bbox,
+        center=center,
+        confidence=round(confidence, 3),
+        debug={"approx_vertices": len(simplified)},
+    )
+
+
+def build_connector_element(
+    element_id: str,
+    points: list[tuple[int, int]],
+    closed: bool,
+) -> Element:
+    snapped_points = snap_points(points)
+    bbox, center = bbox_and_center(snapped_points)
+    path_type, confidence = classify_path(closed)
+    raw_geometry = RawGeometry(
+        path_points=snapped_points,
+        perimeter=int(
+            round(
+                sum(
+                    math.dist(snapped_points[i], snapped_points[i + 1])
+                    for i in range(len(snapped_points) - 1)
+                )
+            )
+        ),
+    )
+    interpreted_geometry = InterpretedGeometry(
+        path_type=path_type,
+        render_points=snapped_points,
+        closed=closed,
+    )
+    return Element(
+        id=element_id,
+        element_type="connector_candidate",
+        raw_geometry=raw_geometry,
+        interpreted_geometry=interpreted_geometry,
+        bbox=bbox,
+        center=center,
+        confidence=round(confidence, 3),
+        debug={"point_count": len(snapped_points)},
+    )
+
+
+def build_unknown_element(
+    element_id: str,
+    contour: np.ndarray,
+    epsilon_ratio: float,
+) -> Element:
+    simplified = simplify_contour(contour, epsilon_ratio)
+    raw_points = contour_to_points(contour)
+    render_points = contour_to_points(simplified)
+    bbox, center = bbox_and_center(render_points or raw_points)
+    raw_geometry = RawGeometry(
+        outline_points=raw_points,
+        contour_area=int(round(cv2.contourArea(contour))),
+        perimeter=int(round(cv2.arcLength(contour, True))),
+    )
+    interpreted_geometry = InterpretedGeometry(
+        shape_type="unknown-shape",
+        render_points=render_points,
+        closed=bool(cv2.isContourConvex(simplified)),
+    )
+    return Element(
+        id=element_id,
+        element_type="unknown_candidate",
+        raw_geometry=raw_geometry,
+        interpreted_geometry=interpreted_geometry,
+        bbox=bbox,
+        center=center,
+        confidence=0.25,
+        debug={"approx_vertices": len(simplified)},
+    )
+
+
+def build_line_path(points: np.ndarray) -> list[tuple[int, int]]:
+    reshaped = points.reshape(-1, 2)
+    return [snap_point((int(x), int(y))) for x, y in reshaped]
+
+
+def bbox_contains(outer: tuple[int, int, int, int], inner: tuple[int, int, int, int], margin: int = 0) -> bool:
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    return (
+        ix >= ox + margin
+        and iy >= oy + margin
+        and ix + iw <= ox + ow - margin
+        and iy + ih <= oy + oh - margin
+    )
+
+
+def bbox_iou(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> float:
+    ax1, ay1, aw, ah = first
+    bx1, by1, bw, bh = second
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+    inter_w = max(0, min(ax2, bx2) - max(ax1, bx1))
+    inter_h = max(0, min(ay2, by2) - max(ay1, by1))
+    inter_area = inter_w * inter_h
+    if inter_area <= 0:
+        return 0.0
+    union = aw * ah + bw * bh - inter_area
+    return inter_area / max(union, 1)
+
+
+def expand_bbox(
+    bbox: tuple[int, int, int, int],
+    outward_padding: int,
+    image_width: int,
+    image_height: int,
+) -> tuple[int, int, int, int]:
+    x, y, w, h = bbox
+    min_x = max(0, x - outward_padding)
+    min_y = max(0, y - outward_padding)
+    max_x = min(image_width - 1, x + w + outward_padding)
+    max_y = min(image_height - 1, y + h + outward_padding)
+    return min_x, min_y, max_x - min_x, max_y - min_y
+
+
+def _gate_half_span(bbox: tuple[int, int, int, int], min_span: int, max_span: int) -> int:
+    _, _, w, h = bbox
+    return int(max(min_span, min(max_span, round(min(w, h) * 0.18))))
+
+
+def build_node_from_element(
+    node_id: str,
+    element: Element,
+    image_width: int,
+    image_height: int,
+    outward_padding: int,
+    label_height_ratio: float,
+    gate_min_span: int,
+    gate_max_span: int,
+) -> Node:
+    x, y, w, h = element.bbox
+    center = (x + w // 2, y + h // 2)
+    side_midpoints = {
+        "top": (x + w // 2, y),
+        "right": (x + w, y + h // 2),
+        "bottom": (x + w // 2, y + h),
+        "left": (x, y + h // 2),
+    }
+    gate_half_span = _gate_half_span(element.bbox, gate_min_span, gate_max_span)
+    gates = {side: point for side, point in side_midpoints.items()}
+    gate_segments = {
+        "top": [(gates["top"][0] - gate_half_span, y), (gates["top"][0] + gate_half_span, y)],
+        "bottom": [(gates["bottom"][0] - gate_half_span, y + h), (gates["bottom"][0] + gate_half_span, y + h)],
+        "left": [(x, gates["left"][1] - gate_half_span), (x, gates["left"][1] + gate_half_span)],
+        "right": [(x + w, gates["right"][1] - gate_half_span), (x + w, gates["right"][1] + gate_half_span)],
+    }
+    label_height = max(12, int(round(h * label_height_ratio)))
+    label_region = (x + 4, y + 4, max(w - 8, 1), max(min(label_height, h - 8), 1))
+    return Node(
+        id=node_id,
+        bbox=element.bbox,
+        center=center,
+        side_midpoints=side_midpoints,
+        expanded_bbox=expand_bbox(element.bbox, outward_padding, image_width, image_height),
+        label_region=label_region,
+        gates=gates,
+        gate_segments=gate_segments,
+        debug={
+            "source_element_id": element.id,
+            "shape_type": element.interpreted_geometry.shape_type,
+            "frozen": True,
+        },
+    )
+
+
+def build_connector(
+    connector_id: str,
+    points: list[tuple[int, int]],
+    src_node_id: str | None,
+    src_side: str | None,
+    dst_node_id: str | None,
+    dst_side: str | None,
+    confidence: float,
+    debug: dict[str, object] | None = None,
+) -> Connector:
+    return Connector(
+        id=connector_id,
+        points=snap_points(points),
+        src_node_id=src_node_id,
+        src_side=src_side,
+        dst_node_id=dst_node_id,
+        dst_side=dst_side,
+        confidence=round(confidence, 3),
+        debug=debug or {},
+    )
+
+================================================================================
+
+src\grid.py
+
+from __future__ import annotations
+
+from typing import Iterable
+
+from .models import Point
+
+
+def snap_point(point: tuple[float, float] | tuple[int, int]) -> Point:
+    return int(round(point[0])), int(round(point[1]))
+
+
+def snap_points(points: Iterable[tuple[float, float] | tuple[int, int]]) -> list[Point]:
+    return [snap_point(point) for point in points]
+
+================================================================================
+
+src\image_io.py
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+
+def load_image(image_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    color = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+    if color is None or color.size == 0:
+        raise ValueError(f"Unable to load image: {image_path}")
+
+    grayscale = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
+    return color, grayscale
+
+================================================================================
+
+src\json_export.py
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from .models import DiagramDocument
+
+
+def export_document(document: DiagramDocument, output_path: Path) -> None:
+    output_path.write_text(json.dumps(document.to_dict(), indent=2), encoding="utf-8")
+
+================================================================================
+
+src\models.py
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+
+Point = tuple[int, int]
+
+
+@dataclass
+class RawGeometry:
+    outline_points: list[Point] = field(default_factory=list)
+    path_points: list[Point] = field(default_factory=list)
+    contour_area: int = 0
+    perimeter: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class InterpretedGeometry:
+    shape_type: str | None = None
+    path_type: str | None = None
+    render_points: list[Point] = field(default_factory=list)
+    closed: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Element:
+    id: str
+    element_type: str
+    raw_geometry: RawGeometry
+    interpreted_geometry: InterpretedGeometry
+    bbox: tuple[int, int, int, int]
+    center: Point
+    confidence: float | None = None
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["raw_geometry"] = self.raw_geometry.to_dict()
+        data["interpreted_geometry"] = self.interpreted_geometry.to_dict()
+        return data
+
+
+@dataclass
+class Node:
+    id: str
+    bbox: tuple[int, int, int, int]
+    center: Point
+    side_midpoints: dict[str, Point]
+    expanded_bbox: tuple[int, int, int, int]
+    label_region: tuple[int, int, int, int] | None = None
+    gates: dict[str, Point] = field(default_factory=dict)
+    gate_segments: dict[str, list[Point]] = field(default_factory=dict)
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Connector:
+    id: str
+    points: list[Point]
+    src_node_id: str | None
+    src_side: str | None
+    dst_node_id: str | None
+    dst_side: str | None
+    confidence: float
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Verification:
+    edge_overlap_score: float
+    pixel_difference_score: float
+    status: str
+    notes: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class DiagramDocument:
+    schema_version: str
+    diagram_id: str
+    source_file: str
+    image_width: int
+    image_height: int
+    metadata: dict[str, Any]
+    processing_parameters: dict[str, Any]
+    separation_summary: dict[str, Any]
+    elements: list[Element]
+    nodes: list[Node]
+    connectors: list[Connector]
+    verification: Verification
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "diagram_id": self.diagram_id,
+            "source_file": self.source_file,
+            "image_width": self.image_width,
+            "image_height": self.image_height,
+            "metadata": self.metadata,
+            "processing_parameters": self.processing_parameters,
+            "separation_summary": self.separation_summary,
+            "elements": [element.to_dict() for element in self.elements],
+            "nodes": [node.to_dict() for node in self.nodes],
+            "connectors": [connector.to_dict() for connector in self.connectors],
+            "verification": self.verification.to_dict(),
+        }
+
+
+@dataclass
+class ProcessingSummary:
+    image_name: str
+    element_count: int
+    contour_count: int
+    connector_count: int
+    verification_status: str
+
+================================================================================
+
+src\pipeline.py
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from .connectors import (
+    build_protected_node_mask,
+    connector_space_from_masks,
+    extract_connector_fragments,
+    merge_connector_fragments,
+    snap_connector_endpoints_to_nodes,
+)
+from .contours import extract_primitives
+from .debug_outputs import write_image, write_text
+from .edges import detect_edges
+from .geometry import bbox_contains, bbox_iou, build_connector, build_node_from_element
+from .image_io import load_image
+from .json_export import export_document
+from .models import Connector, DiagramDocument, Element, InterpretedGeometry, Node, ProcessingSummary, RawGeometry, Verification
+from .preprocess import normalize_image
+from .render import overlay_gates, overlay_interpretation, overlay_nodes, render_structure
+from .separation import SeparationCandidate, separate_geometry
+from .verify import verify_render
+
+
+@dataclass(frozen=True)
+class PipelineParameters:
+    blur_kernel_size: int = 5
+    clahe_clip_limit: float = 2.0
+    clahe_grid_size: int = 8
+    adaptive_block_size: int = 31
+    adaptive_c: int = 7
+    canny_low: int = 50
+    canny_high: int = 150
+    canny_aperture_size: int = 3
+    min_contour_area: int = 150
+    contour_epsilon_ratio: float = 0.02
+    shape_close_kernel_size: int = 7
+    shape_dilate_kernel_size: int = 3
+    min_shape_area: int = 250
+    max_shape_area_ratio: float = 0.28
+    artifact_border_margin: int = 6
+    artifact_border_touch_reject_count: int = 2
+    artifact_extreme_span_ratio: float = 0.88
+    artifact_frame_fill_ratio_threshold: float = 0.35
+    internal_containment_margin: int = 5
+    internal_small_box_area_limit: int = 1400
+    internal_text_like_max_height: int = 18
+    internal_text_like_aspect_ratio: float = 3.0
+    internal_child_area_ratio_threshold: float = 0.16
+    internal_child_bbox_area_ratio_threshold: float = 0.18
+    node_outward_padding: int = 6
+    node_inward_padding: int = 2
+    node_gate_padding: int = 3
+    node_gate_min_span: int = 6
+    node_gate_max_span: int = 14
+    node_label_height_ratio: float = 0.35
+    node_overlap_reject_iou: float = 0.32
+    node_contains_multiple_reject: int = 2
+    connector_hough_threshold: int = 12
+    connector_min_line_length: int = 12
+    connector_max_line_gap: int = 18
+    connector_orientation_tolerance: float = 10.0
+    connector_merge_gap_threshold: int = 18
+    connector_merge_angle_tolerance: float = 10.0
+    connector_min_merged_path_length: int = 18
+    connector_snap_distance_tolerance: int = 18
+    connector_directional_axis_ratio: float = 1.4
+    expected_min_nodes: int = 6
+    edge_overlap_pass: float = 0.5
+    edge_overlap_warn: float = 0.25
+    pixel_diff_pass: float = 0.08
+    pixel_diff_warn: float = 0.16
+
+
+def discover_input_images(base_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+    search_dirs = [base_dir, base_dir / "inputs"]
+
+    seen: set[Path] = set()
+    for search_dir in search_dirs:
+        if not search_dir.exists():
+            continue
+        for pattern in ("*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"):
+            for path in sorted(search_dir.glob(pattern)):
+                resolved = path.resolve()
+                if resolved not in seen and path.is_file():
+                    candidates.append(path)
+                    seen.add(resolved)
+    return candidates
+
+
+def _draw_lines(image: np.ndarray, line_paths: list[list[tuple[int, int]]], color: tuple[int, int, int] = (0, 128, 255)) -> np.ndarray:
+    canvas = image.copy()
+    for path in line_paths:
+        if len(path) < 2:
+            continue
+        points = np.array(path, dtype=np.int32).reshape(-1, 1, 2)
+        cv2.polylines(canvas, [points], False, color, 2)
+    return canvas
+
+
+def _draw_points(image: np.ndarray, points: list[tuple[int, int]], color: tuple[int, int, int]) -> np.ndarray:
+    canvas = image.copy()
+    for point in points:
+        cv2.circle(canvas, point, 3, color, thickness=cv2.FILLED)
+    return canvas
+
+
+def _draw_candidate_overlay(image: np.ndarray, candidates: list[SeparationCandidate], color: tuple[int, int, int]) -> np.ndarray:
+    canvas = image.copy()
+    for candidate in candidates:
+        cv2.drawContours(canvas, [candidate.contour], -1, color, 2)
+    return canvas
+
+
+def _build_summary_text(
+    image_path: Path,
+    contour_count: int,
+    raw_contours_found: int,
+    shape_count: int,
+    node_count: int,
+    connector_count: int,
+    artifacts_rejected: int,
+    internal_noise_rejected: int,
+    connector_fragments_found: int,
+    connector_paths_merged: int,
+    structural_diagnostics: list[str],
+    verification: Verification,
+) -> str:
+    lines = [
+        f"source_file: {image_path.name}",
+        f"contours_found: {contour_count}",
+        f"raw_contours_found: {raw_contours_found}",
+        f"shape_candidates_kept: {shape_count}",
+        f"canonical_nodes_kept: {node_count}",
+        f"connector_candidates_kept: {connector_count}",
+        f"artifacts_rejected: {artifacts_rejected}",
+        f"internal_noise_rejected: {internal_noise_rejected}",
+        f"connector_fragments_found: {connector_fragments_found}",
+        f"connector_paths_merged: {connector_paths_merged}",
+        f"verification_status: {verification.status}",
+        f"edge_overlap_score: {verification.edge_overlap_score}",
+        f"pixel_difference_score: {verification.pixel_difference_score}",
+    ]
+    lines.extend(f"diagnostic: {diagnostic}" for diagnostic in structural_diagnostics)
+    return "\n".join(lines)
+
+
+def _freeze_canonical_nodes(
+    elements: list[Element],
+    image_width: int,
+    image_height: int,
+    params: PipelineParameters,
+) -> tuple[list[Node], list[dict[str, object]]]:
+    shape_elements = [element for element in elements if element.element_type == "shape_candidate"]
+    scored: list[tuple[float, Element, dict[str, object]]] = []
+    for element in shape_elements:
+        metrics = element.debug.get("separation_metrics", {})
+        bbox = element.bbox
+        contains_count = 0
+        overlaps_count = 0
+        for other in shape_elements:
+            if other.id == element.id:
+                continue
+            if bbox_contains(bbox, other.bbox, margin=6):
+                contains_count += 1
+            if bbox_iou(bbox, other.bbox) > 0.05:
+                overlaps_count += 1
+        shape_type = element.interpreted_geometry.shape_type
+        shape_score = 2.6 if shape_type == "rectangle-like" else 0.9 if shape_type == "polygon-like" else 0.2
+        bbox_area = bbox[2] * bbox[3]
+        score = (
+            shape_score
+            + float(metrics.get("bbox_fill_ratio", 0.0))
+            + min(float(metrics.get("contour_area", 0)) / 8000.0, 1.2)
+            - contains_count * 1.0
+            - overlaps_count * 0.4
+            - (bbox_area / 40000.0)
+        )
+        scored.append((score, element, {"contains_count": contains_count, "overlaps_count": overlaps_count, "bbox_area": bbox_area}))
+
+    scored.sort(key=lambda item: (item[0], -item[2]["bbox_area"]), reverse=True)
+    nodes: list[Node] = []
+    rejected: list[dict[str, object]] = []
+
+    for _, element, debug in scored:
+        metrics = element.debug.get("separation_metrics", {})
+        shape_type = element.interpreted_geometry.shape_type
+        bbox = element.bbox
+        if bbox[2] < 24 or bbox[3] < 24:
+            rejected.append({"element_id": element.id, "reason": "too_small_for_canonical_node", "bbox": element.bbox})
+            continue
+        if shape_type != "rectangle-like" and debug["bbox_area"] > 25000:
+            rejected.append({"element_id": element.id, "reason": "oversized_non_rectangular_mass", "bbox": element.bbox})
+            continue
+        if shape_type != "rectangle-like" and float(metrics.get("bbox_fill_ratio", 0.0)) < 0.5 and debug["bbox_area"] > 12000:
+            rejected.append({"element_id": element.id, "reason": "large_low_fill_merged_mass", "bbox": element.bbox})
+            continue
+        if debug["contains_count"] >= 1 and shape_type != "rectangle-like":
+            rejected.append({"element_id": element.id, "reason": "contains_multiple_smaller_shapes", "bbox": element.bbox})
+            continue
+        if debug["overlaps_count"] >= 3 and shape_type != "rectangle-like":
+            rejected.append({"element_id": element.id, "reason": "overlaps_many_other_shapes", "bbox": element.bbox})
+            continue
+        if any(bbox_iou(element.bbox, node.bbox) >= 0.04 or bbox_contains(element.bbox, node.bbox, margin=2) for node in nodes):
+            rejected.append({"element_id": element.id, "reason": "overlaps_existing_node", "bbox": element.bbox})
+            continue
+        if int(metrics.get("contour_area", 0)) < params.min_shape_area:
+            rejected.append({"element_id": element.id, "reason": "below_node_area_threshold", "bbox": element.bbox})
+            continue
+        node = build_node_from_element(
+            node_id=f"node_{len(nodes) + 1:03d}",
+            element=element,
+            image_width=image_width,
+            image_height=image_height,
+            outward_padding=params.node_outward_padding,
+            label_height_ratio=params.node_label_height_ratio,
+            gate_min_span=params.node_gate_min_span,
+            gate_max_span=params.node_gate_max_span,
+        )
+        node.debug.update(
+            {
+                "source_metrics": metrics,
+                "bbox_frozen": True,
+                "contains_count": debug["contains_count"],
+                "overlaps_count": debug["overlaps_count"],
+            }
+        )
+        element.debug["canonical_node_id"] = node.id
+        nodes.append(node)
+
+    return nodes, rejected
+
+
+def _build_connector_objects(snapped_records: list[dict[str, object]]) -> list[Connector]:
+    connectors: list[Connector] = []
+    for index, record in enumerate(snapped_records, start=1):
+        connectors.append(
+            build_connector(
+                connector_id=f"connector_{index:03d}",
+                points=record["points"],
+                src_node_id=record["src_node_id"],
+                src_side=record["src_side"],
+                dst_node_id=record["dst_node_id"],
+                dst_side=record["dst_side"],
+                confidence=float(record["confidence"]),
+                debug=record["debug"],
+            )
+        )
+    return connectors
+
+
+def _apply_structural_failures(
+    verification: Verification,
+    diagnostics: list[str],
+) -> Verification:
+    if not diagnostics:
+        return verification
+    notes = list(verification.notes) + diagnostics
+    return Verification(
+        edge_overlap_score=verification.edge_overlap_score,
+        pixel_difference_score=verification.pixel_difference_score,
+        status="fail",
+        notes=notes,
+    )
+
+
+def process_image(image_path: Path, outputs_root: Path) -> ProcessingSummary:
+    params = PipelineParameters()
+    output_dir = outputs_root / image_path.stem
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    color, grayscale = load_image(image_path)
+    write_image(output_dir, "01_original.png", color)
+    write_image(output_dir, "02_grayscale.png", grayscale)
+
+    normalized = normalize_image(
+        grayscale=grayscale,
+        blur_kernel_size=params.blur_kernel_size,
+        clahe_clip_limit=params.clahe_clip_limit,
+        clahe_grid_size=params.clahe_grid_size,
+        adaptive_block_size=params.adaptive_block_size,
+        adaptive_c=params.adaptive_c,
+    )
+    normalized_grayscale = normalized["normalized_grayscale"]
+    binary = normalized["binary"]
+    write_image(output_dir, "03_normalized.png", normalized_grayscale)
+    write_image(output_dir, "03b_binary.png", binary)
+
+    edges = detect_edges(
+        normalized_grayscale=normalized_grayscale,
+        canny_low=params.canny_low,
+        canny_high=params.canny_high,
+        aperture_size=params.canny_aperture_size,
+    )
+    write_image(output_dir, "04_edges.png", edges)
+
+    separation = separate_geometry(
+        binary=binary,
+        edges=edges,
+        shape_close_kernel_size=params.shape_close_kernel_size,
+        shape_dilate_kernel_size=params.shape_dilate_kernel_size,
+        min_shape_area=params.min_shape_area,
+        max_shape_area_ratio=params.max_shape_area_ratio,
+        artifact_border_margin=params.artifact_border_margin,
+        artifact_border_touch_reject_count=params.artifact_border_touch_reject_count,
+        artifact_extreme_span_ratio=params.artifact_extreme_span_ratio,
+        artifact_frame_fill_ratio_threshold=params.artifact_frame_fill_ratio_threshold,
+        internal_containment_margin=params.internal_containment_margin,
+        internal_small_box_area_limit=params.internal_small_box_area_limit,
+        internal_text_like_max_height=params.internal_text_like_max_height,
+        internal_text_like_aspect_ratio=params.internal_text_like_aspect_ratio,
+        internal_child_area_ratio_threshold=params.internal_child_area_ratio_threshold,
+        internal_child_bbox_area_ratio_threshold=params.internal_child_bbox_area_ratio_threshold,
+    )
+    write_image(output_dir, "04a_shape_mask.png", separation.shape_mask)
+    write_image(output_dir, "04b_line_mask.png", separation.line_mask)
+    write_image(output_dir, "04c_artifact_mask.png", separation.artifact_mask)
+    write_image(output_dir, "05h_shapes_subtracted_for_line_recovery.png", separation.shapes_subtracted_mask)
+
+    provisional_elements, contours, _ = extract_primitives(
+        shape_candidates=separation.shape_candidates,
+        connector_paths=[],
+        connector_group_ids=[],
+        min_contour_area=params.min_contour_area,
+        contour_epsilon_ratio=params.contour_epsilon_ratio,
+        min_connector_path_length=params.connector_min_merged_path_length,
+    )
+
+    nodes, rejected_node_candidates = _freeze_canonical_nodes(
+        elements=provisional_elements,
+        image_width=color.shape[1],
+        image_height=color.shape[0],
+        params=params,
+    )
+    node_ids = {node.id for node in nodes}
+    elements = [
+        element
+        for element in provisional_elements
+        if element.debug.get("canonical_node_id") in node_ids
+    ]
+
+    protected_node_mask, gate_mask = build_protected_node_mask(
+        image_width=color.shape[1],
+        image_height=color.shape[0],
+        nodes=nodes,
+        inward_padding=params.node_inward_padding,
+        gate_padding=params.node_gate_padding,
+    )
+    connector_space = connector_space_from_masks(separation.line_mask, protected_node_mask, gate_mask)
+
+    write_image(output_dir, "05_contours.png", overlay_interpretation(color, provisional_elements))
+    write_image(output_dir, "05a_shapes_overlay.png", overlay_interpretation(color, elements))
+    write_image(output_dir, "05c_shape_candidates_before_internal_filter.png", _draw_candidate_overlay(color, separation.shape_candidates_before_filter, (255, 0, 0)))
+    write_image(output_dir, "05d_shape_candidates_after_internal_filter.png", _draw_candidate_overlay(color, separation.shape_candidates, (0, 200, 0)))
+    write_image(output_dir, "05e_internal_noise_rejected.png", _draw_candidate_overlay(color, separation.internal_noise_candidates, (0, 0, 255)))
+
+    write_image(output_dir, "06a_canonical_nodes.png", overlay_nodes(color, nodes))
+    write_image(output_dir, "06b_node_protection_mask.png", protected_node_mask)
+    write_image(output_dir, "06c_attachment_gates.png", overlay_gates(color, nodes))
+    write_image(output_dir, "06d_connector_space.png", connector_space)
+
+    connector_fragments = extract_connector_fragments(
+        line_mask=connector_space,
+        hough_threshold=params.connector_hough_threshold,
+        min_line_length=params.connector_min_line_length,
+        max_line_gap=params.connector_max_line_gap,
+        orientation_tolerance=params.connector_orientation_tolerance,
+    )
+    write_image(output_dir, "05f_connector_fragments_overlay.png", _draw_lines(color, [fragment.points for fragment in connector_fragments], (255, 128, 0)))
+    write_image(output_dir, "06e_connector_fragments_protected.png", _draw_lines(color, [fragment.points for fragment in connector_fragments], (255, 128, 0)))
+
+    connector_paths, connector_group_ids = merge_connector_fragments(
+        fragments=connector_fragments,
+        endpoint_gap_threshold=params.connector_merge_gap_threshold,
+        collinear_angle_tolerance=params.connector_merge_angle_tolerance,
+        min_merged_path_length=params.connector_min_merged_path_length,
+    )
+    write_image(output_dir, "05g_connector_paths_merged.png", _draw_lines(color, connector_paths, (0, 255, 255)))
+
+    snapped_records, endpoint_candidates, snapped_paths = snap_connector_endpoints_to_nodes(
+        paths=connector_paths,
+        nodes=nodes,
+        snap_distance_tolerance=params.connector_snap_distance_tolerance,
+        directional_axis_ratio=params.connector_directional_axis_ratio,
+    )
+    write_image(output_dir, "06f_endpoint_candidates.png", _draw_points(color, endpoint_candidates, (0, 0, 255)))
+    write_image(output_dir, "06g_snapped_connectors.png", _draw_lines(color, snapped_paths, (0, 255, 255)))
+
+    connectors = _build_connector_objects(snapped_records)
+    for connector in connectors:
+        min_x = min(point[0] for point in connector.points)
+        min_y = min(point[1] for point in connector.points)
+        max_x = max(point[0] for point in connector.points)
+        max_y = max(point[1] for point in connector.points)
+        elements.append(
+            Element(
+                id=connector.id,
+                element_type="connector_candidate",
+                raw_geometry=RawGeometry(path_points=connector.points, perimeter=0),
+                interpreted_geometry=InterpretedGeometry(path_type="polyline", render_points=connector.points, closed=False),
+                bbox=(min_x, min_y, max_x - min_x, max_y - min_y),
+                center=(int(round((min_x + max_x) / 2)), int(round((min_y + max_y) / 2))),
+                confidence=connector.confidence,
+                debug={
+                    "source_mask": "protected_connector_space",
+                    "src_node_id": connector.src_node_id,
+                    "dst_node_id": connector.dst_node_id,
+                    "src_side": connector.src_side,
+                    "dst_side": connector.dst_side,
+                    **connector.debug,
+                },
+            )
+        )
+
+    rendered_structural = render_structure(color.shape[1], color.shape[0], nodes, connectors)
+    write_image(output_dir, "07_rendered_structural.png", rendered_structural)
+    write_image(output_dir, "07_rendered.png", rendered_structural)
+
+    verification, diff_image = verify_render(
+        normalized_binary=binary,
+        rendered_image=rendered_structural,
+        edge_overlap_pass=params.edge_overlap_pass,
+        edge_overlap_warn=params.edge_overlap_warn,
+        pixel_diff_pass=params.pixel_diff_pass,
+        pixel_diff_warn=params.pixel_diff_warn,
+        canny_low=params.canny_low,
+        canny_high=params.canny_high,
+        aperture_size=params.canny_aperture_size,
+    )
+
+    structural_diagnostics: list[str] = []
+    if len(nodes) < params.expected_min_nodes:
+        structural_diagnostics.append(f"fewer_than_expected_nodes:{len(nodes)}")
+    for i, first in enumerate(nodes):
+        for second in nodes[i + 1 :]:
+            if bbox_iou(first.bbox, second.bbox) > 0.05:
+                structural_diagnostics.append(f"overlapping_nodes:{first.id}:{second.id}")
+    verification = _apply_structural_failures(verification, structural_diagnostics)
+    write_image(output_dir, "08_diff_structural.png", diff_image)
+    write_image(output_dir, "08_diff.png", diff_image)
+
+    metadata = {
+        "diagram_metadata": {
+            "source_file": image_path.name,
+            "image_width": int(color.shape[1]),
+            "image_height": int(color.shape[0]),
+            "channels": int(color.shape[2]),
+        },
+        "separation_debug": {
+            "rejected_artifacts": [
+                {"rejection_reason": candidate.rejection_reason, "metrics": candidate.metrics}
+                for candidate in separation.rejected_candidates
+            ],
+            "internal_noise_rejected": [
+                {
+                    "rejection_reason": candidate.rejection_reason,
+                    "metrics": candidate.metrics,
+                    "parent_shape_id": candidate.parent_shape_id,
+                }
+                for candidate in separation.internal_noise_candidates
+            ],
+            "rejected_node_candidates": rejected_node_candidates,
+        },
+        "structural_render": {
+            "uses_canonical_nodes_only": True,
+            "uses_snapped_connectors_only": True,
+            "fallback_to_contours": False,
+            "diagnostics": structural_diagnostics,
+        },
+    }
+    separation_summary = dict(separation.summary)
+    separation_summary["connector_fragments_found"] = len(connector_fragments)
+    separation_summary["connector_paths_merged"] = len(connector_paths)
+    separation_summary["canonical_nodes_kept"] = len(nodes)
+
+    document = DiagramDocument(
+        schema_version="1.0.0",
+        diagram_id=image_path.stem,
+        source_file=image_path.name,
+        image_width=int(color.shape[1]),
+        image_height=int(color.shape[0]),
+        metadata=metadata,
+        processing_parameters=asdict(params),
+        separation_summary=separation_summary,
+        elements=elements,
+        nodes=nodes,
+        connectors=connectors,
+        verification=verification,
+    )
+    export_document(document, output_dir / "diagram.json")
+
+    write_text(
+        output_dir,
+        "summary.txt",
+        _build_summary_text(
+            image_path=image_path,
+            contour_count=len(contours),
+            raw_contours_found=separation.summary["raw_contours_found"],
+            shape_count=len([element for element in elements if element.element_type == "shape_candidate"]),
+            node_count=len(nodes),
+            connector_count=len(connectors),
+            artifacts_rejected=separation.summary["artifacts_rejected"],
+            internal_noise_rejected=separation.summary["internal_noise_rejected"],
+            connector_fragments_found=len(connector_fragments),
+            connector_paths_merged=len(connector_paths),
+            structural_diagnostics=structural_diagnostics,
+            verification=verification,
+        ),
+    )
+
+    return ProcessingSummary(
+        image_name=image_path.name,
+        element_count=len(elements),
+        contour_count=len(contours),
+        connector_count=len(connectors),
+        verification_status=verification.status,
+    )
+
+================================================================================
+
+src\preprocess.py
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+
+def normalize_image(
+    grayscale: np.ndarray,
+    blur_kernel_size: int,
+    clahe_clip_limit: float,
+    clahe_grid_size: int,
+    adaptive_block_size: int,
+    adaptive_c: int,
+) -> dict[str, np.ndarray]:
+    blurred = cv2.GaussianBlur(grayscale, (blur_kernel_size, blur_kernel_size), 0)
+    clahe = cv2.createCLAHE(
+        clipLimit=clahe_clip_limit,
+        tileGridSize=(clahe_grid_size, clahe_grid_size),
+    )
+    normalized = clahe.apply(blurred)
+    binary = cv2.adaptiveThreshold(
+        normalized,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        adaptive_block_size,
+        adaptive_c,
+    )
+    return {
+        "normalized_grayscale": normalized,
+        "binary": binary,
+    }
+
+================================================================================
+
+src\render.py
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+from .models import Connector, Element, Node
+
+
+SHAPE_COLOR = (0, 0, 0)
+CONNECTOR_COLOR = (0, 0, 0)
+UNKNOWN_COLOR = (64, 64, 64)
+
+
+def render_elements(image_width: int, image_height: int, elements: list[Element]) -> np.ndarray:
+    canvas = np.full((image_height, image_width, 3), 255, dtype=np.uint8)
+
+    for element in elements:
+        interpreted = element.interpreted_geometry
+        points = interpreted.render_points or element.raw_geometry.outline_points or element.raw_geometry.path_points
+        if not points:
+            continue
+
+        points_array = np.array(points, dtype=np.int32).reshape(-1, 1, 2)
+        if element.element_type == "shape_candidate":
+            if interpreted.shape_type == "ellipse-like" and len(points) >= 5:
+                ellipse = cv2.fitEllipse(points_array)
+                cv2.ellipse(canvas, ellipse, SHAPE_COLOR, 2)
+            else:
+                cv2.polylines(canvas, [points_array], True, SHAPE_COLOR, 2)
+        elif element.element_type == "connector_candidate":
+            cv2.polylines(canvas, [points_array], interpreted.closed, CONNECTOR_COLOR, 2)
+        else:
+            cv2.polylines(canvas, [points_array], interpreted.closed, UNKNOWN_COLOR, 1)
+
+    return canvas
+
+
+def render_structure(image_width: int, image_height: int, nodes: list[Node], connectors: list[Connector]) -> np.ndarray:
+    canvas = np.full((image_height, image_width, 3), 255, dtype=np.uint8)
+    for node in nodes:
+        x, y, w, h = node.bbox
+        cv2.rectangle(canvas, (x, y), (x + w, y + h), SHAPE_COLOR, 2)
+    for connector in connectors:
+        if len(connector.points) < 2:
+            continue
+        points = np.array(connector.points, dtype=np.int32).reshape(-1, 1, 2)
+        cv2.polylines(canvas, [points], False, CONNECTOR_COLOR, 2)
+    return canvas
+
+
+def overlay_interpretation(image: np.ndarray, elements: list[Element]) -> np.ndarray:
+    overlay = image.copy()
+    for element in elements:
+        points = element.interpreted_geometry.render_points or element.raw_geometry.outline_points or element.raw_geometry.path_points
+        if not points:
+            continue
+
+        color = SHAPE_COLOR
+        if element.element_type == "connector_candidate":
+            color = (0, 128, 255)
+        elif element.element_type == "unknown_candidate":
+            color = UNKNOWN_COLOR
+
+        points_array = np.array(points, dtype=np.int32).reshape(-1, 1, 2)
+        cv2.polylines(overlay, [points_array], element.interpreted_geometry.closed, color, 2)
+        cv2.rectangle(
+            overlay,
+            (element.bbox[0], element.bbox[1]),
+            (element.bbox[0] + element.bbox[2], element.bbox[1] + element.bbox[3]),
+            (0, 200, 0),
+            1,
+        )
+    return overlay
+
+
+def overlay_nodes(image: np.ndarray, nodes: list[Node]) -> np.ndarray:
+    overlay = image.copy()
+    for node in nodes:
+        x, y, w, h = node.bbox
+        cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 200, 0), 2)
+    return overlay
+
+
+def overlay_gates(image: np.ndarray, nodes: list[Node]) -> np.ndarray:
+    overlay = image.copy()
+    for node in nodes:
+        ex, ey, ew, eh = node.expanded_bbox
+        cv2.rectangle(overlay, (ex, ey), (ex + ew, ey + eh), (180, 180, 0), 1)
+        for side, point in node.gates.items():
+            cv2.circle(overlay, point, 3, (0, 0, 255), thickness=cv2.FILLED)
+            segment = node.gate_segments[side]
+            cv2.line(overlay, segment[0], segment[1], (255, 0, 0), 2)
+    return overlay
+
+================================================================================
+
+src\separation.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import cv2
+import numpy as np
+
+
+@dataclass
+class SeparationCandidate:
+    contour: np.ndarray
+    metrics: dict[str, int | float]
+    bbox: tuple[int, int, int, int]
+    candidate_index: int
+    parent_index: int | None = None
+    parent_shape_id: str | None = None
+    is_internal_noise: bool = False
+    rejection_reason: str | None = None
+
+
+@dataclass
+class SeparationResult:
+    shape_mask: np.ndarray
+    line_mask: np.ndarray
+    artifact_mask: np.ndarray
+    shapes_subtracted_mask: np.ndarray
+    shape_candidates_before_filter: list[SeparationCandidate]
+    shape_candidates: list[SeparationCandidate]
+    rejected_candidates: list[SeparationCandidate]
+    internal_noise_candidates: list[SeparationCandidate]
+    summary: dict[str, int]
+
+
+def _border_touch_count(bbox: tuple[int, int, int, int], image_width: int, image_height: int, margin: int) -> int:
+    x, y, w, h = bbox
+    count = 0
+    if x <= margin:
+        count += 1
+    if y <= margin:
+        count += 1
+    if x + w >= image_width - margin:
+        count += 1
+    if y + h >= image_height - margin:
+        count += 1
+    return count
+
+
+def _bbox_contains(
+    outer: tuple[int, int, int, int],
+    inner: tuple[int, int, int, int],
+    margin: int,
+) -> bool:
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    return (
+        ix >= ox + margin
+        and iy >= oy + margin
+        and ix + iw <= ox + ow - margin
+        and iy + ih <= oy + oh - margin
+    )
+
+
+def _candidate_metrics(contour: np.ndarray, image_width: int, image_height: int, border_margin: int) -> tuple[dict[str, int | float], tuple[int, int, int, int]]:
+    area = float(cv2.contourArea(contour))
+    perimeter = float(cv2.arcLength(contour, True))
+    x, y, w, h = cv2.boundingRect(contour)
+    bbox_area = max(w * h, 1)
+    aspect_ratio = max(w, h) / max(min(w, h), 1)
+    metrics = {
+        "contour_area": int(round(area)),
+        "bbox_area": int(bbox_area),
+        "bbox_fill_ratio": round(area / bbox_area, 4),
+        "perimeter": int(round(perimeter)),
+        "aspect_ratio": round(aspect_ratio, 4),
+        "border_touch_count": _border_touch_count((x, y, w, h), image_width, image_height, border_margin),
+        "bbox_width_ratio": round(w / max(image_width, 1), 4),
+        "bbox_height_ratio": round(h / max(image_height, 1), 4),
+        "bbox_width": int(w),
+        "bbox_height": int(h),
+    }
+    return metrics, (x, y, w, h)
+
+
+def _artifact_reason(
+    metrics: dict[str, int | float],
+    image_area: int,
+    max_shape_area_ratio: float,
+    extreme_span_ratio: float,
+    border_touch_reject_count: int,
+    frame_fill_ratio_threshold: float,
+) -> str | None:
+    if float(metrics["contour_area"]) > image_area * max_shape_area_ratio:
+        return "area_exceeds_threshold"
+    if (
+        float(metrics["bbox_width_ratio"]) >= extreme_span_ratio
+        and float(metrics["bbox_height_ratio"]) >= extreme_span_ratio
+    ):
+        return "bbox_spans_most_of_image"
+    if int(metrics["border_touch_count"]) >= border_touch_reject_count:
+        return "touches_multiple_borders"
+    if (
+        int(metrics["border_touch_count"]) >= 2
+        and float(metrics["bbox_fill_ratio"]) <= frame_fill_ratio_threshold
+        and float(metrics["bbox_width_ratio"]) >= 0.75
+    ):
+        return "likely_enclosing_frame"
+    return None
+
+
+def _assign_parent_relationships(
+    candidates: list[SeparationCandidate],
+    containment_margin: int,
+) -> None:
+    sorted_candidates = sorted(candidates, key=lambda candidate: candidate.metrics["bbox_area"], reverse=True)
+    for candidate in sorted_candidates:
+        parent = None
+        for maybe_parent in sorted_candidates:
+            if maybe_parent.candidate_index == candidate.candidate_index:
+                continue
+            if int(maybe_parent.metrics["bbox_area"]) <= int(candidate.metrics["bbox_area"]):
+                continue
+            if _bbox_contains(maybe_parent.bbox, candidate.bbox, containment_margin):
+                parent = maybe_parent
+                break
+        if parent is not None:
+            candidate.parent_index = parent.candidate_index
+
+
+def _internal_noise_reason(
+    candidate: SeparationCandidate,
+    parent: SeparationCandidate | None,
+    small_box_area_limit: int,
+    text_like_max_height: int,
+    text_like_aspect_ratio: float,
+    child_area_ratio_threshold: float,
+    child_bbox_area_ratio_threshold: float,
+) -> str | None:
+    if parent is None:
+        return None
+
+    child_area = float(candidate.metrics["contour_area"])
+    parent_area = max(float(parent.metrics["contour_area"]), 1.0)
+    child_bbox_area = float(candidate.metrics["bbox_area"])
+    parent_bbox_area = max(float(parent.metrics["bbox_area"]), 1.0)
+    bbox_height = int(candidate.metrics["bbox_height"])
+    bbox_width = int(candidate.metrics["bbox_width"])
+    aspect_ratio = float(candidate.metrics["aspect_ratio"])
+
+    if child_area <= small_box_area_limit and bbox_height <= text_like_max_height and bbox_width <= text_like_max_height * 6:
+        return "too_small_and_enclosed"
+    if bbox_height <= text_like_max_height and aspect_ratio >= text_like_aspect_ratio:
+        return "text_like_small_contour"
+    if child_area / parent_area <= child_area_ratio_threshold and child_bbox_area / parent_bbox_area <= child_bbox_area_ratio_threshold:
+        return "internal_noise_inside_parent_shape"
+    return None
+
+
+def separate_geometry(
+    binary: np.ndarray,
+    edges: np.ndarray,
+    shape_close_kernel_size: int,
+    shape_dilate_kernel_size: int,
+    min_shape_area: int,
+    max_shape_area_ratio: float,
+    artifact_border_margin: int,
+    artifact_border_touch_reject_count: int,
+    artifact_extreme_span_ratio: float,
+    artifact_frame_fill_ratio_threshold: float,
+    internal_containment_margin: int,
+    internal_small_box_area_limit: int,
+    internal_text_like_max_height: int,
+    internal_text_like_aspect_ratio: float,
+    internal_child_area_ratio_threshold: float,
+    internal_child_bbox_area_ratio_threshold: float,
+) -> SeparationResult:
+    image_height, image_width = binary.shape[:2]
+    image_area = image_width * image_height
+
+    shape_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (shape_close_kernel_size, shape_close_kernel_size))
+    dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (shape_dilate_kernel_size, shape_dilate_kernel_size))
+
+    closed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, shape_kernel)
+    contours, _ = cv2.findContours(closed_edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    artifact_mask = np.zeros_like(binary)
+    shapes_before_mask = np.zeros_like(binary)
+    filtered_shape_mask = np.zeros_like(binary)
+
+    provisional_candidates: list[SeparationCandidate] = []
+    rejected_candidates: list[SeparationCandidate] = []
+    internal_noise_candidates: list[SeparationCandidate] = []
+
+    for index, contour in enumerate(contours):
+        metrics, bbox = _candidate_metrics(contour, image_width, image_height, artifact_border_margin)
+        if int(metrics["contour_area"]) < min_shape_area:
+            rejected_candidates.append(
+                SeparationCandidate(
+                    contour=contour,
+                    metrics=metrics,
+                    bbox=bbox,
+                    candidate_index=index,
+                    rejection_reason="below_min_shape_area",
+                )
+            )
+            continue
+
+        rejection_reason = _artifact_reason(
+            metrics=metrics,
+            image_area=image_area,
+            max_shape_area_ratio=max_shape_area_ratio,
+            extreme_span_ratio=artifact_extreme_span_ratio,
+            border_touch_reject_count=artifact_border_touch_reject_count,
+            frame_fill_ratio_threshold=artifact_frame_fill_ratio_threshold,
+        )
+        candidate = SeparationCandidate(
+            contour=contour,
+            metrics=metrics,
+            bbox=bbox,
+            candidate_index=index,
+            rejection_reason=rejection_reason,
+        )
+        if rejection_reason is None:
+            provisional_candidates.append(candidate)
+            cv2.drawContours(shapes_before_mask, [contour], -1, 255, thickness=2)
+        else:
+            rejected_candidates.append(candidate)
+            cv2.drawContours(artifact_mask, [contour], -1, 255, thickness=cv2.FILLED)
+
+    _assign_parent_relationships(provisional_candidates, internal_containment_margin)
+    candidates_by_index = {candidate.candidate_index: candidate for candidate in provisional_candidates}
+
+    kept_candidates: list[SeparationCandidate] = []
+    for candidate in sorted(provisional_candidates, key=lambda item: item.metrics["bbox_area"], reverse=True):
+        parent = candidates_by_index.get(candidate.parent_index) if candidate.parent_index is not None else None
+        if parent is not None:
+            candidate.parent_shape_id = f"shape_candidate_{parent.candidate_index:03d}"
+        reason = _internal_noise_reason(
+            candidate=candidate,
+            parent=parent,
+            small_box_area_limit=internal_small_box_area_limit,
+            text_like_max_height=internal_text_like_max_height,
+            text_like_aspect_ratio=internal_text_like_aspect_ratio,
+            child_area_ratio_threshold=internal_child_area_ratio_threshold,
+            child_bbox_area_ratio_threshold=internal_child_bbox_area_ratio_threshold,
+        )
+        if reason is not None:
+            candidate.rejection_reason = reason
+            candidate.is_internal_noise = True
+            internal_noise_candidates.append(candidate)
+            cv2.drawContours(artifact_mask, [candidate.contour], -1, 255, thickness=cv2.FILLED)
+            continue
+        kept_candidates.append(candidate)
+        cv2.drawContours(filtered_shape_mask, [candidate.contour], -1, 255, thickness=2)
+
+    shape_mask = cv2.dilate(filtered_shape_mask, dilate_kernel, iterations=1)
+    filled_shape_mask = np.zeros_like(binary)
+    for candidate in kept_candidates:
+        cv2.drawContours(filled_shape_mask, [candidate.contour], -1, 255, thickness=cv2.FILLED)
+
+    inner_shape_mask = cv2.erode(filled_shape_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), iterations=1)
+    shapes_subtracted_mask = cv2.bitwise_and(binary, cv2.bitwise_not(inner_shape_mask))
+    edge_lines = cv2.bitwise_and(edges, cv2.bitwise_not(inner_shape_mask))
+    line_mask = cv2.bitwise_or(shapes_subtracted_mask, edge_lines)
+    line_mask = cv2.bitwise_and(line_mask, cv2.bitwise_not(artifact_mask))
+
+    return SeparationResult(
+        shape_mask=shape_mask,
+        line_mask=line_mask,
+        artifact_mask=artifact_mask,
+        shapes_subtracted_mask=shapes_subtracted_mask,
+        shape_candidates_before_filter=provisional_candidates,
+        shape_candidates=kept_candidates,
+        rejected_candidates=rejected_candidates,
+        internal_noise_candidates=internal_noise_candidates,
+        summary={
+            "raw_contours_found": len(contours),
+            "shape_candidates_before_internal_filter": len(provisional_candidates),
+            "shape_mask_contours_found": len(kept_candidates),
+            "artifacts_rejected": len(rejected_candidates),
+            "internal_noise_rejected": len(internal_noise_candidates),
+        },
+    )
+
+================================================================================
+
+src\verify.py
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+from .models import Verification
+
+
+def _safe_ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return float(numerator) / float(denominator)
+
+
+def verify_render(
+    normalized_binary: np.ndarray,
+    rendered_image: np.ndarray,
+    edge_overlap_pass: float,
+    edge_overlap_warn: float,
+    pixel_diff_pass: float,
+    pixel_diff_warn: float,
+    canny_low: int,
+    canny_high: int,
+    aperture_size: int,
+) -> tuple[Verification, np.ndarray]:
+    rendered_gray = cv2.cvtColor(rendered_image, cv2.COLOR_BGR2GRAY)
+    _, rendered_binary = cv2.threshold(rendered_gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+    source_edges = cv2.Canny(normalized_binary, canny_low, canny_high, apertureSize=aperture_size, L2gradient=True)
+    rendered_edges = cv2.Canny(rendered_binary, canny_low, canny_high, apertureSize=aperture_size, L2gradient=True)
+
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    dilated_source_edges = cv2.dilate(source_edges, kernel, iterations=1)
+    dilated_rendered_edges = cv2.dilate(rendered_edges, kernel, iterations=1)
+
+    source_hits = cv2.bitwise_and(dilated_source_edges, rendered_edges)
+    rendered_hits = cv2.bitwise_and(dilated_rendered_edges, source_edges)
+    source_edge_count = int(cv2.countNonZero(source_edges))
+    rendered_edge_count = int(cv2.countNonZero(rendered_edges))
+    source_coverage = _safe_ratio(int(cv2.countNonZero(source_hits)), source_edge_count)
+    rendered_coverage = _safe_ratio(int(cv2.countNonZero(rendered_hits)), rendered_edge_count)
+    edge_overlap_score = (source_coverage + rendered_coverage) / 2.0
+    overlap_mask = cv2.bitwise_or(source_hits, rendered_hits)
+
+    diff_mask = cv2.absdiff(normalized_binary, rendered_binary)
+    pixel_difference_score = _safe_ratio(
+        int(cv2.countNonZero(diff_mask)),
+        diff_mask.shape[0] * diff_mask.shape[1],
+    )
+
+    notes: list[str] = []
+    if edge_overlap_score >= edge_overlap_pass and pixel_difference_score <= pixel_diff_pass:
+        status = "pass"
+        notes.append("Rendered output closely matches the normalized source.")
+    elif edge_overlap_score >= edge_overlap_warn and pixel_difference_score <= pixel_diff_warn:
+        status = "warn"
+        notes.append("Rendered output is usable but shows moderate mismatch.")
+    else:
+        status = "fail"
+        notes.append("Rendered output diverges significantly from the normalized source.")
+
+    diff_bgr = cv2.cvtColor(diff_mask, cv2.COLOR_GRAY2BGR)
+    diff_bgr[np.where(overlap_mask > 0)] = (0, 255, 0)
+
+    verification = Verification(
+        edge_overlap_score=round(edge_overlap_score, 4),
+        pixel_difference_score=round(pixel_difference_score, 4),
+        status=status,
+        notes=notes,
+    )
+    return verification, diff_bgr

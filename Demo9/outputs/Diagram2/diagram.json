@@ -1,0 +1,8060 @@
+{
+  "schema_version": "1.0.0",
+  "diagram_id": "Diagram2",
+  "source_file": "Diagram2.jpg",
+  "image_width": 600,
+  "image_height": 345,
+  "metadata": {
+    "diagram_metadata": {
+      "source_file": "Diagram2.jpg",
+      "image_width": 600,
+      "image_height": 345,
+      "channels": 3
+    },
+    "separation_debug": {
+      "rejected_artifacts": [
+        {
+          "rejection_reason": "area_exceeds_threshold",
+          "metrics": {
+            "contour_area": 136792,
+            "bbox_area": 201000,
+            "bbox_fill_ratio": 0.6806,
+            "perimeter": 2989,
+            "aspect_ratio": 1.791,
+            "border_touch_count": 3,
+            "bbox_width_ratio": 1.0,
+            "bbox_height_ratio": 0.971,
+            "bbox_width": 600,
+            "bbox_height": 335
+          }
+        },
+        {
+          "rejection_reason": "below_min_shape_area",
+          "metrics": {
+            "contour_area": 70,
+            "bbox_area": 90,
+            "bbox_fill_ratio": 0.7778,
+            "perimeter": 32,
+            "aspect_ratio": 1.1111,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.0167,
+            "bbox_height_ratio": 0.0261,
+            "bbox_width": 10,
+            "bbox_height": 9
+          }
+        },
+        {
+          "rejection_reason": "below_min_shape_area",
+          "metrics": {
+            "contour_area": 166,
+            "bbox_area": 204,
+            "bbox_fill_ratio": 0.8162,
+            "perimeter": 50,
+            "aspect_ratio": 1.4167,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.02,
+            "bbox_height_ratio": 0.0493,
+            "bbox_width": 12,
+            "bbox_height": 17
+          }
+        },
+        {
+          "rejection_reason": "below_min_shape_area",
+          "metrics": {
+            "contour_area": 132,
+            "bbox_area": 189,
+            "bbox_fill_ratio": 0.6984,
+            "perimeter": 54,
+            "aspect_ratio": 2.3333,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.035,
+            "bbox_height_ratio": 0.0261,
+            "bbox_width": 21,
+            "bbox_height": 9
+          }
+        }
+      ],
+      "internal_noise_rejected": [
+        {
+          "rejection_reason": "internal_noise_inside_parent_shape",
+          "metrics": {
+            "contour_area": 1666,
+            "bbox_area": 2920,
+            "bbox_fill_ratio": 0.5705,
+            "perimeter": 247,
+            "aspect_ratio": 1.825,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.1217,
+            "bbox_height_ratio": 0.1159,
+            "bbox_width": 73,
+            "bbox_height": 40
+          },
+          "parent_shape_id": "shape_candidate_015"
+        },
+        {
+          "rejection_reason": "internal_noise_inside_parent_shape",
+          "metrics": {
+            "contour_area": 378,
+            "bbox_area": 440,
+            "bbox_fill_ratio": 0.8591,
+            "perimeter": 77,
+            "aspect_ratio": 1.1,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.0367,
+            "bbox_height_ratio": 0.058,
+            "bbox_width": 22,
+            "bbox_height": 20
+          },
+          "parent_shape_id": "shape_candidate_015"
+        }
+      ],
+      "rejected_node_candidates": [
+        {
+          "element_id": "shape_005",
+          "reason": "overlaps_existing_node",
+          "bbox": [
+            56,
+            301,
+            105,
+            41
+          ]
+        },
+        {
+          "element_id": "shape_016",
+          "reason": "too_small_for_canonical_node",
+          "bbox": [
+            7,
+            0,
+            53,
+            10
+          ]
+        },
+        {
+          "element_id": "shape_007",
+          "reason": "overlaps_existing_node",
+          "bbox": [
+            106,
+            87,
+            66,
+            51
+          ]
+        },
+        {
+          "element_id": "shape_017",
+          "reason": "too_small_for_canonical_node",
+          "bbox": [
+            119,
+            17,
+            18,
+            18
+          ]
+        },
+        {
+          "element_id": "shape_002",
+          "reason": "oversized_non_rectangular_mass",
+          "bbox": [
+            106,
+            143,
+            286,
+            174
+          ]
+        },
+        {
+          "element_id": "shape_001",
+          "reason": "oversized_non_rectangular_mass",
+          "bbox": [
+            130,
+            29,
+            264,
+            236
+          ]
+        }
+      ]
+    },
+    "structural_render": {
+      "uses_canonical_nodes_only": true,
+      "uses_snapped_connectors_only": false,
+      "uses_graph_routed_connectors_only": true,
+      "fallback_to_contours": false,
+      "diagnostics": []
+    },
+    "graph_sanity": {
+      "vertex_count": 21,
+      "edge_count": 16,
+      "reduced_degree2_vertices": 6,
+      "pruned_spurs": 4,
+      "collapsed_corridor_groups": 3,
+      "status": "pass",
+      "reason": null
+    },
+    "graph_counter_stages": {
+      "intersections_accepted_initial": "accepted intersections before graph cleanup and route-relevant export filtering",
+      "segments_split_initial": "segments split before graph cleanup and route-relevant export filtering",
+      "split_edges_created_initial": "split edges created before graph cleanup and route-relevant export filtering",
+      "final_graph_vertices": "count of exported graph.vertices",
+      "final_graph_edges": "count of exported graph.edges",
+      "final_graph_junction_vertices": "exported graph vertices with degree >= 3",
+      "final_graph_bend_vertices": "exported graph vertices with degree == 2",
+      "final_graph_endpoint_vertices": "exported graph vertices with degree == 1",
+      "intersections_accepted": "legacy alias for final exported graph crossing points",
+      "junction_vertices_created": "legacy alias for final_graph_junction_vertices"
+    },
+    "noise_metrics": {
+      "noise_artifacts_rejected": 4,
+      "noise_internal_rejected": 2,
+      "noise_node_candidates_rejected": 6,
+      "noise_segments_filtered_pre_intersection": 1,
+      "noise_intersections_rejected": 88,
+      "noise_spurs_pruned": 4,
+      "noise_final_components_pruned": 44
+    }
+  },
+  "processing_parameters": {
+    "blur_kernel_size": 5,
+    "clahe_clip_limit": 2.0,
+    "clahe_grid_size": 8,
+    "adaptive_block_size": 31,
+    "adaptive_c": 7,
+    "canny_low": 50,
+    "canny_high": 150,
+    "canny_aperture_size": 3,
+    "min_contour_area": 150,
+    "contour_epsilon_ratio": 0.02,
+    "shape_close_kernel_size": 7,
+    "shape_dilate_kernel_size": 3,
+    "min_shape_area": 250,
+    "max_shape_area_ratio": 0.28,
+    "artifact_border_margin": 6,
+    "artifact_border_touch_reject_count": 2,
+    "artifact_extreme_span_ratio": 0.88,
+    "artifact_frame_fill_ratio_threshold": 0.35,
+    "internal_containment_margin": 5,
+    "internal_small_box_area_limit": 1400,
+    "internal_text_like_max_height": 18,
+    "internal_text_like_aspect_ratio": 3.0,
+    "internal_child_area_ratio_threshold": 0.16,
+    "internal_child_bbox_area_ratio_threshold": 0.18,
+    "node_outward_padding": 6,
+    "node_inward_padding": 2,
+    "node_gate_padding": 3,
+    "node_gate_min_span": 6,
+    "node_gate_max_span": 14,
+    "node_label_height_ratio": 0.35,
+    "node_overlap_reject_iou": 0.32,
+    "node_contains_multiple_reject": 2,
+    "connector_hough_threshold": 12,
+    "connector_min_line_length": 12,
+    "connector_max_line_gap": 18,
+    "connector_orientation_tolerance": 10.0,
+    "connector_merge_gap_threshold": 18,
+    "connector_merge_angle_tolerance": 10.0,
+    "connector_min_merged_path_length": 18,
+    "connector_snap_distance_tolerance": 18,
+    "connector_directional_axis_ratio": 1.4,
+    "graph_orth_axis_tolerance": 3,
+    "graph_spur_min_length": 12,
+    "graph_intersection_continuity_radius": 2,
+    "graph_endpoint_intersection_tolerance": 8,
+    "graph_gate_attach_tolerance": 20,
+    "simplify_axis_snap_tolerance": 3,
+    "simplify_merge_gap_tolerance": 18,
+    "simplify_parallel_offset_tolerance": 3,
+    "corridor_overlap_ratio_min": 0.2,
+    "corridor_parallel_distance_max": 4,
+    "corridor_min_group_size": 2,
+    "spur_prune_length": 12,
+    "graph_component_gate_distance_max": 25,
+    "graph_micro_bend_threshold": 10,
+    "graph_vertices_warn": 80,
+    "graph_vertices_fail": 120,
+    "graph_edges_warn": 100,
+    "graph_edges_fail": 160,
+    "expected_min_nodes": 6,
+    "edge_overlap_pass": 0.5,
+    "edge_overlap_warn": 0.25,
+    "pixel_diff_pass": 0.08,
+    "pixel_diff_warn": 0.16
+  },
+  "separation_summary": {
+    "raw_contours_found": 23,
+    "shape_candidates_before_internal_filter": 19,
+    "shape_mask_contours_found": 17,
+    "artifacts_rejected": 4,
+    "internal_noise_rejected": 2,
+    "connector_fragments_found": 84,
+    "connector_paths_merged": 7,
+    "canonical_nodes_kept": 11,
+    "segments_raw": 217,
+    "segments_before_simplification": 217,
+    "segments_after_collinear_merge": 81,
+    "segments_after_corridor_grouping": 3,
+    "segments_after_corridor_collapse": 78,
+    "segments_after_dominance_filter": 78,
+    "corridor_groups_collapsed": 3,
+    "spurs_pruned": 4,
+    "degree2_vertices_removed": 6,
+    "degree2_endpoints_reclassified": 12,
+    "gate_stubs_absorbed": 1,
+    "micro_bends_removed": 0,
+    "corridor_contacts_snapped": 1,
+    "degree2_vertices_removed_post_attach": 6,
+    "graph_vertices_before_degree2": 201,
+    "graph_vertices_after_degree2": 201,
+    "gate_relevant_components_kept": 44,
+    "graph_vertices": 21,
+    "graph_edges": 16,
+    "route_count": 6,
+    "graph_sanity_status": "pass",
+    "intersections_candidates_raw": 167,
+    "intersections_detected_raw": 167,
+    "intersections_accepted_initial": 79,
+    "segments_split_initial": 58,
+    "split_edges_created_initial": 207,
+    "intersections_accepted": 16,
+    "segments_split": 11,
+    "split_edges_created": 16,
+    "junction_vertices_created": 0,
+    "max_splits_per_segment": 3,
+    "segments_blocked_from_splitting": 1,
+    "final_graph_vertices": 21,
+    "final_graph_edges": 16,
+    "final_graph_junction_vertices": 0,
+    "final_graph_bend_vertices": 11,
+    "final_graph_endpoint_vertices": 10
+  },
+  "elements": [
+    {
+      "id": "shape_003",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            25,
+            142
+          ],
+          [
+            102,
+            142
+          ],
+          [
+            103,
+            143
+          ],
+          [
+            103,
+            296
+          ],
+          [
+            101,
+            298
+          ],
+          [
+            53,
+            298
+          ],
+          [
+            53,
+            301
+          ],
+          [
+            52,
+            302
+          ],
+          [
+            52,
+            316
+          ],
+          [
+            51,
+            317
+          ],
+          [
+            47,
+            317
+          ],
+          [
+            46,
+            318
+          ],
+          [
+            24,
+            318
+          ],
+          [
+            23,
+            317
+          ],
+          [
+            23,
+            144
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 13052,
+        "perimeter": 507
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            102,
+            142
+          ],
+          [
+            103,
+            296
+          ],
+          [
+            53,
+            298
+          ],
+          [
+            51,
+            317
+          ],
+          [
+            24,
+            318
+          ],
+          [
+            23,
+            144
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        23,
+        142,
+        80,
+        176
+      ],
+      "center": [
+        63,
+        230
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 6,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 13052,
+          "bbox_area": 14337,
+          "bbox_fill_ratio": 0.9104,
+          "perimeter": 507,
+          "aspect_ratio": 2.1852,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.135,
+          "bbox_height_ratio": 0.513,
+          "bbox_width": 81,
+          "bbox_height": 177
+        },
+        "canonical_node_id": "node_001"
+      }
+    },
+    {
+      "id": "shape_004",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            24,
+            27
+          ],
+          [
+            110,
+            27
+          ],
+          [
+            111,
+            28
+          ],
+          [
+            115,
+            28
+          ],
+          [
+            116,
+            29
+          ],
+          [
+            116,
+            31
+          ],
+          [
+            117,
+            32
+          ],
+          [
+            117,
+            33
+          ],
+          [
+            118,
+            34
+          ],
+          [
+            118,
+            43
+          ],
+          [
+            125,
+            43
+          ],
+          [
+            126,
+            44
+          ],
+          [
+            126,
+            60
+          ],
+          [
+            127,
+            61
+          ],
+          [
+            127,
+            71
+          ],
+          [
+            126,
+            72
+          ],
+          [
+            126,
+            82
+          ],
+          [
+            124,
+            84
+          ],
+          [
+            117,
+            84
+          ],
+          [
+            116,
+            85
+          ],
+          [
+            114,
+            85
+          ],
+          [
+            114,
+            87
+          ],
+          [
+            113,
+            88
+          ],
+          [
+            113,
+            90
+          ],
+          [
+            112,
+            91
+          ],
+          [
+            108,
+            91
+          ],
+          [
+            108,
+            95
+          ],
+          [
+            106,
+            97
+          ],
+          [
+            105,
+            97
+          ],
+          [
+            105,
+            98
+          ],
+          [
+            104,
+            99
+          ],
+          [
+            103,
+            99
+          ],
+          [
+            102,
+            100
+          ],
+          [
+            102,
+            105
+          ],
+          [
+            103,
+            106
+          ],
+          [
+            103,
+            138
+          ],
+          [
+            102,
+            139
+          ],
+          [
+            25,
+            139
+          ],
+          [
+            23,
+            137
+          ],
+          [
+            23,
+            109
+          ],
+          [
+            22,
+            108
+          ],
+          [
+            22,
+            29
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 10312,
+        "perimeter": 423
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            24,
+            27
+          ],
+          [
+            116,
+            29
+          ],
+          [
+            126,
+            82
+          ],
+          [
+            102,
+            100
+          ],
+          [
+            102,
+            139
+          ],
+          [
+            23,
+            137
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        23,
+        27,
+        103,
+        112
+      ],
+      "center": [
+        74,
+        83
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 6,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 10312,
+          "bbox_area": 11978,
+          "bbox_fill_ratio": 0.861,
+          "perimeter": 423,
+          "aspect_ratio": 1.066,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1767,
+          "bbox_height_ratio": 0.3275,
+          "bbox_width": 106,
+          "bbox_height": 113
+        },
+        "canonical_node_id": "node_002"
+      }
+    },
+    {
+      "id": "shape_006",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            344,
+            70
+          ],
+          [
+            345,
+            69
+          ],
+          [
+            370,
+            69
+          ],
+          [
+            371,
+            70
+          ],
+          [
+            371,
+            80
+          ],
+          [
+            372,
+            81
+          ],
+          [
+            372,
+            87
+          ],
+          [
+            371,
+            88
+          ],
+          [
+            365,
+            88
+          ],
+          [
+            363,
+            86
+          ],
+          [
+            358,
+            86
+          ],
+          [
+            357,
+            87
+          ],
+          [
+            357,
+            93
+          ],
+          [
+            358,
+            93
+          ],
+          [
+            359,
+            94
+          ],
+          [
+            417,
+            94
+          ],
+          [
+            418,
+            93
+          ],
+          [
+            419,
+            93
+          ],
+          [
+            419,
+            89
+          ],
+          [
+            418,
+            88
+          ],
+          [
+            407,
+            88
+          ],
+          [
+            406,
+            87
+          ],
+          [
+            406,
+            80
+          ],
+          [
+            407,
+            79
+          ],
+          [
+            407,
+            78
+          ],
+          [
+            406,
+            77
+          ],
+          [
+            406,
+            70
+          ],
+          [
+            407,
+            69
+          ],
+          [
+            443,
+            69
+          ],
+          [
+            444,
+            70
+          ],
+          [
+            444,
+            108
+          ],
+          [
+            442,
+            110
+          ],
+          [
+            345,
+            110
+          ],
+          [
+            344,
+            109
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 3053,
+        "perimeter": 383
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            344,
+            70
+          ],
+          [
+            371,
+            70
+          ],
+          [
+            372,
+            87
+          ],
+          [
+            359,
+            94
+          ],
+          [
+            417,
+            94
+          ],
+          [
+            407,
+            69
+          ],
+          [
+            443,
+            69
+          ],
+          [
+            444,
+            108
+          ],
+          [
+            345,
+            110
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        344,
+        69,
+        100,
+        41
+      ],
+      "center": [
+        394,
+        90
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 9,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 3053,
+          "bbox_area": 4242,
+          "bbox_fill_ratio": 0.7197,
+          "perimeter": 383,
+          "aspect_ratio": 2.4048,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1683,
+          "bbox_height_ratio": 0.1217,
+          "bbox_width": 101,
+          "bbox_height": 42
+        },
+        "canonical_node_id": "node_003"
+      }
+    },
+    {
+      "id": "shape_008",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            350,
+            300
+          ],
+          [
+            351,
+            299
+          ],
+          [
+            361,
+            299
+          ],
+          [
+            362,
+            300
+          ],
+          [
+            362,
+            311
+          ],
+          [
+            363,
+            312
+          ],
+          [
+            373,
+            312
+          ],
+          [
+            375,
+            310
+          ],
+          [
+            381,
+            310
+          ],
+          [
+            383,
+            312
+          ],
+          [
+            383,
+            318
+          ],
+          [
+            382,
+            319
+          ],
+          [
+            382,
+            323
+          ],
+          [
+            383,
+            324
+          ],
+          [
+            403,
+            324
+          ],
+          [
+            403,
+            322
+          ],
+          [
+            404,
+            321
+          ],
+          [
+            404,
+            313
+          ],
+          [
+            405,
+            312
+          ],
+          [
+            417,
+            312
+          ],
+          [
+            419,
+            314
+          ],
+          [
+            423,
+            314
+          ],
+          [
+            423,
+            313
+          ],
+          [
+            424,
+            312
+          ],
+          [
+            424,
+            307
+          ],
+          [
+            423,
+            306
+          ],
+          [
+            423,
+            300
+          ],
+          [
+            424,
+            299
+          ],
+          [
+            441,
+            299
+          ],
+          [
+            443,
+            301
+          ],
+          [
+            443,
+            334
+          ],
+          [
+            441,
+            336
+          ],
+          [
+            351,
+            336
+          ],
+          [
+            350,
+            335
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 2388,
+        "perimeter": 310
+      },
+      "interpreted_geometry": {
+        "shape_type": "unknown-shape",
+        "path_type": null,
+        "render_points": [
+          [
+            350,
+            300
+          ],
+          [
+            361,
+            299
+          ],
+          [
+            363,
+            312
+          ],
+          [
+            381,
+            310
+          ],
+          [
+            383,
+            324
+          ],
+          [
+            403,
+            324
+          ],
+          [
+            405,
+            312
+          ],
+          [
+            423,
+            314
+          ],
+          [
+            424,
+            299
+          ],
+          [
+            441,
+            299
+          ],
+          [
+            443,
+            334
+          ],
+          [
+            351,
+            336
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        350,
+        299,
+        93,
+        37
+      ],
+      "center": [
+        396,
+        318
+      ],
+      "confidence": 0.35,
+      "debug": {
+        "approx_vertices": 12,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 2388,
+          "bbox_area": 3572,
+          "bbox_fill_ratio": 0.6684,
+          "perimeter": 310,
+          "aspect_ratio": 2.4737,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1567,
+          "bbox_height_ratio": 0.1101,
+          "bbox_width": 94,
+          "bbox_height": 38
+        },
+        "canonical_node_id": "node_011"
+      }
+    },
+    {
+      "id": "shape_009",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            354,
+            163
+          ],
+          [
+            355,
+            162
+          ],
+          [
+            373,
+            162
+          ],
+          [
+            374,
+            163
+          ],
+          [
+            374,
+            178
+          ],
+          [
+            373,
+            179
+          ],
+          [
+            367,
+            179
+          ],
+          [
+            367,
+            181
+          ],
+          [
+            368,
+            182
+          ],
+          [
+            368,
+            186
+          ],
+          [
+            369,
+            186
+          ],
+          [
+            370,
+            187
+          ],
+          [
+            416,
+            187
+          ],
+          [
+            416,
+            182
+          ],
+          [
+            415,
+            181
+          ],
+          [
+            410,
+            181
+          ],
+          [
+            409,
+            180
+          ],
+          [
+            409,
+            170
+          ],
+          [
+            408,
+            169
+          ],
+          [
+            408,
+            163
+          ],
+          [
+            409,
+            162
+          ],
+          [
+            437,
+            162
+          ],
+          [
+            438,
+            163
+          ],
+          [
+            438,
+            202
+          ],
+          [
+            437,
+            203
+          ],
+          [
+            356,
+            203
+          ],
+          [
+            354,
+            201
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 2480,
+        "perimeter": 322
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            354,
+            163
+          ],
+          [
+            374,
+            163
+          ],
+          [
+            370,
+            187
+          ],
+          [
+            416,
+            187
+          ],
+          [
+            408,
+            163
+          ],
+          [
+            437,
+            162
+          ],
+          [
+            438,
+            202
+          ],
+          [
+            356,
+            203
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        354,
+        162,
+        84,
+        41
+      ],
+      "center": [
+        396,
+        182
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 8,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 2480,
+          "bbox_area": 3570,
+          "bbox_fill_ratio": 0.6948,
+          "perimeter": 322,
+          "aspect_ratio": 2.0238,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1417,
+          "bbox_height_ratio": 0.1217,
+          "bbox_width": 85,
+          "bbox_height": 42
+        },
+        "canonical_node_id": "node_004"
+      }
+    },
+    {
+      "id": "shape_010",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            350,
+            245
+          ],
+          [
+            351,
+            244
+          ],
+          [
+            364,
+            244
+          ],
+          [
+            365,
+            245
+          ],
+          [
+            365,
+            256
+          ],
+          [
+            372,
+            256
+          ],
+          [
+            373,
+            257
+          ],
+          [
+            378,
+            257
+          ],
+          [
+            379,
+            258
+          ],
+          [
+            379,
+            269
+          ],
+          [
+            408,
+            269
+          ],
+          [
+            408,
+            258
+          ],
+          [
+            409,
+            257
+          ],
+          [
+            416,
+            257
+          ],
+          [
+            416,
+            256
+          ],
+          [
+            417,
+            255
+          ],
+          [
+            417,
+            245
+          ],
+          [
+            418,
+            244
+          ],
+          [
+            440,
+            244
+          ],
+          [
+            441,
+            245
+          ],
+          [
+            441,
+            278
+          ],
+          [
+            439,
+            280
+          ],
+          [
+            352,
+            280
+          ],
+          [
+            350,
+            278
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 2254,
+        "perimeter": 297
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            350,
+            245
+          ],
+          [
+            364,
+            244
+          ],
+          [
+            379,
+            269
+          ],
+          [
+            408,
+            269
+          ],
+          [
+            418,
+            244
+          ],
+          [
+            440,
+            244
+          ],
+          [
+            441,
+            278
+          ],
+          [
+            352,
+            280
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        350,
+        244,
+        91,
+        36
+      ],
+      "center": [
+        396,
+        262
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 8,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 2254,
+          "bbox_area": 3404,
+          "bbox_fill_ratio": 0.6622,
+          "perimeter": 297,
+          "aspect_ratio": 2.4865,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1533,
+          "bbox_height_ratio": 0.1072,
+          "bbox_width": 92,
+          "bbox_height": 37
+        },
+        "canonical_node_id": "node_009"
+      }
+    },
+    {
+      "id": "shape_011",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            205,
+            300
+          ],
+          [
+            206,
+            299
+          ],
+          [
+            222,
+            299
+          ],
+          [
+            223,
+            300
+          ],
+          [
+            223,
+            316
+          ],
+          [
+            222,
+            317
+          ],
+          [
+            218,
+            317
+          ],
+          [
+            218,
+            323
+          ],
+          [
+            219,
+            324
+          ],
+          [
+            243,
+            324
+          ],
+          [
+            244,
+            325
+          ],
+          [
+            245,
+            324
+          ],
+          [
+            252,
+            324
+          ],
+          [
+            253,
+            325
+          ],
+          [
+            253,
+            326
+          ],
+          [
+            254,
+            327
+          ],
+          [
+            256,
+            325
+          ],
+          [
+            256,
+            322
+          ],
+          [
+            257,
+            321
+          ],
+          [
+            257,
+            319
+          ],
+          [
+            256,
+            318
+          ],
+          [
+            254,
+            318
+          ],
+          [
+            253,
+            317
+          ],
+          [
+            253,
+            307
+          ],
+          [
+            252,
+            306
+          ],
+          [
+            252,
+            300
+          ],
+          [
+            253,
+            299
+          ],
+          [
+            276,
+            299
+          ],
+          [
+            278,
+            301
+          ],
+          [
+            278,
+            338
+          ],
+          [
+            276,
+            340
+          ],
+          [
+            206,
+            340
+          ],
+          [
+            205,
+            339
+          ],
+          [
+            205,
+            322
+          ],
+          [
+            204,
+            321
+          ],
+          [
+            204,
+            308
+          ],
+          [
+            205,
+            307
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 2194,
+        "perimeter": 295
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            205,
+            300
+          ],
+          [
+            223,
+            300
+          ],
+          [
+            219,
+            324
+          ],
+          [
+            254,
+            327
+          ],
+          [
+            252,
+            300
+          ],
+          [
+            276,
+            299
+          ],
+          [
+            278,
+            338
+          ],
+          [
+            206,
+            340
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        205,
+        299,
+        73,
+        41
+      ],
+      "center": [
+        242,
+        320
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 8,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 2194,
+          "bbox_area": 3150,
+          "bbox_fill_ratio": 0.6965,
+          "perimeter": 295,
+          "aspect_ratio": 1.7857,
+          "border_touch_count": 1,
+          "bbox_width_ratio": 0.125,
+          "bbox_height_ratio": 0.1217,
+          "bbox_width": 75,
+          "bbox_height": 42
+        },
+        "canonical_node_id": "node_006"
+      }
+    },
+    {
+      "id": "shape_012",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            483,
+            164
+          ],
+          [
+            495,
+            164
+          ],
+          [
+            496,
+            165
+          ],
+          [
+            496,
+            171
+          ],
+          [
+            495,
+            172
+          ],
+          [
+            495,
+            174
+          ],
+          [
+            496,
+            175
+          ],
+          [
+            496,
+            177
+          ],
+          [
+            497,
+            177
+          ],
+          [
+            498,
+            178
+          ],
+          [
+            498,
+            188
+          ],
+          [
+            499,
+            189
+          ],
+          [
+            500,
+            189
+          ],
+          [
+            501,
+            190
+          ],
+          [
+            516,
+            190
+          ],
+          [
+            517,
+            189
+          ],
+          [
+            526,
+            189
+          ],
+          [
+            529,
+            192
+          ],
+          [
+            531,
+            192
+          ],
+          [
+            532,
+            191
+          ],
+          [
+            533,
+            191
+          ],
+          [
+            533,
+            184
+          ],
+          [
+            532,
+            183
+          ],
+          [
+            532,
+            177
+          ],
+          [
+            533,
+            176
+          ],
+          [
+            533,
+            174
+          ],
+          [
+            534,
+            173
+          ],
+          [
+            534,
+            172
+          ],
+          [
+            533,
+            172
+          ],
+          [
+            532,
+            171
+          ],
+          [
+            532,
+            165
+          ],
+          [
+            533,
+            164
+          ],
+          [
+            552,
+            164
+          ],
+          [
+            554,
+            166
+          ],
+          [
+            554,
+            204
+          ],
+          [
+            553,
+            205
+          ],
+          [
+            482,
+            205
+          ],
+          [
+            481,
+            204
+          ],
+          [
+            481,
+            166
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 2065,
+        "perimeter": 281
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            481,
+            166
+          ],
+          [
+            496,
+            165
+          ],
+          [
+            499,
+            189
+          ],
+          [
+            531,
+            192
+          ],
+          [
+            532,
+            165
+          ],
+          [
+            552,
+            164
+          ],
+          [
+            554,
+            204
+          ],
+          [
+            482,
+            205
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        481,
+        164,
+        73,
+        41
+      ],
+      "center": [
+        518,
+        184
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 8,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 2065,
+          "bbox_area": 3108,
+          "bbox_fill_ratio": 0.6644,
+          "perimeter": 281,
+          "aspect_ratio": 1.7619,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1233,
+          "bbox_height_ratio": 0.1217,
+          "bbox_width": 74,
+          "bbox_height": 42
+        },
+        "canonical_node_id": "node_010"
+      }
+    },
+    {
+      "id": "shape_013",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            285,
+            14
+          ],
+          [
+            286,
+            13
+          ],
+          [
+            296,
+            13
+          ],
+          [
+            297,
+            14
+          ],
+          [
+            297,
+            25
+          ],
+          [
+            298,
+            25
+          ],
+          [
+            299,
+            26
+          ],
+          [
+            357,
+            26
+          ],
+          [
+            358,
+            25
+          ],
+          [
+            359,
+            25
+          ],
+          [
+            359,
+            22
+          ],
+          [
+            358,
+            21
+          ],
+          [
+            358,
+            14
+          ],
+          [
+            359,
+            13
+          ],
+          [
+            381,
+            13
+          ],
+          [
+            382,
+            14
+          ],
+          [
+            382,
+            42
+          ],
+          [
+            381,
+            43
+          ],
+          [
+            286,
+            43
+          ],
+          [
+            285,
+            42
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 2112,
+        "perimeter": 277
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            285,
+            14
+          ],
+          [
+            296,
+            13
+          ],
+          [
+            299,
+            26
+          ],
+          [
+            357,
+            26
+          ],
+          [
+            359,
+            13
+          ],
+          [
+            381,
+            13
+          ],
+          [
+            382,
+            42
+          ],
+          [
+            286,
+            43
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        285,
+        13,
+        97,
+        30
+      ],
+      "center": [
+        334,
+        28
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 8,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 2112,
+          "bbox_area": 3038,
+          "bbox_fill_ratio": 0.6954,
+          "perimeter": 277,
+          "aspect_ratio": 3.1613,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1633,
+          "bbox_height_ratio": 0.0899,
+          "bbox_width": 98,
+          "bbox_height": 31
+        },
+        "canonical_node_id": "node_007"
+      }
+    },
+    {
+      "id": "shape_014",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            170,
+            15
+          ],
+          [
+            171,
+            14
+          ],
+          [
+            182,
+            14
+          ],
+          [
+            183,
+            15
+          ],
+          [
+            183,
+            21
+          ],
+          [
+            184,
+            22
+          ],
+          [
+            184,
+            26
+          ],
+          [
+            190,
+            26
+          ],
+          [
+            191,
+            27
+          ],
+          [
+            192,
+            26
+          ],
+          [
+            203,
+            26
+          ],
+          [
+            204,
+            27
+          ],
+          [
+            205,
+            26
+          ],
+          [
+            214,
+            26
+          ],
+          [
+            215,
+            27
+          ],
+          [
+            216,
+            27
+          ],
+          [
+            217,
+            26
+          ],
+          [
+            224,
+            26
+          ],
+          [
+            225,
+            27
+          ],
+          [
+            226,
+            26
+          ],
+          [
+            232,
+            26
+          ],
+          [
+            232,
+            22
+          ],
+          [
+            231,
+            21
+          ],
+          [
+            231,
+            15
+          ],
+          [
+            232,
+            14
+          ],
+          [
+            253,
+            14
+          ],
+          [
+            254,
+            15
+          ],
+          [
+            254,
+            42
+          ],
+          [
+            252,
+            44
+          ],
+          [
+            172,
+            44
+          ],
+          [
+            170,
+            42
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 1933,
+        "perimeter": 251
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            170,
+            15
+          ],
+          [
+            182,
+            14
+          ],
+          [
+            184,
+            26
+          ],
+          [
+            225,
+            27
+          ],
+          [
+            232,
+            26
+          ],
+          [
+            232,
+            14
+          ],
+          [
+            253,
+            14
+          ],
+          [
+            254,
+            42
+          ],
+          [
+            172,
+            44
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        170,
+        14,
+        84,
+        30
+      ],
+      "center": [
+        212,
+        29
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 9,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 1933,
+          "bbox_area": 2635,
+          "bbox_fill_ratio": 0.7336,
+          "perimeter": 251,
+          "aspect_ratio": 2.7419,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1417,
+          "bbox_height_ratio": 0.0899,
+          "bbox_width": 85,
+          "bbox_height": 31
+        },
+        "canonical_node_id": "node_005"
+      }
+    },
+    {
+      "id": "shape_015",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            491,
+            15
+          ],
+          [
+            492,
+            14
+          ],
+          [
+            502,
+            14
+          ],
+          [
+            503,
+            15
+          ],
+          [
+            503,
+            25
+          ],
+          [
+            505,
+            27
+          ],
+          [
+            519,
+            27
+          ],
+          [
+            520,
+            26
+          ],
+          [
+            528,
+            26
+          ],
+          [
+            528,
+            23
+          ],
+          [
+            527,
+            22
+          ],
+          [
+            527,
+            15
+          ],
+          [
+            528,
+            14
+          ],
+          [
+            541,
+            14
+          ],
+          [
+            542,
+            15
+          ],
+          [
+            542,
+            43
+          ],
+          [
+            541,
+            44
+          ],
+          [
+            520,
+            44
+          ],
+          [
+            519,
+            43
+          ],
+          [
+            517,
+            43
+          ],
+          [
+            516,
+            44
+          ],
+          [
+            493,
+            44
+          ],
+          [
+            491,
+            42
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 1216,
+        "perimeter": 184
+      },
+      "interpreted_geometry": {
+        "shape_type": "polygon-like",
+        "path_type": null,
+        "render_points": [
+          [
+            491,
+            15
+          ],
+          [
+            502,
+            14
+          ],
+          [
+            505,
+            27
+          ],
+          [
+            528,
+            26
+          ],
+          [
+            528,
+            14
+          ],
+          [
+            541,
+            14
+          ],
+          [
+            542,
+            43
+          ],
+          [
+            493,
+            44
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        491,
+        14,
+        51,
+        30
+      ],
+      "center": [
+        516,
+        29
+      ],
+      "confidence": 0.7,
+      "debug": {
+        "approx_vertices": 8,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 1216,
+          "bbox_area": 1612,
+          "bbox_fill_ratio": 0.7547,
+          "perimeter": 184,
+          "aspect_ratio": 1.6774,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.0867,
+          "bbox_height_ratio": 0.0899,
+          "bbox_width": 52,
+          "bbox_height": 31
+        },
+        "canonical_node_id": "node_008"
+      }
+    },
+    {
+      "id": "connector_001",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            23,
+            83
+          ],
+          [
+            25,
+            83
+          ],
+          [
+            25,
+            75
+          ],
+          [
+            33,
+            75
+          ],
+          [
+            33,
+            110
+          ],
+          [
+            394,
+            110
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            23,
+            83
+          ],
+          [
+            25,
+            83
+          ],
+          [
+            25,
+            75
+          ],
+          [
+            33,
+            75
+          ],
+          [
+            33,
+            110
+          ],
+          [
+            394,
+            110
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        23,
+        75,
+        371,
+        35
+      ],
+      "center": [
+        208,
+        92
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_002",
+        "dst_node_id": "node_003",
+        "src_side": "left",
+        "dst_side": "bottom",
+        "src_attachment": {
+          "node_id": "node_002",
+          "side": "left",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_003",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_002",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            212,
+            14
+          ],
+          [
+            212,
+            15
+          ],
+          [
+            206,
+            15
+          ],
+          [
+            206,
+            21
+          ],
+          [
+            516,
+            21
+          ],
+          [
+            516,
+            14
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            212,
+            14
+          ],
+          [
+            212,
+            15
+          ],
+          [
+            206,
+            15
+          ],
+          [
+            206,
+            21
+          ],
+          [
+            516,
+            21
+          ],
+          [
+            516,
+            14
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        206,
+        14,
+        310,
+        7
+      ],
+      "center": [
+        361,
+        18
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_005",
+        "dst_node_id": "node_008",
+        "src_side": "top",
+        "dst_side": "top",
+        "src_attachment": {
+          "node_id": "node_005",
+          "side": "top",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_008",
+          "side": "top",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_003",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            74,
+            139
+          ],
+          [
+            74,
+            142
+          ],
+          [
+            58,
+            142
+          ],
+          [
+            58,
+            320
+          ],
+          [
+            63,
+            320
+          ],
+          [
+            63,
+            318
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            74,
+            139
+          ],
+          [
+            74,
+            142
+          ],
+          [
+            58,
+            142
+          ],
+          [
+            58,
+            320
+          ],
+          [
+            63,
+            320
+          ],
+          [
+            63,
+            318
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        58,
+        139,
+        16,
+        181
+      ],
+      "center": [
+        66,
+        230
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_002",
+        "dst_node_id": "node_001",
+        "src_side": "bottom",
+        "dst_side": "bottom",
+        "src_attachment": {
+          "node_id": "node_002",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_001",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_004",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            444,
+            89
+          ],
+          [
+            440,
+            89
+          ],
+          [
+            440,
+            317
+          ],
+          [
+            443,
+            317
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            444,
+            89
+          ],
+          [
+            440,
+            89
+          ],
+          [
+            440,
+            317
+          ],
+          [
+            443,
+            317
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        440,
+        89,
+        4,
+        228
+      ],
+      "center": [
+        442,
+        203
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_003",
+        "dst_node_id": "node_011",
+        "src_side": "right",
+        "dst_side": "right",
+        "src_attachment": {
+          "node_id": "node_003",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_011",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_005",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            63,
+            318
+          ],
+          [
+            63,
+            320
+          ],
+          [
+            203,
+            320
+          ],
+          [
+            203,
+            319
+          ],
+          [
+            205,
+            319
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            63,
+            318
+          ],
+          [
+            63,
+            320
+          ],
+          [
+            203,
+            320
+          ],
+          [
+            203,
+            319
+          ],
+          [
+            205,
+            319
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        63,
+        318,
+        142,
+        2
+      ],
+      "center": [
+        134,
+        319
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_001",
+        "dst_node_id": "node_006",
+        "src_side": "bottom",
+        "dst_side": "left",
+        "src_attachment": {
+          "node_id": "node_001",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_006",
+          "side": "left",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_006",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            516,
+            44
+          ],
+          [
+            510,
+            44
+          ],
+          [
+            510,
+            206
+          ],
+          [
+            517,
+            206
+          ],
+          [
+            517,
+            205
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            516,
+            44
+          ],
+          [
+            510,
+            44
+          ],
+          [
+            510,
+            206
+          ],
+          [
+            517,
+            206
+          ],
+          [
+            517,
+            205
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        510,
+        44,
+        7,
+        162
+      ],
+      "center": [
+        514,
+        125
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_008",
+        "dst_node_id": "node_010",
+        "src_side": "bottom",
+        "dst_side": "bottom",
+        "src_attachment": {
+          "node_id": "node_008",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_010",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "node_001",
+      "bbox": [
+        23,
+        142,
+        80,
+        176
+      ],
+      "center": [
+        63,
+        230
+      ],
+      "side_midpoints": {
+        "top": [
+          63,
+          142
+        ],
+        "right": [
+          103,
+          230
+        ],
+        "bottom": [
+          63,
+          318
+        ],
+        "left": [
+          23,
+          230
+        ]
+      },
+      "expanded_bbox": [
+        17,
+        136,
+        92,
+        188
+      ],
+      "label_region": [
+        27,
+        146,
+        72,
+        62
+      ],
+      "gates": {
+        "top": [
+          63,
+          142
+        ],
+        "right": [
+          103,
+          230
+        ],
+        "bottom": [
+          63,
+          318
+        ],
+        "left": [
+          23,
+          230
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            49,
+            142
+          ],
+          [
+            77,
+            142
+          ]
+        ],
+        "bottom": [
+          [
+            49,
+            318
+          ],
+          [
+            77,
+            318
+          ]
+        ],
+        "left": [
+          [
+            23,
+            216
+          ],
+          [
+            23,
+            244
+          ]
+        ],
+        "right": [
+          [
+            103,
+            216
+          ],
+          [
+            103,
+            244
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_003",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 13052,
+          "bbox_area": 14337,
+          "bbox_fill_ratio": 0.9104,
+          "perimeter": 507,
+          "aspect_ratio": 2.1852,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.135,
+          "bbox_height_ratio": 0.513,
+          "bbox_width": 81,
+          "bbox_height": 177
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_002",
+      "bbox": [
+        23,
+        27,
+        103,
+        112
+      ],
+      "center": [
+        74,
+        83
+      ],
+      "side_midpoints": {
+        "top": [
+          74,
+          27
+        ],
+        "right": [
+          126,
+          83
+        ],
+        "bottom": [
+          74,
+          139
+        ],
+        "left": [
+          23,
+          83
+        ]
+      },
+      "expanded_bbox": [
+        17,
+        21,
+        115,
+        124
+      ],
+      "label_region": [
+        27,
+        31,
+        95,
+        39
+      ],
+      "gates": {
+        "top": [
+          74,
+          27
+        ],
+        "right": [
+          126,
+          83
+        ],
+        "bottom": [
+          74,
+          139
+        ],
+        "left": [
+          23,
+          83
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            60,
+            27
+          ],
+          [
+            88,
+            27
+          ]
+        ],
+        "bottom": [
+          [
+            60,
+            139
+          ],
+          [
+            88,
+            139
+          ]
+        ],
+        "left": [
+          [
+            23,
+            69
+          ],
+          [
+            23,
+            97
+          ]
+        ],
+        "right": [
+          [
+            126,
+            69
+          ],
+          [
+            126,
+            97
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_004",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 10312,
+          "bbox_area": 11978,
+          "bbox_fill_ratio": 0.861,
+          "perimeter": 423,
+          "aspect_ratio": 1.066,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1767,
+          "bbox_height_ratio": 0.3275,
+          "bbox_width": 106,
+          "bbox_height": 113
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 1
+      }
+    },
+    {
+      "id": "node_003",
+      "bbox": [
+        344,
+        69,
+        100,
+        41
+      ],
+      "center": [
+        394,
+        89
+      ],
+      "side_midpoints": {
+        "top": [
+          394,
+          69
+        ],
+        "right": [
+          444,
+          89
+        ],
+        "bottom": [
+          394,
+          110
+        ],
+        "left": [
+          344,
+          89
+        ]
+      },
+      "expanded_bbox": [
+        338,
+        63,
+        112,
+        53
+      ],
+      "label_region": [
+        348,
+        73,
+        92,
+        14
+      ],
+      "gates": {
+        "top": [
+          394,
+          69
+        ],
+        "right": [
+          444,
+          89
+        ],
+        "bottom": [
+          394,
+          110
+        ],
+        "left": [
+          344,
+          89
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            387,
+            69
+          ],
+          [
+            401,
+            69
+          ]
+        ],
+        "bottom": [
+          [
+            387,
+            110
+          ],
+          [
+            401,
+            110
+          ]
+        ],
+        "left": [
+          [
+            344,
+            82
+          ],
+          [
+            344,
+            96
+          ]
+        ],
+        "right": [
+          [
+            444,
+            82
+          ],
+          [
+            444,
+            96
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_006",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 3053,
+          "bbox_area": 4242,
+          "bbox_fill_ratio": 0.7197,
+          "perimeter": 383,
+          "aspect_ratio": 2.4048,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1683,
+          "bbox_height_ratio": 0.1217,
+          "bbox_width": 101,
+          "bbox_height": 42
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_004",
+      "bbox": [
+        354,
+        162,
+        84,
+        41
+      ],
+      "center": [
+        396,
+        182
+      ],
+      "side_midpoints": {
+        "top": [
+          396,
+          162
+        ],
+        "right": [
+          438,
+          182
+        ],
+        "bottom": [
+          396,
+          203
+        ],
+        "left": [
+          354,
+          182
+        ]
+      },
+      "expanded_bbox": [
+        348,
+        156,
+        96,
+        53
+      ],
+      "label_region": [
+        358,
+        166,
+        76,
+        14
+      ],
+      "gates": {
+        "top": [
+          396,
+          162
+        ],
+        "right": [
+          438,
+          182
+        ],
+        "bottom": [
+          396,
+          203
+        ],
+        "left": [
+          354,
+          182
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            389,
+            162
+          ],
+          [
+            403,
+            162
+          ]
+        ],
+        "bottom": [
+          [
+            389,
+            203
+          ],
+          [
+            403,
+            203
+          ]
+        ],
+        "left": [
+          [
+            354,
+            175
+          ],
+          [
+            354,
+            189
+          ]
+        ],
+        "right": [
+          [
+            438,
+            175
+          ],
+          [
+            438,
+            189
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_009",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 2480,
+          "bbox_area": 3570,
+          "bbox_fill_ratio": 0.6948,
+          "perimeter": 322,
+          "aspect_ratio": 2.0238,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1417,
+          "bbox_height_ratio": 0.1217,
+          "bbox_width": 85,
+          "bbox_height": 42
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_005",
+      "bbox": [
+        170,
+        14,
+        84,
+        30
+      ],
+      "center": [
+        212,
+        29
+      ],
+      "side_midpoints": {
+        "top": [
+          212,
+          14
+        ],
+        "right": [
+          254,
+          29
+        ],
+        "bottom": [
+          212,
+          44
+        ],
+        "left": [
+          170,
+          29
+        ]
+      },
+      "expanded_bbox": [
+        164,
+        8,
+        96,
+        42
+      ],
+      "label_region": [
+        174,
+        18,
+        76,
+        12
+      ],
+      "gates": {
+        "top": [
+          212,
+          14
+        ],
+        "right": [
+          254,
+          29
+        ],
+        "bottom": [
+          212,
+          44
+        ],
+        "left": [
+          170,
+          29
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            206,
+            14
+          ],
+          [
+            218,
+            14
+          ]
+        ],
+        "bottom": [
+          [
+            206,
+            44
+          ],
+          [
+            218,
+            44
+          ]
+        ],
+        "left": [
+          [
+            170,
+            23
+          ],
+          [
+            170,
+            35
+          ]
+        ],
+        "right": [
+          [
+            254,
+            23
+          ],
+          [
+            254,
+            35
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_014",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 1933,
+          "bbox_area": 2635,
+          "bbox_fill_ratio": 0.7336,
+          "perimeter": 251,
+          "aspect_ratio": 2.7419,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1417,
+          "bbox_height_ratio": 0.0899,
+          "bbox_width": 85,
+          "bbox_height": 31
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_006",
+      "bbox": [
+        205,
+        299,
+        73,
+        41
+      ],
+      "center": [
+        241,
+        319
+      ],
+      "side_midpoints": {
+        "top": [
+          241,
+          299
+        ],
+        "right": [
+          278,
+          319
+        ],
+        "bottom": [
+          241,
+          340
+        ],
+        "left": [
+          205,
+          319
+        ]
+      },
+      "expanded_bbox": [
+        199,
+        293,
+        85,
+        51
+      ],
+      "label_region": [
+        209,
+        303,
+        65,
+        14
+      ],
+      "gates": {
+        "top": [
+          241,
+          299
+        ],
+        "right": [
+          278,
+          319
+        ],
+        "bottom": [
+          241,
+          340
+        ],
+        "left": [
+          205,
+          319
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            234,
+            299
+          ],
+          [
+            248,
+            299
+          ]
+        ],
+        "bottom": [
+          [
+            234,
+            340
+          ],
+          [
+            248,
+            340
+          ]
+        ],
+        "left": [
+          [
+            205,
+            312
+          ],
+          [
+            205,
+            326
+          ]
+        ],
+        "right": [
+          [
+            278,
+            312
+          ],
+          [
+            278,
+            326
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_011",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 2194,
+          "bbox_area": 3150,
+          "bbox_fill_ratio": 0.6965,
+          "perimeter": 295,
+          "aspect_ratio": 1.7857,
+          "border_touch_count": 1,
+          "bbox_width_ratio": 0.125,
+          "bbox_height_ratio": 0.1217,
+          "bbox_width": 75,
+          "bbox_height": 42
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_007",
+      "bbox": [
+        285,
+        13,
+        97,
+        30
+      ],
+      "center": [
+        333,
+        28
+      ],
+      "side_midpoints": {
+        "top": [
+          333,
+          13
+        ],
+        "right": [
+          382,
+          28
+        ],
+        "bottom": [
+          333,
+          43
+        ],
+        "left": [
+          285,
+          28
+        ]
+      },
+      "expanded_bbox": [
+        279,
+        7,
+        109,
+        42
+      ],
+      "label_region": [
+        289,
+        17,
+        89,
+        12
+      ],
+      "gates": {
+        "top": [
+          333,
+          13
+        ],
+        "right": [
+          382,
+          28
+        ],
+        "bottom": [
+          333,
+          43
+        ],
+        "left": [
+          285,
+          28
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            327,
+            13
+          ],
+          [
+            339,
+            13
+          ]
+        ],
+        "bottom": [
+          [
+            327,
+            43
+          ],
+          [
+            339,
+            43
+          ]
+        ],
+        "left": [
+          [
+            285,
+            22
+          ],
+          [
+            285,
+            34
+          ]
+        ],
+        "right": [
+          [
+            382,
+            22
+          ],
+          [
+            382,
+            34
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_013",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 2112,
+          "bbox_area": 3038,
+          "bbox_fill_ratio": 0.6954,
+          "perimeter": 277,
+          "aspect_ratio": 3.1613,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1633,
+          "bbox_height_ratio": 0.0899,
+          "bbox_width": 98,
+          "bbox_height": 31
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_008",
+      "bbox": [
+        491,
+        14,
+        51,
+        30
+      ],
+      "center": [
+        516,
+        29
+      ],
+      "side_midpoints": {
+        "top": [
+          516,
+          14
+        ],
+        "right": [
+          542,
+          29
+        ],
+        "bottom": [
+          516,
+          44
+        ],
+        "left": [
+          491,
+          29
+        ]
+      },
+      "expanded_bbox": [
+        485,
+        8,
+        63,
+        42
+      ],
+      "label_region": [
+        495,
+        18,
+        43,
+        12
+      ],
+      "gates": {
+        "top": [
+          516,
+          14
+        ],
+        "right": [
+          542,
+          29
+        ],
+        "bottom": [
+          516,
+          44
+        ],
+        "left": [
+          491,
+          29
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            510,
+            14
+          ],
+          [
+            522,
+            14
+          ]
+        ],
+        "bottom": [
+          [
+            510,
+            44
+          ],
+          [
+            522,
+            44
+          ]
+        ],
+        "left": [
+          [
+            491,
+            23
+          ],
+          [
+            491,
+            35
+          ]
+        ],
+        "right": [
+          [
+            542,
+            23
+          ],
+          [
+            542,
+            35
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_015",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 1216,
+          "bbox_area": 1612,
+          "bbox_fill_ratio": 0.7547,
+          "perimeter": 184,
+          "aspect_ratio": 1.6774,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.0867,
+          "bbox_height_ratio": 0.0899,
+          "bbox_width": 52,
+          "bbox_height": 31
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_009",
+      "bbox": [
+        350,
+        244,
+        91,
+        36
+      ],
+      "center": [
+        395,
+        262
+      ],
+      "side_midpoints": {
+        "top": [
+          395,
+          244
+        ],
+        "right": [
+          441,
+          262
+        ],
+        "bottom": [
+          395,
+          280
+        ],
+        "left": [
+          350,
+          262
+        ]
+      },
+      "expanded_bbox": [
+        344,
+        238,
+        103,
+        48
+      ],
+      "label_region": [
+        354,
+        248,
+        83,
+        13
+      ],
+      "gates": {
+        "top": [
+          395,
+          244
+        ],
+        "right": [
+          441,
+          262
+        ],
+        "bottom": [
+          395,
+          280
+        ],
+        "left": [
+          350,
+          262
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            389,
+            244
+          ],
+          [
+            401,
+            244
+          ]
+        ],
+        "bottom": [
+          [
+            389,
+            280
+          ],
+          [
+            401,
+            280
+          ]
+        ],
+        "left": [
+          [
+            350,
+            256
+          ],
+          [
+            350,
+            268
+          ]
+        ],
+        "right": [
+          [
+            441,
+            256
+          ],
+          [
+            441,
+            268
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_010",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 2254,
+          "bbox_area": 3404,
+          "bbox_fill_ratio": 0.6622,
+          "perimeter": 297,
+          "aspect_ratio": 2.4865,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1533,
+          "bbox_height_ratio": 0.1072,
+          "bbox_width": 92,
+          "bbox_height": 37
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_010",
+      "bbox": [
+        481,
+        164,
+        73,
+        41
+      ],
+      "center": [
+        517,
+        184
+      ],
+      "side_midpoints": {
+        "top": [
+          517,
+          164
+        ],
+        "right": [
+          554,
+          184
+        ],
+        "bottom": [
+          517,
+          205
+        ],
+        "left": [
+          481,
+          184
+        ]
+      },
+      "expanded_bbox": [
+        475,
+        158,
+        85,
+        53
+      ],
+      "label_region": [
+        485,
+        168,
+        65,
+        14
+      ],
+      "gates": {
+        "top": [
+          517,
+          164
+        ],
+        "right": [
+          554,
+          184
+        ],
+        "bottom": [
+          517,
+          205
+        ],
+        "left": [
+          481,
+          184
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            510,
+            164
+          ],
+          [
+            524,
+            164
+          ]
+        ],
+        "bottom": [
+          [
+            510,
+            205
+          ],
+          [
+            524,
+            205
+          ]
+        ],
+        "left": [
+          [
+            481,
+            177
+          ],
+          [
+            481,
+            191
+          ]
+        ],
+        "right": [
+          [
+            554,
+            177
+          ],
+          [
+            554,
+            191
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_012",
+        "shape_type": "polygon-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 2065,
+          "bbox_area": 3108,
+          "bbox_fill_ratio": 0.6644,
+          "perimeter": 281,
+          "aspect_ratio": 1.7619,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1233,
+          "bbox_height_ratio": 0.1217,
+          "bbox_width": 74,
+          "bbox_height": 42
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_011",
+      "bbox": [
+        350,
+        299,
+        93,
+        37
+      ],
+      "center": [
+        396,
+        317
+      ],
+      "side_midpoints": {
+        "top": [
+          396,
+          299
+        ],
+        "right": [
+          443,
+          317
+        ],
+        "bottom": [
+          396,
+          336
+        ],
+        "left": [
+          350,
+          317
+        ]
+      },
+      "expanded_bbox": [
+        344,
+        293,
+        105,
+        49
+      ],
+      "label_region": [
+        354,
+        303,
+        85,
+        13
+      ],
+      "gates": {
+        "top": [
+          396,
+          299
+        ],
+        "right": [
+          443,
+          317
+        ],
+        "bottom": [
+          396,
+          336
+        ],
+        "left": [
+          350,
+          317
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            389,
+            299
+          ],
+          [
+            403,
+            299
+          ]
+        ],
+        "bottom": [
+          [
+            389,
+            336
+          ],
+          [
+            403,
+            336
+          ]
+        ],
+        "left": [
+          [
+            350,
+            310
+          ],
+          [
+            350,
+            324
+          ]
+        ],
+        "right": [
+          [
+            443,
+            310
+          ],
+          [
+            443,
+            324
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_008",
+        "shape_type": "unknown-shape",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 2388,
+          "bbox_area": 3572,
+          "bbox_fill_ratio": 0.6684,
+          "perimeter": 310,
+          "aspect_ratio": 2.4737,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1567,
+          "bbox_height_ratio": 0.1101,
+          "bbox_width": 94,
+          "bbox_height": 38
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    }
+  ],
+  "connectors": [
+    {
+      "id": "connector_001",
+      "points": [
+        [
+          23,
+          83
+        ],
+        [
+          25,
+          83
+        ],
+        [
+          25,
+          75
+        ],
+        [
+          33,
+          75
+        ],
+        [
+          33,
+          110
+        ],
+        [
+          394,
+          110
+        ]
+      ],
+      "src_node_id": "node_002",
+      "src_side": "left",
+      "dst_node_id": "node_003",
+      "dst_side": "bottom",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_002",
+          "side": "left",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_003",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_002",
+      "points": [
+        [
+          212,
+          14
+        ],
+        [
+          212,
+          15
+        ],
+        [
+          206,
+          15
+        ],
+        [
+          206,
+          21
+        ],
+        [
+          516,
+          21
+        ],
+        [
+          516,
+          14
+        ]
+      ],
+      "src_node_id": "node_005",
+      "src_side": "top",
+      "dst_node_id": "node_008",
+      "dst_side": "top",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_005",
+          "side": "top",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_008",
+          "side": "top",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_003",
+      "points": [
+        [
+          74,
+          139
+        ],
+        [
+          74,
+          142
+        ],
+        [
+          58,
+          142
+        ],
+        [
+          58,
+          320
+        ],
+        [
+          63,
+          320
+        ],
+        [
+          63,
+          318
+        ]
+      ],
+      "src_node_id": "node_002",
+      "src_side": "bottom",
+      "dst_node_id": "node_001",
+      "dst_side": "bottom",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_002",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_001",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_004",
+      "points": [
+        [
+          444,
+          89
+        ],
+        [
+          440,
+          89
+        ],
+        [
+          440,
+          317
+        ],
+        [
+          443,
+          317
+        ]
+      ],
+      "src_node_id": "node_003",
+      "src_side": "right",
+      "dst_node_id": "node_011",
+      "dst_side": "right",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_003",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_011",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_005",
+      "points": [
+        [
+          63,
+          318
+        ],
+        [
+          63,
+          320
+        ],
+        [
+          203,
+          320
+        ],
+        [
+          203,
+          319
+        ],
+        [
+          205,
+          319
+        ]
+      ],
+      "src_node_id": "node_001",
+      "src_side": "bottom",
+      "dst_node_id": "node_006",
+      "dst_side": "left",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_001",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_006",
+          "side": "left",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_006",
+      "points": [
+        [
+          516,
+          44
+        ],
+        [
+          510,
+          44
+        ],
+        [
+          510,
+          206
+        ],
+        [
+          517,
+          206
+        ],
+        [
+          517,
+          205
+        ]
+      ],
+      "src_node_id": "node_008",
+      "src_side": "bottom",
+      "dst_node_id": "node_010",
+      "dst_side": "bottom",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_008",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_010",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    }
+  ],
+  "routes": [
+    {
+      "id": "route_001",
+      "src_node_id": "node_002",
+      "src_side": "left",
+      "dst_node_id": "node_003",
+      "dst_side": "bottom",
+      "vertex_path": [
+        "v_070",
+        "v_071",
+        "v_085",
+        "v_086"
+      ],
+      "points": [
+        [
+          23,
+          83
+        ],
+        [
+          25,
+          83
+        ],
+        [
+          25,
+          75
+        ],
+        [
+          33,
+          75
+        ],
+        [
+          33,
+          110
+        ],
+        [
+          394,
+          110
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 3,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_070",
+          "v_086"
+        ],
+        "attachment_distances": [
+          27.07,
+          7.0
+        ],
+        "attachment_distance_sum": 34.07,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 7,
+        "point_count_after_cleanup": 6,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 4
+      }
+    },
+    {
+      "id": "route_002",
+      "src_node_id": "node_005",
+      "src_side": "top",
+      "dst_node_id": "node_008",
+      "dst_side": "top",
+      "vertex_path": [
+        "v_024",
+        "v_027",
+        "v_028",
+        "v_030",
+        "v_021"
+      ],
+      "points": [
+        [
+          212,
+          14
+        ],
+        [
+          212,
+          15
+        ],
+        [
+          206,
+          15
+        ],
+        [
+          206,
+          21
+        ],
+        [
+          516,
+          21
+        ],
+        [
+          516,
+          14
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 4,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_024",
+          "v_021"
+        ],
+        "attachment_distances": [
+          7.0,
+          8.0
+        ],
+        "attachment_distance_sum": 15.0,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 7,
+        "point_count_after_cleanup": 6,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 2
+      }
+    },
+    {
+      "id": "route_003",
+      "src_node_id": "node_002",
+      "src_side": "bottom",
+      "dst_node_id": "node_001",
+      "dst_side": "bottom",
+      "vertex_path": [
+        "v_098",
+        "v_097",
+        "v_176"
+      ],
+      "points": [
+        [
+          74,
+          139
+        ],
+        [
+          74,
+          142
+        ],
+        [
+          58,
+          142
+        ],
+        [
+          58,
+          320
+        ],
+        [
+          63,
+          320
+        ],
+        [
+          63,
+          318
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 2,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_098",
+          "v_176"
+        ],
+        "attachment_distances": [
+          26.08,
+          15.03
+        ],
+        "attachment_distance_sum": 41.11,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 7,
+        "point_count_after_cleanup": 6,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 11
+      }
+    },
+    {
+      "id": "route_004",
+      "src_node_id": "node_003",
+      "src_side": "right",
+      "dst_node_id": "node_011",
+      "dst_side": "right",
+      "vertex_path": [
+        "v_079",
+        "v_148",
+        "v_152",
+        "v_183"
+      ],
+      "points": [
+        [
+          444,
+          89
+        ],
+        [
+          440,
+          89
+        ],
+        [
+          440,
+          317
+        ],
+        [
+          443,
+          317
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 3,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_079",
+          "v_183"
+        ],
+        "attachment_distances": [
+          8.06,
+          6.71
+        ],
+        "attachment_distance_sum": 14.77,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 8,
+        "point_count_after_cleanup": 4,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 2
+      }
+    },
+    {
+      "id": "route_005",
+      "src_node_id": "node_001",
+      "src_side": "bottom",
+      "dst_node_id": "node_006",
+      "dst_side": "left",
+      "vertex_path": [
+        "v_176",
+        "v_177",
+        "v_178",
+        "v_179"
+      ],
+      "points": [
+        [
+          63,
+          318
+        ],
+        [
+          63,
+          320
+        ],
+        [
+          203,
+          320
+        ],
+        [
+          203,
+          319
+        ],
+        [
+          205,
+          319
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 3,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_176",
+          "v_179"
+        ],
+        "attachment_distances": [
+          14.14,
+          2.24
+        ],
+        "attachment_distance_sum": 16.38,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 8,
+        "point_count_after_cleanup": 5,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 5
+      }
+    },
+    {
+      "id": "route_006",
+      "src_node_id": "node_008",
+      "src_side": "bottom",
+      "dst_node_id": "node_010",
+      "dst_side": "bottom",
+      "vertex_path": [
+        "v_054",
+        "v_124"
+      ],
+      "points": [
+        [
+          516,
+          44
+        ],
+        [
+          510,
+          44
+        ],
+        [
+          510,
+          206
+        ],
+        [
+          517,
+          206
+        ],
+        [
+          517,
+          205
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 1,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_054",
+          "v_124"
+        ],
+        "attachment_distances": [
+          6.32,
+          7.28
+        ],
+        "attachment_distance_sum": 13.6,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 5,
+        "point_count_after_cleanup": 5,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 2
+      }
+    }
+  ],
+  "graph": {
+    "vertices": [
+      {
+        "id": "v_021",
+        "kind": "endpoint",
+        "x": 516,
+        "y": 14,
+        "degree": 1
+      },
+      {
+        "id": "v_024",
+        "kind": "endpoint",
+        "x": 206,
+        "y": 15,
+        "degree": 1
+      },
+      {
+        "id": "v_027",
+        "kind": "bend",
+        "x": 206,
+        "y": 21,
+        "degree": 2
+      },
+      {
+        "id": "v_028",
+        "kind": "bend",
+        "x": 285,
+        "y": 21,
+        "degree": 2
+      },
+      {
+        "id": "v_030",
+        "kind": "bend",
+        "x": 516,
+        "y": 21,
+        "degree": 2
+      },
+      {
+        "id": "v_054",
+        "kind": "endpoint",
+        "x": 510,
+        "y": 44,
+        "degree": 1
+      },
+      {
+        "id": "v_070",
+        "kind": "endpoint",
+        "x": 25,
+        "y": 75,
+        "degree": 1
+      },
+      {
+        "id": "v_071",
+        "kind": "bend",
+        "x": 33,
+        "y": 75,
+        "degree": 2
+      },
+      {
+        "id": "v_079",
+        "kind": "endpoint",
+        "x": 440,
+        "y": 82,
+        "degree": 1
+      },
+      {
+        "id": "v_085",
+        "kind": "bend",
+        "x": 33,
+        "y": 110,
+        "degree": 2
+      },
+      {
+        "id": "v_086",
+        "kind": "endpoint",
+        "x": 400,
+        "y": 110,
+        "degree": 1
+      },
+      {
+        "id": "v_097",
+        "kind": "bend",
+        "x": 58,
+        "y": 142,
+        "degree": 2
+      },
+      {
+        "id": "v_098",
+        "kind": "endpoint",
+        "x": 78,
+        "y": 142,
+        "degree": 1
+      },
+      {
+        "id": "v_124",
+        "kind": "endpoint",
+        "x": 510,
+        "y": 206,
+        "degree": 1
+      },
+      {
+        "id": "v_148",
+        "kind": "bend",
+        "x": 440,
+        "y": 255,
+        "degree": 2
+      },
+      {
+        "id": "v_152",
+        "kind": "bend",
+        "x": 440,
+        "y": 269,
+        "degree": 2
+      },
+      {
+        "id": "v_176",
+        "kind": "bend",
+        "x": 58,
+        "y": 320,
+        "degree": 2
+      },
+      {
+        "id": "v_177",
+        "kind": "bend",
+        "x": 180,
+        "y": 320,
+        "degree": 2
+      },
+      {
+        "id": "v_178",
+        "kind": "bend",
+        "x": 189,
+        "y": 320,
+        "degree": 2
+      },
+      {
+        "id": "v_179",
+        "kind": "endpoint",
+        "x": 203,
+        "y": 320,
+        "degree": 1
+      },
+      {
+        "id": "v_183",
+        "kind": "endpoint",
+        "x": 440,
+        "y": 323,
+        "degree": 1
+      }
+    ],
+    "edges": [
+      {
+        "id": "e_015",
+        "v_start": "v_085",
+        "v_end": "v_086",
+        "orientation": "H",
+        "length": 367.0,
+        "debug": {
+          "source_segment_id": "seg_001_048",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_018",
+        "v_start": "v_027",
+        "v_end": "v_028",
+        "orientation": "H",
+        "length": 79.0,
+        "debug": {
+          "source_segment_id": "seg_001_022",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_075",
+        "v_start": "v_079",
+        "v_end": "v_148",
+        "orientation": "V",
+        "length": 173.0,
+        "debug": {
+          "source_segment_id": "seg_001_006",
+          "split_from_intersection": true,
+          "split_index": 0,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_076",
+        "v_start": "v_148",
+        "v_end": "v_152",
+        "orientation": "V",
+        "length": 14.0,
+        "debug": {
+          "source_segment_id": "seg_001_006",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_077",
+        "v_start": "v_152",
+        "v_end": "v_183",
+        "orientation": "V",
+        "length": 54.0,
+        "debug": {
+          "source_segment_id": "seg_001_006",
+          "split_from_intersection": true,
+          "split_index": 2,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_104",
+        "v_start": "v_097",
+        "v_end": "v_098",
+        "orientation": "H",
+        "length": 20.0,
+        "debug": {
+          "source_segment_id": "seg_001_071",
+          "split_from_intersection": true,
+          "split_index": 4,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_108",
+        "v_start": "v_054",
+        "v_end": "v_124",
+        "orientation": "V",
+        "length": 162.0,
+        "debug": {
+          "source_segment_id": "seg_001_025",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_111",
+        "v_start": "v_070",
+        "v_end": "v_071",
+        "orientation": "H",
+        "length": 8.0,
+        "debug": {
+          "source_segment_id": "seg_001_139",
+          "split_from_intersection": true,
+          "split_index": 0,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_120",
+        "v_start": "v_176",
+        "v_end": "v_177",
+        "orientation": "H",
+        "length": 122.0,
+        "debug": {
+          "source_segment_id": "seg_001_101",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_121",
+        "v_start": "v_177",
+        "v_end": "v_178",
+        "orientation": "H",
+        "length": 9.0,
+        "debug": {
+          "source_segment_id": "seg_001_101",
+          "split_from_intersection": true,
+          "split_index": 2,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_122",
+        "v_start": "v_178",
+        "v_end": "v_179",
+        "orientation": "H",
+        "length": 14.0,
+        "debug": {
+          "source_segment_id": "seg_001_101",
+          "split_from_intersection": true,
+          "split_index": 3,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_132",
+        "v_start": "v_071",
+        "v_end": "v_085",
+        "orientation": "V",
+        "length": 35.0,
+        "debug": {
+          "source_segment_id": "seg_002_025",
+          "split_from_intersection": true,
+          "split_index": 3,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_134",
+        "v_start": "v_024",
+        "v_end": "v_027",
+        "orientation": "V",
+        "length": 6.0,
+        "debug": {
+          "source_segment_id": "seg_001_056",
+          "split_from_intersection": true,
+          "split_index": 0,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_189",
+        "v_start": "v_021",
+        "v_end": "v_030",
+        "orientation": "V",
+        "length": 7.0,
+        "debug": {
+          "source_segment_id": "seg_001_035",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_206",
+        "v_start": "v_028",
+        "v_end": "v_030",
+        "orientation": "H",
+        "length": 231.0,
+        "debug": {
+          "source_segment_id": "seg_001_022",
+          "split_from_intersection": true,
+          "merged_from_edges": [
+            "e_019",
+            "e_020"
+          ],
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_211",
+        "v_start": "v_097",
+        "v_end": "v_176",
+        "orientation": "V",
+        "length": 178.0,
+        "debug": {
+          "source_segment_id": "seg_001_044",
+          "split_from_intersection": true,
+          "merged_from_edges": [
+            "e_045",
+            "e_046"
+          ],
+          "source_segment_stage": "collapsed_segments"
+        }
+      }
+    ],
+    "segments": [
+      {
+        "id": "seg_001_010",
+        "orientation": "H",
+        "x1": 23,
+        "y1": 244,
+        "x2": 524,
+        "y2": 244,
+        "component_id": "comp_001",
+        "source_count": 6,
+        "collapsed_from_ids": [
+          "seg_001_010",
+          "seg_001_078",
+          "seg_001_143",
+          "seg_001_063",
+          "seg_001_064",
+          "seg_001_066"
+        ]
+      },
+      {
+        "id": "seg_001_000",
+        "orientation": "H",
+        "x1": 88,
+        "y1": 44,
+        "x2": 544,
+        "y2": 44,
+        "component_id": "comp_001",
+        "source_count": 11,
+        "collapsed_from_ids": [
+          "seg_001_000",
+          "seg_001_001",
+          "seg_001_040",
+          "seg_001_041",
+          "seg_001_110",
+          "seg_001_112",
+          "seg_002_050",
+          "seg_002_051",
+          "seg_002_052",
+          "seg_001_024",
+          "seg_001_091"
+        ]
+      },
+      {
+        "id": "seg_001_003",
+        "orientation": "H",
+        "x1": 89,
+        "y1": 162,
+        "x2": 524,
+        "y2": 162,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_003",
+          "seg_001_069",
+          "seg_001_068"
+        ]
+      },
+      {
+        "id": "seg_001_048",
+        "orientation": "H",
+        "x1": 25,
+        "y1": 110,
+        "x2": 401,
+        "y2": 110,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_048",
+          "seg_001_049",
+          "seg_001_051"
+        ]
+      },
+      {
+        "id": "seg_001_022",
+        "orientation": "H",
+        "x1": 171,
+        "y1": 21,
+        "x2": 542,
+        "y2": 21,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_022",
+          "seg_002_055"
+        ]
+      },
+      {
+        "id": "seg_001_005",
+        "orientation": "H",
+        "x1": 77,
+        "y1": 269,
+        "x2": 440,
+        "y2": 269,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_005",
+          "seg_001_016",
+          "seg_001_099"
+        ]
+      },
+      {
+        "id": "seg_001_007",
+        "orientation": "H",
+        "x1": 105,
+        "y1": 255,
+        "x2": 440,
+        "y2": 255,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_007",
+          "seg_001_097"
+        ]
+      },
+      {
+        "id": "seg_002_007",
+        "orientation": "H",
+        "x1": 75,
+        "y1": 279,
+        "x2": 395,
+        "y2": 279,
+        "component_id": "comp_002",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_002_007",
+          "seg_002_011"
+        ]
+      },
+      {
+        "id": "seg_001_036",
+        "orientation": "H",
+        "x1": 205,
+        "y1": 14,
+        "x2": 524,
+        "y2": 14,
+        "component_id": "comp_001",
+        "source_count": 9,
+        "collapsed_from_ids": [
+          "seg_001_036",
+          "seg_001_037",
+          "seg_001_038",
+          "seg_001_058",
+          "seg_001_087",
+          "seg_001_088",
+          "seg_001_089",
+          "seg_001_095",
+          "seg_001_057"
+        ]
+      },
+      {
+        "id": "seg_001_055",
+        "orientation": "H",
+        "x1": 25,
+        "y1": 69,
+        "x2": 343,
+        "y2": 69,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_055",
+          "seg_001_115",
+          "seg_002_030"
+        ]
+      },
+      {
+        "id": "seg_005_001",
+        "orientation": "H",
+        "x1": 127,
+        "y1": 81,
+        "x2": 442,
+        "y2": 81,
+        "component_id": "comp_005",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_005_001"
+        ]
+      },
+      {
+        "id": "seg_001_044",
+        "orientation": "V",
+        "x1": 58,
+        "y1": 9,
+        "x2": 58,
+        "y2": 321,
+        "component_id": "comp_001",
+        "source_count": 6,
+        "collapsed_from_ids": [
+          "seg_001_044",
+          "seg_001_072",
+          "seg_001_073",
+          "seg_001_134",
+          "seg_001_135",
+          "seg_002_014"
+        ]
+      },
+      {
+        "id": "seg_001_059",
+        "orientation": "V",
+        "x1": 445,
+        "y1": 15,
+        "x2": 445,
+        "y2": 324,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_059",
+          "seg_001_060",
+          "seg_001_083",
+          "seg_001_082"
+        ]
+      },
+      {
+        "id": "seg_001_004",
+        "orientation": "V",
+        "x1": 400,
+        "y1": 35,
+        "x2": 400,
+        "y2": 341,
+        "component_id": "comp_001",
+        "source_count": 12,
+        "collapsed_from_ids": [
+          "seg_001_004",
+          "seg_001_065",
+          "seg_002_004",
+          "seg_002_049",
+          "seg_003_002",
+          "seg_003_003",
+          "seg_001_017",
+          "seg_001_018",
+          "seg_001_019",
+          "seg_002_008",
+          "seg_002_038",
+          "seg_002_039"
+        ]
+      },
+      {
+        "id": "seg_001_020",
+        "orientation": "H",
+        "x1": 284,
+        "y1": 34,
+        "x2": 571,
+        "y2": 34,
+        "component_id": "comp_001",
+        "source_count": 5,
+        "collapsed_from_ids": [
+          "seg_001_020",
+          "seg_001_093",
+          "seg_006_001",
+          "seg_001_033",
+          "seg_001_034"
+        ]
+      },
+      {
+        "id": "seg_001_116",
+        "orientation": "V",
+        "x1": 342,
+        "y1": 68,
+        "x2": 342,
+        "y2": 341,
+        "component_id": "comp_001",
+        "source_count": 5,
+        "collapsed_from_ids": [
+          "seg_001_116",
+          "seg_001_117",
+          "seg_001_118",
+          "seg_002_033",
+          "seg_002_034"
+        ]
+      },
+      {
+        "id": "seg_001_012",
+        "orientation": "H",
+        "x1": 101,
+        "y1": 219,
+        "x2": 351,
+        "y2": 219,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_012",
+          "seg_001_013"
+        ]
+      },
+      {
+        "id": "seg_001_138",
+        "orientation": "V",
+        "x1": 180,
+        "y1": 76,
+        "x2": 180,
+        "y2": 321,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_138"
+        ]
+      },
+      {
+        "id": "seg_001_096",
+        "orientation": "V",
+        "x1": 324,
+        "y1": 11,
+        "x2": 324,
+        "y2": 255,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_096"
+        ]
+      },
+      {
+        "id": "seg_001_006",
+        "orientation": "V",
+        "x1": 440,
+        "y1": 82,
+        "x2": 440,
+        "y2": 323,
+        "component_id": "comp_001",
+        "source_count": 8,
+        "collapsed_from_ids": [
+          "seg_001_006",
+          "seg_001_062",
+          "seg_001_098",
+          "seg_002_042",
+          "seg_002_043",
+          "seg_002_044",
+          "seg_002_045",
+          "seg_005_000"
+        ]
+      },
+      {
+        "id": "seg_001_047",
+        "orientation": "V",
+        "x1": 249,
+        "y1": 112,
+        "x2": 249,
+        "y2": 334,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_047",
+          "seg_001_125"
+        ]
+      },
+      {
+        "id": "seg_002_032",
+        "orientation": "H",
+        "x1": 125,
+        "y1": 99,
+        "x2": 343,
+        "y2": 99,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_032"
+        ]
+      },
+      {
+        "id": "seg_001_075",
+        "orientation": "V",
+        "x1": 39,
+        "y1": 9,
+        "x2": 39,
+        "y2": 214,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_075"
+        ]
+      },
+      {
+        "id": "seg_001_119",
+        "orientation": "H",
+        "x1": 207,
+        "y1": 310,
+        "x2": 403,
+        "y2": 310,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_119",
+          "seg_003_001"
+        ]
+      },
+      {
+        "id": "seg_001_045",
+        "orientation": "H",
+        "x1": 60,
+        "y1": 300,
+        "x2": 250,
+        "y2": 300,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_045",
+          "seg_001_046",
+          "seg_001_126",
+          "seg_001_127"
+        ]
+      },
+      {
+        "id": "seg_001_130",
+        "orientation": "V",
+        "x1": 189,
+        "y1": 137,
+        "x2": 189,
+        "y2": 320,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_130",
+          "seg_001_131"
+        ]
+      },
+      {
+        "id": "seg_001_102",
+        "orientation": "V",
+        "x1": 48,
+        "y1": 137,
+        "x2": 48,
+        "y2": 319,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_102",
+          "seg_001_105"
+        ]
+      },
+      {
+        "id": "seg_001_052",
+        "orientation": "V",
+        "x1": 24,
+        "y1": 68,
+        "x2": 24,
+        "y2": 246,
+        "component_id": "comp_001",
+        "source_count": 7,
+        "collapsed_from_ids": [
+          "seg_001_052",
+          "seg_001_053",
+          "seg_001_054",
+          "seg_001_140",
+          "seg_001_141",
+          "seg_001_142",
+          "seg_001_077"
+        ]
+      },
+      {
+        "id": "seg_001_071",
+        "orientation": "H",
+        "x1": 32,
+        "y1": 142,
+        "x2": 206,
+        "y2": 142,
+        "component_id": "comp_001",
+        "source_count": 11,
+        "collapsed_from_ids": [
+          "seg_001_071",
+          "seg_001_103",
+          "seg_001_104",
+          "seg_001_106",
+          "seg_001_108",
+          "seg_001_132",
+          "seg_001_133",
+          "seg_002_026",
+          "seg_002_027",
+          "seg_002_015",
+          "seg_002_016"
+        ]
+      },
+      {
+        "id": "seg_001_025",
+        "orientation": "V",
+        "x1": 510,
+        "y1": 42,
+        "x2": 510,
+        "y2": 207,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_025"
+        ]
+      },
+      {
+        "id": "seg_002_035",
+        "orientation": "H",
+        "x1": 234,
+        "y1": 342,
+        "x2": 399,
+        "y2": 342,
+        "component_id": "comp_002",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_002_035",
+          "seg_002_036",
+          "seg_002_037"
+        ]
+      },
+      {
+        "id": "seg_001_139",
+        "orientation": "H",
+        "x1": 25,
+        "y1": 75,
+        "x2": 181,
+        "y2": 75,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_139"
+        ]
+      },
+      {
+        "id": "seg_001_123",
+        "orientation": "H",
+        "x1": 249,
+        "y1": 334,
+        "x2": 404,
+        "y2": 334,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_123",
+          "seg_001_124",
+          "seg_002_048"
+        ]
+      },
+      {
+        "id": "seg_001_101",
+        "orientation": "H",
+        "x1": 49,
+        "y1": 320,
+        "x2": 203,
+        "y2": 320,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_101",
+          "seg_001_136",
+          "seg_001_137"
+        ]
+      },
+      {
+        "id": "seg_001_042",
+        "orientation": "V",
+        "x1": 86,
+        "y1": 11,
+        "x2": 86,
+        "y2": 162,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_042",
+          "seg_002_017",
+          "seg_001_070",
+          "seg_001_107"
+        ]
+      },
+      {
+        "id": "seg_001_002",
+        "orientation": "V",
+        "x1": 385,
+        "y1": 12,
+        "x2": 385,
+        "y2": 162,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_002",
+          "seg_001_021",
+          "seg_001_050",
+          "seg_001_086"
+        ]
+      },
+      {
+        "id": "seg_001_031",
+        "orientation": "V",
+        "x1": 570,
+        "y1": 34,
+        "x2": 570,
+        "y2": 176,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_031",
+          "seg_001_032"
+        ]
+      },
+      {
+        "id": "seg_002_025",
+        "orientation": "V",
+        "x1": 33,
+        "y1": 7,
+        "x2": 33,
+        "y2": 142,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_025"
+        ]
+      },
+      {
+        "id": "seg_001_056",
+        "orientation": "V",
+        "x1": 206,
+        "y1": 15,
+        "x2": 206,
+        "y2": 137,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_056",
+          "seg_001_109"
+        ]
+      },
+      {
+        "id": "seg_001_074",
+        "orientation": "H",
+        "x1": 9,
+        "y1": 11,
+        "x2": 131,
+        "y2": 11,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_074",
+          "seg_002_020",
+          "seg_002_018",
+          "seg_002_019"
+        ]
+      },
+      {
+        "id": "seg_001_014",
+        "orientation": "V",
+        "x1": 350,
+        "y1": 219,
+        "x2": 350,
+        "y2": 325,
+        "component_id": "comp_001",
+        "source_count": 5,
+        "collapsed_from_ids": [
+          "seg_001_014",
+          "seg_001_015",
+          "seg_001_079",
+          "seg_001_080",
+          "seg_001_120"
+        ]
+      },
+      {
+        "id": "seg_002_006",
+        "orientation": "V",
+        "x1": 388,
+        "y1": 201,
+        "x2": 388,
+        "y2": 301,
+        "component_id": "comp_002",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_002_006",
+          "seg_002_010"
+        ]
+      },
+      {
+        "id": "seg_001_081",
+        "orientation": "H",
+        "x1": 348,
+        "y1": 324,
+        "x2": 443,
+        "y2": 324,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_081",
+          "seg_001_121",
+          "seg_002_046"
+        ]
+      },
+      {
+        "id": "seg_002_001",
+        "orientation": "H",
+        "x1": 354,
+        "y1": 174,
+        "x2": 436,
+        "y2": 174,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_001"
+        ]
+      },
+      {
+        "id": "seg_001_027",
+        "orientation": "V",
+        "x1": 524,
+        "y1": 162,
+        "x2": 524,
+        "y2": 242,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_027",
+          "seg_001_067"
+        ]
+      },
+      {
+        "id": "seg_002_028",
+        "orientation": "V",
+        "x1": 78,
+        "y1": 68,
+        "x2": 78,
+        "y2": 142,
+        "component_id": "comp_002",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_002_028",
+          "seg_002_029"
+        ]
+      },
+      {
+        "id": "seg_001_144",
+        "orientation": "V",
+        "x1": 480,
+        "y1": 176,
+        "x2": 480,
+        "y2": 243,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_144",
+          "seg_001_145"
+        ]
+      },
+      {
+        "id": "seg_001_084",
+        "orientation": "H",
+        "x1": 385,
+        "y1": 72,
+        "x2": 443,
+        "y2": 72,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_084",
+          "seg_001_085"
+        ]
+      },
+      {
+        "id": "seg_001_113",
+        "orientation": "V",
+        "x1": 126,
+        "y1": 46,
+        "x2": 126,
+        "y2": 99,
+        "component_id": "comp_001",
+        "source_count": 5,
+        "collapsed_from_ids": [
+          "seg_001_113",
+          "seg_001_114",
+          "seg_002_031",
+          "seg_005_002",
+          "seg_005_003"
+        ]
+      },
+      {
+        "id": "seg_002_005",
+        "orientation": "H",
+        "x1": 389,
+        "y1": 201,
+        "x2": 439,
+        "y2": 201,
+        "component_id": "comp_002",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_002_005",
+          "seg_002_040",
+          "seg_002_041"
+        ]
+      },
+      {
+        "id": "seg_001_100",
+        "orientation": "V",
+        "x1": 76,
+        "y1": 270,
+        "x2": 76,
+        "y2": 319,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_100",
+          "seg_002_012"
+        ]
+      },
+      {
+        "id": "seg_001_026",
+        "orientation": "H",
+        "x1": 509,
+        "y1": 206,
+        "x2": 553,
+        "y2": 206,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_026",
+          "seg_001_028"
+        ]
+      },
+      {
+        "id": "seg_002_022",
+        "orientation": "H",
+        "x1": 9,
+        "y1": 6,
+        "x2": 53,
+        "y2": 6,
+        "component_id": "comp_002",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_002_022",
+          "seg_002_023",
+          "seg_002_024"
+        ]
+      },
+      {
+        "id": "seg_001_008",
+        "orientation": "V",
+        "x1": 104,
+        "y1": 219,
+        "x2": 104,
+        "y2": 256,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_008",
+          "seg_001_009",
+          "seg_001_011"
+        ]
+      },
+      {
+        "id": "seg_002_003",
+        "orientation": "H",
+        "x1": 403,
+        "y1": 189,
+        "x2": 436,
+        "y2": 189,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_003"
+        ]
+      },
+      {
+        "id": "seg_001_023",
+        "orientation": "V",
+        "x1": 522,
+        "y1": 12,
+        "x2": 522,
+        "y2": 44,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_023",
+          "seg_001_090"
+        ]
+      },
+      {
+        "id": "seg_001_039",
+        "orientation": "V",
+        "x1": 338,
+        "y1": 11,
+        "x2": 338,
+        "y2": 42,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_039",
+          "seg_001_094"
+        ]
+      },
+      {
+        "id": "seg_001_043",
+        "orientation": "H",
+        "x1": 60,
+        "y1": 24,
+        "x2": 88,
+        "y2": 24,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_043"
+        ]
+      },
+      {
+        "id": "seg_001_029",
+        "orientation": "V",
+        "x1": 552,
+        "y1": 176,
+        "x2": 552,
+        "y2": 203,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_029"
+        ]
+      },
+      {
+        "id": "seg_001_128",
+        "orientation": "V",
+        "x1": 207,
+        "y1": 300,
+        "x2": 207,
+        "y2": 326,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_128",
+          "seg_003_000"
+        ]
+      },
+      {
+        "id": "seg_001_092",
+        "orientation": "V",
+        "x1": 543,
+        "y1": 22,
+        "x2": 543,
+        "y2": 44,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_092",
+          "seg_002_053",
+          "seg_002_054"
+        ]
+      },
+      {
+        "id": "seg_007_000",
+        "orientation": "V",
+        "x1": 519,
+        "y1": 135,
+        "x2": 519,
+        "y2": 157,
+        "component_id": "comp_007",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_007_000"
+        ]
+      },
+      {
+        "id": "seg_001_035",
+        "orientation": "V",
+        "x1": 516,
+        "y1": 13,
+        "x2": 516,
+        "y2": 34,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_035"
+        ]
+      },
+      {
+        "id": "seg_001_030",
+        "orientation": "H",
+        "x1": 553,
+        "y1": 177,
+        "x2": 571,
+        "y2": 177,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_030"
+        ]
+      },
+      {
+        "id": "seg_002_013",
+        "orientation": "H",
+        "x1": 57,
+        "y1": 315,
+        "x2": 75,
+        "y2": 315,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_013"
+        ]
+      },
+      {
+        "id": "seg_001_129",
+        "orientation": "H",
+        "x1": 190,
+        "y1": 315,
+        "x2": 207,
+        "y2": 315,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_129"
+        ]
+      },
+      {
+        "id": "seg_002_000",
+        "orientation": "V",
+        "x1": 354,
+        "y1": 174,
+        "x2": 354,
+        "y2": 191,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_000"
+        ]
+      },
+      {
+        "id": "seg_004_000",
+        "orientation": "V",
+        "x1": 276,
+        "y1": 310,
+        "x2": 276,
+        "y2": 327,
+        "component_id": "comp_004",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_004_000",
+          "seg_004_001"
+        ]
+      },
+      {
+        "id": "seg_001_076",
+        "orientation": "H",
+        "x1": 23,
+        "y1": 213,
+        "x2": 39,
+        "y2": 213,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_076"
+        ]
+      },
+      {
+        "id": "seg_006_002",
+        "orientation": "V",
+        "x1": 285,
+        "y1": 21,
+        "x2": 285,
+        "y2": 37,
+        "component_id": "comp_006",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_006_002"
+        ]
+      },
+      {
+        "id": "seg_002_002",
+        "orientation": "V",
+        "x1": 435,
+        "y1": 174,
+        "x2": 435,
+        "y2": 189,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_002"
+        ]
+      },
+      {
+        "id": "seg_006_000",
+        "orientation": "V",
+        "x1": 492,
+        "y1": 22,
+        "x2": 492,
+        "y2": 37,
+        "component_id": "comp_006",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_006_000"
+        ]
+      },
+      {
+        "id": "seg_001_122",
+        "orientation": "V",
+        "x1": 390,
+        "y1": 323,
+        "x2": 390,
+        "y2": 337,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_122",
+          "seg_002_047"
+        ]
+      },
+      {
+        "id": "seg_002_056",
+        "orientation": "V",
+        "x1": 171,
+        "y1": 22,
+        "x2": 171,
+        "y2": 36,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_056"
+        ]
+      }
+    ],
+    "gate_attachments": [
+      {
+        "node_id": "node_001",
+        "side": "top",
+        "gate_point": [
+          63,
+          142
+        ],
+        "vertex_id": "v_097",
+        "graph_vertex_id": "v_097",
+        "distance": 5.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_001",
+        "side": "right",
+        "gate_point": [
+          103,
+          230
+        ],
+        "vertex_id": "v_133",
+        "graph_vertex_id": "v_133",
+        "distance": 11.05,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_001",
+        "side": "bottom",
+        "gate_point": [
+          63,
+          318
+        ],
+        "vertex_id": "v_176",
+        "graph_vertex_id": "v_176",
+        "distance": 5.39,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_001",
+        "side": "left",
+        "gate_point": [
+          23,
+          230
+        ],
+        "vertex_id": "v_138",
+        "graph_vertex_id": "v_138",
+        "distance": 14.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_002",
+        "side": "top",
+        "gate_point": [
+          74,
+          27
+        ],
+        "vertex_id": "v_036",
+        "graph_vertex_id": "v_036",
+        "distance": 12.37,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_002",
+        "side": "right",
+        "gate_point": [
+          126,
+          83
+        ],
+        "vertex_id": "v_076",
+        "graph_vertex_id": "v_076",
+        "distance": 2.24,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_002",
+        "side": "bottom",
+        "gate_point": [
+          74,
+          139
+        ],
+        "vertex_id": "v_098",
+        "graph_vertex_id": "v_098",
+        "distance": 5.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_002",
+        "side": "left",
+        "gate_point": [
+          23,
+          83
+        ],
+        "vertex_id": "v_070",
+        "graph_vertex_id": "v_070",
+        "distance": 8.25,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_003",
+        "side": "top",
+        "gate_point": [
+          394,
+          69
+        ],
+        "vertex_id": "v_068",
+        "graph_vertex_id": "v_068",
+        "distance": 9.49,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_003",
+        "side": "right",
+        "gate_point": [
+          444,
+          89
+        ],
+        "vertex_id": "v_079",
+        "graph_vertex_id": "v_079",
+        "distance": 8.06,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_003",
+        "side": "bottom",
+        "gate_point": [
+          394,
+          110
+        ],
+        "vertex_id": "v_086",
+        "graph_vertex_id": "v_086",
+        "distance": 6.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_003",
+        "side": "left",
+        "gate_point": [
+          344,
+          89
+        ],
+        "vertex_id": "v_083",
+        "graph_vertex_id": "v_083",
+        "distance": 10.05,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_004",
+        "side": "top",
+        "gate_point": [
+          396,
+          162
+        ],
+        "vertex_id": "v_105",
+        "graph_vertex_id": "v_105",
+        "distance": 4.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_004",
+        "side": "right",
+        "gate_point": [
+          438,
+          182
+        ],
+        "vertex_id": "v_117",
+        "graph_vertex_id": "v_117",
+        "distance": 7.28,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_004",
+        "side": "bottom",
+        "gate_point": [
+          396,
+          203
+        ],
+        "vertex_id": "v_120",
+        "graph_vertex_id": "v_120",
+        "distance": 7.28,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_004",
+        "side": "left",
+        "gate_point": [
+          354,
+          182
+        ],
+        "vertex_id": "v_107",
+        "graph_vertex_id": "v_107",
+        "distance": 8.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_005",
+        "side": "top",
+        "gate_point": [
+          212,
+          14
+        ],
+        "vertex_id": "v_024",
+        "graph_vertex_id": "v_024",
+        "distance": 6.08,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_005",
+        "side": "right",
+        "gate_point": [
+          254,
+          29
+        ],
+        "vertex_id": "v_027",
+        "graph_vertex_id": "v_027",
+        "distance": 8,
+        "stub_absorbed": true,
+        "snapped_to_corridor": true,
+        "projected_point": [
+          254,
+          21
+        ],
+        "edge_id": "e_017"
+      },
+      {
+        "node_id": "node_005",
+        "side": "bottom",
+        "gate_point": [
+          212,
+          44
+        ],
+        "vertex_id": "v_053",
+        "graph_vertex_id": "v_053",
+        "distance": 6.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_005",
+        "side": "left",
+        "gate_point": [
+          170,
+          29
+        ],
+        "vertex_id": "v_032",
+        "graph_vertex_id": "v_032",
+        "distance": 7.07,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_006",
+        "side": "top",
+        "gate_point": [
+          241,
+          299
+        ],
+        "vertex_id": "v_160",
+        "graph_vertex_id": "v_160",
+        "distance": 8.06,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_006",
+        "side": "right",
+        "gate_point": [
+          278,
+          319
+        ],
+        "vertex_id": "v_191",
+        "graph_vertex_id": "v_191",
+        "distance": 8.25,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_006",
+        "side": "bottom",
+        "gate_point": [
+          241,
+          340
+        ],
+        "vertex_id": "v_200",
+        "graph_vertex_id": "v_200",
+        "distance": 7.28,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_006",
+        "side": "left",
+        "gate_point": [
+          205,
+          319
+        ],
+        "vertex_id": "v_179",
+        "graph_vertex_id": "v_179",
+        "distance": 2.24,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_007",
+        "side": "top",
+        "gate_point": [
+          333,
+          13
+        ],
+        "vertex_id": "v_019",
+        "graph_vertex_id": "v_019",
+        "distance": 5.1,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_007",
+        "side": "right",
+        "gate_point": [
+          382,
+          28
+        ],
+        "vertex_id": "v_020",
+        "graph_vertex_id": "v_020",
+        "distance": 14.32,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_007",
+        "side": "bottom",
+        "gate_point": [
+          333,
+          43
+        ],
+        "vertex_id": "v_050",
+        "graph_vertex_id": "v_050",
+        "distance": 5.1,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_007",
+        "side": "left",
+        "gate_point": [
+          285,
+          28
+        ],
+        "vertex_id": "v_039",
+        "graph_vertex_id": "v_039",
+        "distance": 6.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_008",
+        "side": "top",
+        "gate_point": [
+          516,
+          14
+        ],
+        "vertex_id": "v_021",
+        "graph_vertex_id": "v_021",
+        "distance": 0.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_008",
+        "side": "right",
+        "gate_point": [
+          542,
+          29
+        ],
+        "vertex_id": "v_043",
+        "graph_vertex_id": "v_043",
+        "distance": 5.1,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_008",
+        "side": "bottom",
+        "gate_point": [
+          516,
+          44
+        ],
+        "vertex_id": "v_054",
+        "graph_vertex_id": "v_054",
+        "distance": 6.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_008",
+        "side": "left",
+        "gate_point": [
+          491,
+          29
+        ],
+        "vertex_id": "v_041",
+        "graph_vertex_id": "v_041",
+        "distance": 5.1,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_009",
+        "side": "top",
+        "gate_point": [
+          395,
+          244
+        ],
+        "vertex_id": "v_142",
+        "graph_vertex_id": "v_142",
+        "distance": 5.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_009",
+        "side": "right",
+        "gate_point": [
+          441,
+          262
+        ],
+        "vertex_id": "v_148",
+        "graph_vertex_id": "v_148",
+        "distance": 7.07,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_009",
+        "side": "bottom",
+        "gate_point": [
+          395,
+          280
+        ],
+        "vertex_id": "v_157",
+        "graph_vertex_id": "v_157",
+        "distance": 1.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_009",
+        "side": "left",
+        "gate_point": [
+          350,
+          262
+        ],
+        "vertex_id": "v_147",
+        "graph_vertex_id": "v_147",
+        "distance": 7.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_010",
+        "side": "top",
+        "gate_point": [
+          517,
+          164
+        ],
+        "vertex_id": "v_101",
+        "graph_vertex_id": "v_101",
+        "distance": 7.28,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_010",
+        "side": "right",
+        "gate_point": [
+          554,
+          184
+        ],
+        "vertex_id": "v_113",
+        "graph_vertex_id": "v_113",
+        "distance": 7.07,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_010",
+        "side": "bottom",
+        "gate_point": [
+          517,
+          205
+        ],
+        "vertex_id": "v_124",
+        "graph_vertex_id": "v_124",
+        "distance": 7.07,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_010",
+        "side": "left",
+        "gate_point": [
+          481,
+          184
+        ],
+        "vertex_id": "v_110",
+        "graph_vertex_id": "v_110",
+        "distance": 8.06,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_011",
+        "side": "top",
+        "gate_point": [
+          396,
+          299
+        ],
+        "vertex_id": "v_162",
+        "graph_vertex_id": "v_162",
+        "distance": 8.25,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_011",
+        "side": "right",
+        "gate_point": [
+          443,
+          317
+        ],
+        "vertex_id": "v_183",
+        "graph_vertex_id": "v_183",
+        "distance": 6.71,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_011",
+        "side": "bottom",
+        "gate_point": [
+          396,
+          336
+        ],
+        "vertex_id": "v_195",
+        "graph_vertex_id": "v_195",
+        "distance": 4.47,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_011",
+        "side": "left",
+        "gate_point": [
+          350,
+          317
+        ],
+        "vertex_id": "v_165",
+        "graph_vertex_id": "v_165",
+        "distance": 7.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      }
+    ],
+    "crossings": [
+      {
+        "point": [
+          400,
+          244
+        ],
+        "first_segment_id": "seg_001_010",
+        "second_segment_id": "seg_001_004",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          24,
+          244
+        ],
+        "first_segment_id": "seg_001_010",
+        "second_segment_id": "seg_001_052",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          388,
+          244
+        ],
+        "first_segment_id": "seg_001_010",
+        "second_segment_id": "seg_002_006",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          104,
+          244
+        ],
+        "first_segment_id": "seg_001_010",
+        "second_segment_id": "seg_001_008",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          510,
+          44
+        ],
+        "first_segment_id": "seg_001_000",
+        "second_segment_id": "seg_001_025",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          206,
+          44
+        ],
+        "first_segment_id": "seg_001_000",
+        "second_segment_id": "seg_001_056",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          522,
+          44
+        ],
+        "first_segment_id": "seg_001_000",
+        "second_segment_id": "seg_001_023",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          543,
+          44
+        ],
+        "first_segment_id": "seg_001_000",
+        "second_segment_id": "seg_001_092",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          400,
+          162
+        ],
+        "first_segment_id": "seg_001_003",
+        "second_segment_id": "seg_001_004",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          385,
+          162
+        ],
+        "first_segment_id": "seg_001_003",
+        "second_segment_id": "seg_001_002",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          524,
+          162
+        ],
+        "first_segment_id": "seg_001_003",
+        "second_segment_id": "seg_001_027",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          400,
+          110
+        ],
+        "first_segment_id": "seg_001_048",
+        "second_segment_id": "seg_001_004",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          33,
+          110
+        ],
+        "first_segment_id": "seg_001_048",
+        "second_segment_id": "seg_002_025",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          445,
+          21
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_001_059",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          206,
+          21
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_001_056",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          516,
+          21
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_001_035",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          285,
+          21
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_006_002",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          440,
+          269
+        ],
+        "first_segment_id": "seg_001_005",
+        "second_segment_id": "seg_001_006",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          350,
+          269
+        ],
+        "first_segment_id": "seg_001_005",
+        "second_segment_id": "seg_001_014",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          324,
+          255
+        ],
+        "first_segment_id": "seg_001_007",
+        "second_segment_id": "seg_001_096",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          440,
+          255
+        ],
+        "first_segment_id": "seg_001_007",
+        "second_segment_id": "seg_001_006",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          350,
+          255
+        ],
+        "first_segment_id": "seg_001_007",
+        "second_segment_id": "seg_001_014",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          388,
+          279
+        ],
+        "first_segment_id": "seg_002_007",
+        "second_segment_id": "seg_002_006",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          76,
+          279
+        ],
+        "first_segment_id": "seg_002_007",
+        "second_segment_id": "seg_001_100",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          324,
+          14
+        ],
+        "first_segment_id": "seg_001_036",
+        "second_segment_id": "seg_001_096",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          385,
+          14
+        ],
+        "first_segment_id": "seg_001_036",
+        "second_segment_id": "seg_001_002",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          522,
+          14
+        ],
+        "first_segment_id": "seg_001_036",
+        "second_segment_id": "seg_001_023",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          338,
+          14
+        ],
+        "first_segment_id": "seg_001_036",
+        "second_segment_id": "seg_001_039",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          516,
+          14
+        ],
+        "first_segment_id": "seg_001_036",
+        "second_segment_id": "seg_001_035",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          342,
+          69
+        ],
+        "first_segment_id": "seg_001_055",
+        "second_segment_id": "seg_001_116",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          33,
+          69
+        ],
+        "first_segment_id": "seg_001_055",
+        "second_segment_id": "seg_002_025",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          78,
+          69
+        ],
+        "first_segment_id": "seg_001_055",
+        "second_segment_id": "seg_002_028",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          126,
+          69
+        ],
+        "first_segment_id": "seg_001_055",
+        "second_segment_id": "seg_001_113",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          180,
+          81
+        ],
+        "first_segment_id": "seg_005_001",
+        "second_segment_id": "seg_001_138",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          58,
+          142
+        ],
+        "first_segment_id": "seg_001_044",
+        "second_segment_id": "seg_001_071",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          58,
+          320
+        ],
+        "first_segment_id": "seg_001_044",
+        "second_segment_id": "seg_001_101",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          58,
+          11
+        ],
+        "first_segment_id": "seg_001_044",
+        "second_segment_id": "seg_001_074",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          58,
+          315
+        ],
+        "first_segment_id": "seg_001_044",
+        "second_segment_id": "seg_002_013",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          400,
+          310
+        ],
+        "first_segment_id": "seg_001_004",
+        "second_segment_id": "seg_001_119",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          400,
+          334
+        ],
+        "first_segment_id": "seg_001_004",
+        "second_segment_id": "seg_001_123",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          570,
+          34
+        ],
+        "first_segment_id": "seg_001_020",
+        "second_segment_id": "seg_001_031",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          338,
+          34
+        ],
+        "first_segment_id": "seg_001_020",
+        "second_segment_id": "seg_001_039",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          543,
+          34
+        ],
+        "first_segment_id": "seg_001_020",
+        "second_segment_id": "seg_001_092",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          516,
+          34
+        ],
+        "first_segment_id": "seg_001_020",
+        "second_segment_id": "seg_001_035",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          285,
+          34
+        ],
+        "first_segment_id": "seg_001_020",
+        "second_segment_id": "seg_006_002",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          492,
+          34
+        ],
+        "first_segment_id": "seg_001_020",
+        "second_segment_id": "seg_006_000",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          342,
+          99
+        ],
+        "first_segment_id": "seg_001_116",
+        "second_segment_id": "seg_002_032",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          342,
+          334
+        ],
+        "first_segment_id": "seg_001_116",
+        "second_segment_id": "seg_001_123",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          350,
+          219
+        ],
+        "first_segment_id": "seg_001_012",
+        "second_segment_id": "seg_001_014",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          104,
+          219
+        ],
+        "first_segment_id": "seg_001_012",
+        "second_segment_id": "seg_001_008",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          180,
+          320
+        ],
+        "first_segment_id": "seg_001_138",
+        "second_segment_id": "seg_001_101",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          249,
+          300
+        ],
+        "first_segment_id": "seg_001_047",
+        "second_segment_id": "seg_001_045",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          249,
+          334
+        ],
+        "first_segment_id": "seg_001_047",
+        "second_segment_id": "seg_001_123",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          126,
+          99
+        ],
+        "first_segment_id": "seg_002_032",
+        "second_segment_id": "seg_001_113",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          39,
+          142
+        ],
+        "first_segment_id": "seg_001_075",
+        "second_segment_id": "seg_001_071",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          39,
+          11
+        ],
+        "first_segment_id": "seg_001_075",
+        "second_segment_id": "seg_001_074",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          350,
+          310
+        ],
+        "first_segment_id": "seg_001_119",
+        "second_segment_id": "seg_001_014",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          207,
+          310
+        ],
+        "first_segment_id": "seg_001_119",
+        "second_segment_id": "seg_001_128",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          276,
+          310
+        ],
+        "first_segment_id": "seg_001_119",
+        "second_segment_id": "seg_004_000",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          207,
+          300
+        ],
+        "first_segment_id": "seg_001_045",
+        "second_segment_id": "seg_001_128",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          189,
+          142
+        ],
+        "first_segment_id": "seg_001_130",
+        "second_segment_id": "seg_001_071",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          189,
+          320
+        ],
+        "first_segment_id": "seg_001_130",
+        "second_segment_id": "seg_001_101",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          48,
+          142
+        ],
+        "first_segment_id": "seg_001_102",
+        "second_segment_id": "seg_001_071",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          24,
+          213
+        ],
+        "first_segment_id": "seg_001_052",
+        "second_segment_id": "seg_001_076",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          33,
+          142
+        ],
+        "first_segment_id": "seg_001_071",
+        "second_segment_id": "seg_002_025",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          78,
+          142
+        ],
+        "first_segment_id": "seg_001_071",
+        "second_segment_id": "seg_002_028",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          510,
+          206
+        ],
+        "first_segment_id": "seg_001_025",
+        "second_segment_id": "seg_001_026",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          33,
+          75
+        ],
+        "first_segment_id": "seg_001_139",
+        "second_segment_id": "seg_002_025",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          78,
+          75
+        ],
+        "first_segment_id": "seg_001_139",
+        "second_segment_id": "seg_002_028",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          126,
+          75
+        ],
+        "first_segment_id": "seg_001_139",
+        "second_segment_id": "seg_001_113",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          390,
+          334
+        ],
+        "first_segment_id": "seg_001_123",
+        "second_segment_id": "seg_001_122",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          86,
+          11
+        ],
+        "first_segment_id": "seg_001_042",
+        "second_segment_id": "seg_001_074",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          86,
+          24
+        ],
+        "first_segment_id": "seg_001_042",
+        "second_segment_id": "seg_001_043",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          385,
+          72
+        ],
+        "first_segment_id": "seg_001_002",
+        "second_segment_id": "seg_001_084",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          33,
+          11
+        ],
+        "first_segment_id": "seg_002_025",
+        "second_segment_id": "seg_001_074",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          350,
+          324
+        ],
+        "first_segment_id": "seg_001_014",
+        "second_segment_id": "seg_001_081",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          390,
+          324
+        ],
+        "first_segment_id": "seg_001_081",
+        "second_segment_id": "seg_001_122",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          524,
+          206
+        ],
+        "first_segment_id": "seg_001_027",
+        "second_segment_id": "seg_001_026",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          207,
+          315
+        ],
+        "first_segment_id": "seg_001_128",
+        "second_segment_id": "seg_001_129",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      }
+    ],
+    "build_metrics": {
+      "intersections_candidates_raw": 167,
+      "intersections_detected_raw": 167,
+      "intersections_accepted_initial": 79,
+      "segments_split_initial": 58,
+      "split_edges_created_initial": 207,
+      "intersections_accepted": 16,
+      "segments_split": 11,
+      "split_edges_created": 16,
+      "junction_vertices_created": 0,
+      "max_splits_per_segment": 3,
+      "segments_blocked_from_splitting": 1
+    },
+    "intersections_rejected_by_reason": {
+      "weak_axis_support": 88,
+      "weak_segment_pair": 165
+    },
+    "diagnostics": {
+      "vertex_count": 21,
+      "edge_count": 16,
+      "reduced_degree2_vertices": 6,
+      "pruned_spurs": 4,
+      "collapsed_corridor_groups": 3,
+      "status": "pass",
+      "reason": null
+    },
+    "corridor_group_debug": [
+      {
+        "orientation": "V",
+        "member_segment_ids": [
+          "seg_001_004",
+          "seg_001_017"
+        ],
+        "collapsed": true,
+        "overlap_ratio_estimate": 1.0,
+        "perpendicular_distance": 4,
+        "rejection_reason": null
+      },
+      {
+        "orientation": "V",
+        "member_segment_ids": [
+          "seg_001_042",
+          "seg_001_107"
+        ],
+        "collapsed": true,
+        "overlap_ratio_estimate": 1.0,
+        "perpendicular_distance": 4,
+        "rejection_reason": null
+      },
+      {
+        "orientation": "H",
+        "member_segment_ids": [
+          "seg_001_071",
+          "seg_002_015"
+        ],
+        "collapsed": true,
+        "overlap_ratio_estimate": 1.0,
+        "perpendicular_distance": 4,
+        "rejection_reason": null
+      }
+    ]
+  },
+  "verification": {
+    "edge_overlap_score": 0.3534,
+    "pixel_difference_score": 0.1234,
+    "status": "warn",
+    "notes": [
+      "Rendered output is usable but shows moderate mismatch."
+    ]
+  }
+}

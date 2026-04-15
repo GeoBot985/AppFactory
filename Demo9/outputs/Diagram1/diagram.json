@@ -1,0 +1,4790 @@
+{
+  "schema_version": "1.0.0",
+  "diagram_id": "Diagram1",
+  "source_file": "Diagram1.jpg",
+  "image_width": 653,
+  "image_height": 369,
+  "metadata": {
+    "diagram_metadata": {
+      "source_file": "Diagram1.jpg",
+      "image_width": 653,
+      "image_height": 369,
+      "channels": 3
+    },
+    "separation_debug": {
+      "rejected_artifacts": [
+        {
+          "rejection_reason": "area_exceeds_threshold",
+          "metrics": {
+            "contour_area": 95812,
+            "bbox_area": 195840,
+            "bbox_fill_ratio": 0.4892,
+            "perimeter": 3023,
+            "aspect_ratio": 1.9125,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.9372,
+            "bbox_height_ratio": 0.8672,
+            "bbox_width": 612,
+            "bbox_height": 320
+          }
+        }
+      ],
+      "internal_noise_rejected": [
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 778,
+            "bbox_area": 1152,
+            "bbox_fill_ratio": 0.6758,
+            "perimeter": 214,
+            "aspect_ratio": 8.0,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.147,
+            "bbox_height_ratio": 0.0325,
+            "bbox_width": 96,
+            "bbox_height": 12
+          },
+          "parent_shape_id": "shape_candidate_013"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 650,
+            "bbox_area": 1125,
+            "bbox_fill_ratio": 0.5773,
+            "perimeter": 183,
+            "aspect_ratio": 5.0,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.1149,
+            "bbox_height_ratio": 0.0407,
+            "bbox_width": 75,
+            "bbox_height": 15
+          },
+          "parent_shape_id": "shape_candidate_021"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 568,
+            "bbox_area": 952,
+            "bbox_fill_ratio": 0.5961,
+            "perimeter": 155,
+            "aspect_ratio": 4.8571,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.1041,
+            "bbox_height_ratio": 0.0379,
+            "bbox_width": 68,
+            "bbox_height": 14
+          },
+          "parent_shape_id": "shape_candidate_007"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 561,
+            "bbox_area": 938,
+            "bbox_fill_ratio": 0.5981,
+            "perimeter": 157,
+            "aspect_ratio": 4.7857,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.1026,
+            "bbox_height_ratio": 0.0379,
+            "bbox_width": 67,
+            "bbox_height": 14
+          },
+          "parent_shape_id": "shape_candidate_001"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 562,
+            "bbox_area": 938,
+            "bbox_fill_ratio": 0.5991,
+            "perimeter": 156,
+            "aspect_ratio": 4.7857,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.1026,
+            "bbox_height_ratio": 0.0379,
+            "bbox_width": 67,
+            "bbox_height": 14
+          },
+          "parent_shape_id": "shape_candidate_021"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 572,
+            "bbox_area": 828,
+            "bbox_fill_ratio": 0.6908,
+            "perimeter": 156,
+            "aspect_ratio": 5.75,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.1057,
+            "bbox_height_ratio": 0.0325,
+            "bbox_width": 69,
+            "bbox_height": 12
+          },
+          "parent_shape_id": "shape_candidate_013"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 474,
+            "bbox_area": 825,
+            "bbox_fill_ratio": 0.5745,
+            "perimeter": 135,
+            "aspect_ratio": 3.6667,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.0842,
+            "bbox_height_ratio": 0.0407,
+            "bbox_width": 55,
+            "bbox_height": 15
+          },
+          "parent_shape_id": "shape_candidate_016"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 546,
+            "bbox_area": 748,
+            "bbox_fill_ratio": 0.7299,
+            "perimeter": 153,
+            "aspect_ratio": 6.1818,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.1041,
+            "bbox_height_ratio": 0.0298,
+            "bbox_width": 68,
+            "bbox_height": 11
+          },
+          "parent_shape_id": "shape_candidate_016"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 486,
+            "bbox_area": 732,
+            "bbox_fill_ratio": 0.6646,
+            "perimeter": 139,
+            "aspect_ratio": 5.0833,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.0934,
+            "bbox_height_ratio": 0.0325,
+            "bbox_width": 61,
+            "bbox_height": 12
+          },
+          "parent_shape_id": "shape_candidate_007"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 397,
+            "bbox_area": 686,
+            "bbox_fill_ratio": 0.5787,
+            "perimeter": 117,
+            "aspect_ratio": 3.5,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.075,
+            "bbox_height_ratio": 0.0379,
+            "bbox_width": 49,
+            "bbox_height": 14
+          },
+          "parent_shape_id": "shape_candidate_001"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 314,
+            "bbox_area": 429,
+            "bbox_fill_ratio": 0.7308,
+            "perimeter": 94,
+            "aspect_ratio": 3.5455,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.0597,
+            "bbox_height_ratio": 0.0298,
+            "bbox_width": 39,
+            "bbox_height": 11
+          },
+          "parent_shape_id": "shape_candidate_007"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 302,
+            "bbox_area": 396,
+            "bbox_fill_ratio": 0.7639,
+            "perimeter": 91,
+            "aspect_ratio": 3.2727,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.0551,
+            "bbox_height_ratio": 0.0298,
+            "bbox_width": 36,
+            "bbox_height": 11
+          },
+          "parent_shape_id": "shape_candidate_005"
+        },
+        {
+          "rejection_reason": "too_small_and_enclosed",
+          "metrics": {
+            "contour_area": 302,
+            "bbox_area": 396,
+            "bbox_fill_ratio": 0.7626,
+            "perimeter": 90,
+            "aspect_ratio": 3.2727,
+            "border_touch_count": 0,
+            "bbox_width_ratio": 0.0551,
+            "bbox_height_ratio": 0.0298,
+            "bbox_width": 36,
+            "bbox_height": 11
+          },
+          "parent_shape_id": "shape_candidate_019"
+        }
+      ],
+      "rejected_node_candidates": [
+        {
+          "element_id": "shape_010",
+          "reason": "too_small_for_canonical_node",
+          "bbox": [
+            420,
+            259,
+            21,
+            27
+          ]
+        },
+        {
+          "element_id": "shape_001",
+          "reason": "oversized_non_rectangular_mass",
+          "bbox": [
+            60,
+            152,
+            203,
+            158
+          ]
+        },
+        {
+          "element_id": "shape_002",
+          "reason": "oversized_non_rectangular_mass",
+          "bbox": [
+            267,
+            140,
+            157,
+            170
+          ]
+        }
+      ]
+    },
+    "structural_render": {
+      "uses_canonical_nodes_only": true,
+      "uses_snapped_connectors_only": false,
+      "uses_graph_routed_connectors_only": true,
+      "fallback_to_contours": false,
+      "diagnostics": []
+    },
+    "graph_sanity": {
+      "vertex_count": 18,
+      "edge_count": 14,
+      "reduced_degree2_vertices": 3,
+      "pruned_spurs": 3,
+      "collapsed_corridor_groups": 1,
+      "status": "pass",
+      "reason": null
+    },
+    "graph_counter_stages": {
+      "intersections_accepted_initial": "accepted intersections before graph cleanup and route-relevant export filtering",
+      "segments_split_initial": "segments split before graph cleanup and route-relevant export filtering",
+      "split_edges_created_initial": "split edges created before graph cleanup and route-relevant export filtering",
+      "final_graph_vertices": "count of exported graph.vertices",
+      "final_graph_edges": "count of exported graph.edges",
+      "final_graph_junction_vertices": "exported graph vertices with degree >= 3",
+      "final_graph_bend_vertices": "exported graph vertices with degree == 2",
+      "final_graph_endpoint_vertices": "exported graph vertices with degree == 1",
+      "intersections_accepted": "legacy alias for final exported graph crossing points",
+      "junction_vertices_created": "legacy alias for final_graph_junction_vertices"
+    },
+    "noise_metrics": {
+      "noise_artifacts_rejected": 1,
+      "noise_internal_rejected": 13,
+      "noise_node_candidates_rejected": 3,
+      "noise_segments_filtered_pre_intersection": 0,
+      "noise_intersections_rejected": 31,
+      "noise_spurs_pruned": 3,
+      "noise_final_components_pruned": 28
+    }
+  },
+  "processing_parameters": {
+    "blur_kernel_size": 5,
+    "clahe_clip_limit": 2.0,
+    "clahe_grid_size": 8,
+    "adaptive_block_size": 31,
+    "adaptive_c": 7,
+    "canny_low": 50,
+    "canny_high": 150,
+    "canny_aperture_size": 3,
+    "min_contour_area": 150,
+    "contour_epsilon_ratio": 0.02,
+    "shape_close_kernel_size": 7,
+    "shape_dilate_kernel_size": 3,
+    "min_shape_area": 250,
+    "max_shape_area_ratio": 0.28,
+    "artifact_border_margin": 6,
+    "artifact_border_touch_reject_count": 2,
+    "artifact_extreme_span_ratio": 0.88,
+    "artifact_frame_fill_ratio_threshold": 0.35,
+    "internal_containment_margin": 5,
+    "internal_small_box_area_limit": 1400,
+    "internal_text_like_max_height": 18,
+    "internal_text_like_aspect_ratio": 3.0,
+    "internal_child_area_ratio_threshold": 0.16,
+    "internal_child_bbox_area_ratio_threshold": 0.18,
+    "node_outward_padding": 6,
+    "node_inward_padding": 2,
+    "node_gate_padding": 3,
+    "node_gate_min_span": 6,
+    "node_gate_max_span": 14,
+    "node_label_height_ratio": 0.35,
+    "node_overlap_reject_iou": 0.32,
+    "node_contains_multiple_reject": 2,
+    "connector_hough_threshold": 12,
+    "connector_min_line_length": 12,
+    "connector_max_line_gap": 18,
+    "connector_orientation_tolerance": 10.0,
+    "connector_merge_gap_threshold": 18,
+    "connector_merge_angle_tolerance": 10.0,
+    "connector_min_merged_path_length": 18,
+    "connector_snap_distance_tolerance": 18,
+    "connector_directional_axis_ratio": 1.4,
+    "graph_orth_axis_tolerance": 3,
+    "graph_spur_min_length": 12,
+    "graph_intersection_continuity_radius": 2,
+    "graph_endpoint_intersection_tolerance": 8,
+    "graph_gate_attach_tolerance": 20,
+    "simplify_axis_snap_tolerance": 3,
+    "simplify_merge_gap_tolerance": 18,
+    "simplify_parallel_offset_tolerance": 3,
+    "corridor_overlap_ratio_min": 0.2,
+    "corridor_parallel_distance_max": 4,
+    "corridor_min_group_size": 2,
+    "spur_prune_length": 12,
+    "graph_component_gate_distance_max": 25,
+    "graph_micro_bend_threshold": 10,
+    "graph_vertices_warn": 80,
+    "graph_vertices_fail": 120,
+    "graph_edges_warn": 100,
+    "graph_edges_fail": 160,
+    "expected_min_nodes": 6,
+    "edge_overlap_pass": 0.5,
+    "edge_overlap_warn": 0.25,
+    "pixel_diff_pass": 0.08,
+    "pixel_diff_warn": 0.16
+  },
+  "separation_summary": {
+    "raw_contours_found": 24,
+    "shape_candidates_before_internal_filter": 23,
+    "shape_mask_contours_found": 10,
+    "artifacts_rejected": 1,
+    "internal_noise_rejected": 13,
+    "connector_fragments_found": 55,
+    "connector_paths_merged": 7,
+    "canonical_nodes_kept": 7,
+    "segments_raw": 124,
+    "segments_before_simplification": 124,
+    "segments_after_collinear_merge": 52,
+    "segments_after_corridor_grouping": 1,
+    "segments_after_corridor_collapse": 51,
+    "segments_after_dominance_filter": 51,
+    "corridor_groups_collapsed": 1,
+    "spurs_pruned": 3,
+    "degree2_vertices_removed": 3,
+    "degree2_endpoints_reclassified": 5,
+    "gate_stubs_absorbed": 1,
+    "micro_bends_removed": 0,
+    "corridor_contacts_snapped": 1,
+    "degree2_vertices_removed_post_attach": 3,
+    "graph_vertices_before_degree2": 116,
+    "graph_vertices_after_degree2": 116,
+    "gate_relevant_components_kept": 28,
+    "graph_vertices": 18,
+    "graph_edges": 14,
+    "route_count": 5,
+    "graph_sanity_status": "pass",
+    "intersections_candidates_raw": 66,
+    "intersections_detected_raw": 66,
+    "intersections_accepted_initial": 35,
+    "segments_split_initial": 30,
+    "split_edges_created_initial": 103,
+    "intersections_accepted": 14,
+    "segments_split": 10,
+    "split_edges_created": 14,
+    "junction_vertices_created": 1,
+    "max_splits_per_segment": 3,
+    "segments_blocked_from_splitting": 0,
+    "final_graph_vertices": 18,
+    "final_graph_edges": 14,
+    "final_graph_junction_vertices": 1,
+    "final_graph_bend_vertices": 8,
+    "final_graph_endpoint_vertices": 9
+  },
+  "elements": [
+    {
+      "id": "shape_003",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            379,
+            170
+          ],
+          [
+            494,
+            170
+          ],
+          [
+            496,
+            172
+          ],
+          [
+            496,
+            255
+          ],
+          [
+            494,
+            257
+          ],
+          [
+            379,
+            257
+          ],
+          [
+            377,
+            255
+          ],
+          [
+            377,
+            172
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 10345,
+        "perimeter": 407
+      },
+      "interpreted_geometry": {
+        "shape_type": "rectangle-like",
+        "path_type": null,
+        "render_points": [
+          [
+            377,
+            172
+          ],
+          [
+            494,
+            170
+          ],
+          [
+            496,
+            255
+          ],
+          [
+            379,
+            257
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        377,
+        170,
+        119,
+        87
+      ],
+      "center": [
+        436,
+        214
+      ],
+      "confidence": 0.9,
+      "debug": {
+        "approx_vertices": 4,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 10345,
+          "bbox_area": 10560,
+          "bbox_fill_ratio": 0.9796,
+          "perimeter": 407,
+          "aspect_ratio": 1.3636,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.2385,
+          "bbox_width": 120,
+          "bbox_height": 88
+        },
+        "canonical_node_id": "node_003"
+      }
+    },
+    {
+      "id": "shape_004",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            379,
+            288
+          ],
+          [
+            494,
+            288
+          ],
+          [
+            496,
+            290
+          ],
+          [
+            496,
+            337
+          ],
+          [
+            494,
+            339
+          ],
+          [
+            379,
+            339
+          ],
+          [
+            377,
+            337
+          ],
+          [
+            377,
+            290
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 6061,
+        "perimeter": 335
+      },
+      "interpreted_geometry": {
+        "shape_type": "rectangle-like",
+        "path_type": null,
+        "render_points": [
+          [
+            377,
+            290
+          ],
+          [
+            494,
+            288
+          ],
+          [
+            496,
+            337
+          ],
+          [
+            379,
+            339
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        377,
+        288,
+        119,
+        51
+      ],
+      "center": [
+        436,
+        314
+      ],
+      "confidence": 0.9,
+      "debug": {
+        "approx_vertices": 4,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 6061,
+          "bbox_area": 6240,
+          "bbox_fill_ratio": 0.9713,
+          "perimeter": 335,
+          "aspect_ratio": 2.3077,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.1409,
+          "bbox_width": 120,
+          "bbox_height": 52
+        },
+        "canonical_node_id": "node_001"
+      }
+    },
+    {
+      "id": "shape_005",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            217,
+            122
+          ],
+          [
+            332,
+            122
+          ],
+          [
+            334,
+            124
+          ],
+          [
+            334,
+            171
+          ],
+          [
+            332,
+            173
+          ],
+          [
+            217,
+            173
+          ],
+          [
+            215,
+            171
+          ],
+          [
+            215,
+            124
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 6061,
+        "perimeter": 335
+      },
+      "interpreted_geometry": {
+        "shape_type": "rectangle-like",
+        "path_type": null,
+        "render_points": [
+          [
+            215,
+            124
+          ],
+          [
+            332,
+            122
+          ],
+          [
+            334,
+            171
+          ],
+          [
+            217,
+            173
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        215,
+        122,
+        119,
+        51
+      ],
+      "center": [
+        274,
+        148
+      ],
+      "confidence": 0.9,
+      "debug": {
+        "approx_vertices": 4,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 6061,
+          "bbox_area": 6240,
+          "bbox_fill_ratio": 0.9713,
+          "perimeter": 335,
+          "aspect_ratio": 2.3077,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.1409,
+          "bbox_width": 120,
+          "bbox_height": 52
+        },
+        "canonical_node_id": "node_006"
+      }
+    },
+    {
+      "id": "shape_006",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            30,
+            122
+          ],
+          [
+            145,
+            122
+          ],
+          [
+            147,
+            124
+          ],
+          [
+            147,
+            171
+          ],
+          [
+            145,
+            173
+          ],
+          [
+            30,
+            173
+          ],
+          [
+            28,
+            171
+          ],
+          [
+            28,
+            124
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 6061,
+        "perimeter": 335
+      },
+      "interpreted_geometry": {
+        "shape_type": "rectangle-like",
+        "path_type": null,
+        "render_points": [
+          [
+            28,
+            124
+          ],
+          [
+            145,
+            122
+          ],
+          [
+            147,
+            171
+          ],
+          [
+            30,
+            173
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        28,
+        122,
+        119,
+        51
+      ],
+      "center": [
+        88,
+        148
+      ],
+      "confidence": 0.9,
+      "debug": {
+        "approx_vertices": 4,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 6061,
+          "bbox_area": 6240,
+          "bbox_fill_ratio": 0.9713,
+          "perimeter": 335,
+          "aspect_ratio": 2.3077,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.1409,
+          "bbox_width": 120,
+          "bbox_height": 52
+        },
+        "canonical_node_id": "node_007"
+      }
+    },
+    {
+      "id": "shape_007",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            30,
+            24
+          ],
+          [
+            145,
+            24
+          ],
+          [
+            147,
+            26
+          ],
+          [
+            147,
+            73
+          ],
+          [
+            145,
+            75
+          ],
+          [
+            30,
+            75
+          ],
+          [
+            28,
+            73
+          ],
+          [
+            28,
+            26
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 6061,
+        "perimeter": 335
+      },
+      "interpreted_geometry": {
+        "shape_type": "rectangle-like",
+        "path_type": null,
+        "render_points": [
+          [
+            28,
+            26
+          ],
+          [
+            145,
+            24
+          ],
+          [
+            147,
+            73
+          ],
+          [
+            30,
+            75
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        28,
+        24,
+        119,
+        51
+      ],
+      "center": [
+        88,
+        50
+      ],
+      "confidence": 0.9,
+      "debug": {
+        "approx_vertices": 4,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 6061,
+          "bbox_area": 6240,
+          "bbox_fill_ratio": 0.9713,
+          "perimeter": 335,
+          "aspect_ratio": 2.3077,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.1409,
+          "bbox_width": 120,
+          "bbox_height": 52
+        },
+        "canonical_node_id": "node_002"
+      }
+    },
+    {
+      "id": "shape_008",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            550,
+            99
+          ],
+          [
+            626,
+            99
+          ],
+          [
+            628,
+            101
+          ],
+          [
+            628,
+            136
+          ],
+          [
+            626,
+            138
+          ],
+          [
+            550,
+            138
+          ],
+          [
+            548,
+            136
+          ],
+          [
+            548,
+            101
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 3112,
+        "perimeter": 233
+      },
+      "interpreted_geometry": {
+        "shape_type": "rectangle-like",
+        "path_type": null,
+        "render_points": [
+          [
+            548,
+            101
+          ],
+          [
+            626,
+            99
+          ],
+          [
+            628,
+            136
+          ],
+          [
+            550,
+            138
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        548,
+        99,
+        80,
+        39
+      ],
+      "center": [
+        588,
+        118
+      ],
+      "confidence": 0.9,
+      "debug": {
+        "approx_vertices": 4,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 3112,
+          "bbox_area": 3240,
+          "bbox_fill_ratio": 0.9605,
+          "perimeter": 233,
+          "aspect_ratio": 2.025,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.124,
+          "bbox_height_ratio": 0.1084,
+          "bbox_width": 81,
+          "bbox_height": 40
+        },
+        "canonical_node_id": "node_004"
+      }
+    },
+    {
+      "id": "shape_009",
+      "element_type": "shape_candidate",
+      "raw_geometry": {
+        "outline_points": [
+          [
+            556,
+            239
+          ],
+          [
+            633,
+            239
+          ],
+          [
+            635,
+            241
+          ],
+          [
+            635,
+            267
+          ],
+          [
+            633,
+            269
+          ],
+          [
+            556,
+            269
+          ],
+          [
+            554,
+            267
+          ],
+          [
+            554,
+            241
+          ]
+        ],
+        "path_points": [],
+        "contour_area": 2422,
+        "perimeter": 217
+      },
+      "interpreted_geometry": {
+        "shape_type": "rectangle-like",
+        "path_type": null,
+        "render_points": [
+          [
+            554,
+            241
+          ],
+          [
+            633,
+            239
+          ],
+          [
+            635,
+            267
+          ],
+          [
+            556,
+            269
+          ]
+        ],
+        "closed": true
+      },
+      "bbox": [
+        554,
+        239,
+        81,
+        30
+      ],
+      "center": [
+        594,
+        254
+      ],
+      "confidence": 0.9,
+      "debug": {
+        "approx_vertices": 4,
+        "source_mask": "shape_mask",
+        "parent_shape_id": null,
+        "is_internal_noise": false,
+        "rejection_reason": null,
+        "separation_metrics": {
+          "contour_area": 2422,
+          "bbox_area": 2542,
+          "bbox_fill_ratio": 0.9528,
+          "perimeter": 217,
+          "aspect_ratio": 2.6452,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1256,
+          "bbox_height_ratio": 0.084,
+          "bbox_width": 82,
+          "bbox_height": 31
+        },
+        "canonical_node_id": "node_005"
+      }
+    },
+    {
+      "id": "connector_001",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            496,
+            213
+          ],
+          [
+            497,
+            213
+          ],
+          [
+            497,
+            225
+          ],
+          [
+            636,
+            225
+          ],
+          [
+            636,
+            254
+          ],
+          [
+            635,
+            254
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            496,
+            213
+          ],
+          [
+            497,
+            213
+          ],
+          [
+            497,
+            225
+          ],
+          [
+            636,
+            225
+          ],
+          [
+            636,
+            254
+          ],
+          [
+            635,
+            254
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        496,
+        213,
+        140,
+        41
+      ],
+      "center": [
+        566,
+        234
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_003",
+        "dst_node_id": "node_005",
+        "src_side": "right",
+        "dst_side": "right",
+        "src_attachment": {
+          "node_id": "node_003",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_005",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_002",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            377,
+            213
+          ],
+          [
+            376,
+            213
+          ],
+          [
+            376,
+            322
+          ],
+          [
+            496,
+            322
+          ],
+          [
+            496,
+            313
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            377,
+            213
+          ],
+          [
+            376,
+            213
+          ],
+          [
+            376,
+            322
+          ],
+          [
+            496,
+            322
+          ],
+          [
+            496,
+            313
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        376,
+        213,
+        120,
+        109
+      ],
+      "center": [
+        436,
+        268
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_003",
+        "dst_node_id": "node_001",
+        "src_side": "left",
+        "dst_side": "right",
+        "src_attachment": {
+          "node_id": "node_003",
+          "side": "left",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_001",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_003",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            436,
+            170
+          ],
+          [
+            436,
+            171
+          ],
+          [
+            441,
+            171
+          ],
+          [
+            441,
+            138
+          ],
+          [
+            588,
+            138
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            436,
+            170
+          ],
+          [
+            436,
+            171
+          ],
+          [
+            441,
+            171
+          ],
+          [
+            441,
+            138
+          ],
+          [
+            588,
+            138
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        436,
+        138,
+        152,
+        33
+      ],
+      "center": [
+        512,
+        154
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_003",
+        "dst_node_id": "node_004",
+        "src_side": "top",
+        "dst_side": "bottom",
+        "src_attachment": {
+          "node_id": "node_003",
+          "side": "top",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_004",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_004",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            588,
+            138
+          ],
+          [
+            447,
+            138
+          ],
+          [
+            447,
+            268
+          ],
+          [
+            588,
+            268
+          ],
+          [
+            588,
+            269
+          ],
+          [
+            594,
+            269
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            588,
+            138
+          ],
+          [
+            447,
+            138
+          ],
+          [
+            447,
+            268
+          ],
+          [
+            588,
+            268
+          ],
+          [
+            588,
+            269
+          ],
+          [
+            594,
+            269
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        447,
+        138,
+        147,
+        131
+      ],
+      "center": [
+        520,
+        204
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_004",
+        "dst_node_id": "node_005",
+        "src_side": "bottom",
+        "dst_side": "bottom",
+        "src_attachment": {
+          "node_id": "node_004",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_005",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_005",
+      "element_type": "connector_candidate",
+      "raw_geometry": {
+        "outline_points": [],
+        "path_points": [
+          [
+            87,
+            75
+          ],
+          [
+            87,
+            74
+          ],
+          [
+            92,
+            74
+          ],
+          [
+            92,
+            173
+          ],
+          [
+            87,
+            173
+          ]
+        ],
+        "contour_area": 0,
+        "perimeter": 0
+      },
+      "interpreted_geometry": {
+        "shape_type": null,
+        "path_type": "polyline",
+        "render_points": [
+          [
+            87,
+            75
+          ],
+          [
+            87,
+            74
+          ],
+          [
+            92,
+            74
+          ],
+          [
+            92,
+            173
+          ],
+          [
+            87,
+            173
+          ]
+        ],
+        "closed": false
+      },
+      "bbox": [
+        87,
+        74,
+        5,
+        99
+      ],
+      "center": [
+        90,
+        124
+      ],
+      "confidence": 0.85,
+      "debug": {
+        "source_mask": "protected_connector_space",
+        "src_node_id": "node_002",
+        "dst_node_id": "node_007",
+        "src_side": "bottom",
+        "dst_side": "bottom",
+        "src_attachment": {
+          "node_id": "node_002",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_007",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "node_001",
+      "bbox": [
+        377,
+        288,
+        119,
+        51
+      ],
+      "center": [
+        436,
+        313
+      ],
+      "side_midpoints": {
+        "top": [
+          436,
+          288
+        ],
+        "right": [
+          496,
+          313
+        ],
+        "bottom": [
+          436,
+          339
+        ],
+        "left": [
+          377,
+          313
+        ]
+      },
+      "expanded_bbox": [
+        371,
+        282,
+        131,
+        63
+      ],
+      "label_region": [
+        381,
+        292,
+        111,
+        18
+      ],
+      "gates": {
+        "top": [
+          436,
+          288
+        ],
+        "right": [
+          496,
+          313
+        ],
+        "bottom": [
+          436,
+          339
+        ],
+        "left": [
+          377,
+          313
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            427,
+            288
+          ],
+          [
+            445,
+            288
+          ]
+        ],
+        "bottom": [
+          [
+            427,
+            339
+          ],
+          [
+            445,
+            339
+          ]
+        ],
+        "left": [
+          [
+            377,
+            304
+          ],
+          [
+            377,
+            322
+          ]
+        ],
+        "right": [
+          [
+            496,
+            304
+          ],
+          [
+            496,
+            322
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_004",
+        "shape_type": "rectangle-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 6061,
+          "bbox_area": 6240,
+          "bbox_fill_ratio": 0.9713,
+          "perimeter": 335,
+          "aspect_ratio": 2.3077,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.1409,
+          "bbox_width": 120,
+          "bbox_height": 52
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_002",
+      "bbox": [
+        28,
+        24,
+        119,
+        51
+      ],
+      "center": [
+        87,
+        49
+      ],
+      "side_midpoints": {
+        "top": [
+          87,
+          24
+        ],
+        "right": [
+          147,
+          49
+        ],
+        "bottom": [
+          87,
+          75
+        ],
+        "left": [
+          28,
+          49
+        ]
+      },
+      "expanded_bbox": [
+        22,
+        18,
+        131,
+        63
+      ],
+      "label_region": [
+        32,
+        28,
+        111,
+        18
+      ],
+      "gates": {
+        "top": [
+          87,
+          24
+        ],
+        "right": [
+          147,
+          49
+        ],
+        "bottom": [
+          87,
+          75
+        ],
+        "left": [
+          28,
+          49
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            78,
+            24
+          ],
+          [
+            96,
+            24
+          ]
+        ],
+        "bottom": [
+          [
+            78,
+            75
+          ],
+          [
+            96,
+            75
+          ]
+        ],
+        "left": [
+          [
+            28,
+            40
+          ],
+          [
+            28,
+            58
+          ]
+        ],
+        "right": [
+          [
+            147,
+            40
+          ],
+          [
+            147,
+            58
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_007",
+        "shape_type": "rectangle-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 6061,
+          "bbox_area": 6240,
+          "bbox_fill_ratio": 0.9713,
+          "perimeter": 335,
+          "aspect_ratio": 2.3077,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.1409,
+          "bbox_width": 120,
+          "bbox_height": 52
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_003",
+      "bbox": [
+        377,
+        170,
+        119,
+        87
+      ],
+      "center": [
+        436,
+        213
+      ],
+      "side_midpoints": {
+        "top": [
+          436,
+          170
+        ],
+        "right": [
+          496,
+          213
+        ],
+        "bottom": [
+          436,
+          257
+        ],
+        "left": [
+          377,
+          213
+        ]
+      },
+      "expanded_bbox": [
+        371,
+        164,
+        131,
+        99
+      ],
+      "label_region": [
+        381,
+        174,
+        111,
+        30
+      ],
+      "gates": {
+        "top": [
+          436,
+          170
+        ],
+        "right": [
+          496,
+          213
+        ],
+        "bottom": [
+          436,
+          257
+        ],
+        "left": [
+          377,
+          213
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            422,
+            170
+          ],
+          [
+            450,
+            170
+          ]
+        ],
+        "bottom": [
+          [
+            422,
+            257
+          ],
+          [
+            450,
+            257
+          ]
+        ],
+        "left": [
+          [
+            377,
+            199
+          ],
+          [
+            377,
+            227
+          ]
+        ],
+        "right": [
+          [
+            496,
+            199
+          ],
+          [
+            496,
+            227
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_003",
+        "shape_type": "rectangle-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 10345,
+          "bbox_area": 10560,
+          "bbox_fill_ratio": 0.9796,
+          "perimeter": 407,
+          "aspect_ratio": 1.3636,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.2385,
+          "bbox_width": 120,
+          "bbox_height": 88
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 1
+      }
+    },
+    {
+      "id": "node_004",
+      "bbox": [
+        548,
+        99,
+        80,
+        39
+      ],
+      "center": [
+        588,
+        118
+      ],
+      "side_midpoints": {
+        "top": [
+          588,
+          99
+        ],
+        "right": [
+          628,
+          118
+        ],
+        "bottom": [
+          588,
+          138
+        ],
+        "left": [
+          548,
+          118
+        ]
+      },
+      "expanded_bbox": [
+        542,
+        93,
+        92,
+        51
+      ],
+      "label_region": [
+        552,
+        103,
+        72,
+        14
+      ],
+      "gates": {
+        "top": [
+          588,
+          99
+        ],
+        "right": [
+          628,
+          118
+        ],
+        "bottom": [
+          588,
+          138
+        ],
+        "left": [
+          548,
+          118
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            581,
+            99
+          ],
+          [
+            595,
+            99
+          ]
+        ],
+        "bottom": [
+          [
+            581,
+            138
+          ],
+          [
+            595,
+            138
+          ]
+        ],
+        "left": [
+          [
+            548,
+            111
+          ],
+          [
+            548,
+            125
+          ]
+        ],
+        "right": [
+          [
+            628,
+            111
+          ],
+          [
+            628,
+            125
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_008",
+        "shape_type": "rectangle-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 3112,
+          "bbox_area": 3240,
+          "bbox_fill_ratio": 0.9605,
+          "perimeter": 233,
+          "aspect_ratio": 2.025,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.124,
+          "bbox_height_ratio": 0.1084,
+          "bbox_width": 81,
+          "bbox_height": 40
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_005",
+      "bbox": [
+        554,
+        239,
+        81,
+        30
+      ],
+      "center": [
+        594,
+        254
+      ],
+      "side_midpoints": {
+        "top": [
+          594,
+          239
+        ],
+        "right": [
+          635,
+          254
+        ],
+        "bottom": [
+          594,
+          269
+        ],
+        "left": [
+          554,
+          254
+        ]
+      },
+      "expanded_bbox": [
+        548,
+        233,
+        93,
+        42
+      ],
+      "label_region": [
+        558,
+        243,
+        73,
+        12
+      ],
+      "gates": {
+        "top": [
+          594,
+          239
+        ],
+        "right": [
+          635,
+          254
+        ],
+        "bottom": [
+          594,
+          269
+        ],
+        "left": [
+          554,
+          254
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            588,
+            239
+          ],
+          [
+            600,
+            239
+          ]
+        ],
+        "bottom": [
+          [
+            588,
+            269
+          ],
+          [
+            600,
+            269
+          ]
+        ],
+        "left": [
+          [
+            554,
+            248
+          ],
+          [
+            554,
+            260
+          ]
+        ],
+        "right": [
+          [
+            635,
+            248
+          ],
+          [
+            635,
+            260
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_009",
+        "shape_type": "rectangle-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 2422,
+          "bbox_area": 2542,
+          "bbox_fill_ratio": 0.9528,
+          "perimeter": 217,
+          "aspect_ratio": 2.6452,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1256,
+          "bbox_height_ratio": 0.084,
+          "bbox_width": 82,
+          "bbox_height": 31
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 0
+      }
+    },
+    {
+      "id": "node_006",
+      "bbox": [
+        215,
+        122,
+        119,
+        51
+      ],
+      "center": [
+        274,
+        147
+      ],
+      "side_midpoints": {
+        "top": [
+          274,
+          122
+        ],
+        "right": [
+          334,
+          147
+        ],
+        "bottom": [
+          274,
+          173
+        ],
+        "left": [
+          215,
+          147
+        ]
+      },
+      "expanded_bbox": [
+        209,
+        116,
+        131,
+        63
+      ],
+      "label_region": [
+        219,
+        126,
+        111,
+        18
+      ],
+      "gates": {
+        "top": [
+          274,
+          122
+        ],
+        "right": [
+          334,
+          147
+        ],
+        "bottom": [
+          274,
+          173
+        ],
+        "left": [
+          215,
+          147
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            265,
+            122
+          ],
+          [
+            283,
+            122
+          ]
+        ],
+        "bottom": [
+          [
+            265,
+            173
+          ],
+          [
+            283,
+            173
+          ]
+        ],
+        "left": [
+          [
+            215,
+            138
+          ],
+          [
+            215,
+            156
+          ]
+        ],
+        "right": [
+          [
+            334,
+            138
+          ],
+          [
+            334,
+            156
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_005",
+        "shape_type": "rectangle-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 6061,
+          "bbox_area": 6240,
+          "bbox_fill_ratio": 0.9713,
+          "perimeter": 335,
+          "aspect_ratio": 2.3077,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.1409,
+          "bbox_width": 120,
+          "bbox_height": 52
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 1
+      }
+    },
+    {
+      "id": "node_007",
+      "bbox": [
+        28,
+        122,
+        119,
+        51
+      ],
+      "center": [
+        87,
+        147
+      ],
+      "side_midpoints": {
+        "top": [
+          87,
+          122
+        ],
+        "right": [
+          147,
+          147
+        ],
+        "bottom": [
+          87,
+          173
+        ],
+        "left": [
+          28,
+          147
+        ]
+      },
+      "expanded_bbox": [
+        22,
+        116,
+        131,
+        63
+      ],
+      "label_region": [
+        32,
+        126,
+        111,
+        18
+      ],
+      "gates": {
+        "top": [
+          87,
+          122
+        ],
+        "right": [
+          147,
+          147
+        ],
+        "bottom": [
+          87,
+          173
+        ],
+        "left": [
+          28,
+          147
+        ]
+      },
+      "gate_segments": {
+        "top": [
+          [
+            78,
+            122
+          ],
+          [
+            96,
+            122
+          ]
+        ],
+        "bottom": [
+          [
+            78,
+            173
+          ],
+          [
+            96,
+            173
+          ]
+        ],
+        "left": [
+          [
+            28,
+            138
+          ],
+          [
+            28,
+            156
+          ]
+        ],
+        "right": [
+          [
+            147,
+            138
+          ],
+          [
+            147,
+            156
+          ]
+        ]
+      },
+      "debug": {
+        "source_element_id": "shape_006",
+        "shape_type": "rectangle-like",
+        "frozen": true,
+        "source_metrics": {
+          "contour_area": 6061,
+          "bbox_area": 6240,
+          "bbox_fill_ratio": 0.9713,
+          "perimeter": 335,
+          "aspect_ratio": 2.3077,
+          "border_touch_count": 0,
+          "bbox_width_ratio": 0.1838,
+          "bbox_height_ratio": 0.1409,
+          "bbox_width": 120,
+          "bbox_height": 52
+        },
+        "bbox_frozen": true,
+        "contains_count": 0,
+        "overlaps_count": 1
+      }
+    }
+  ],
+  "connectors": [
+    {
+      "id": "connector_001",
+      "points": [
+        [
+          496,
+          213
+        ],
+        [
+          497,
+          213
+        ],
+        [
+          497,
+          225
+        ],
+        [
+          636,
+          225
+        ],
+        [
+          636,
+          254
+        ],
+        [
+          635,
+          254
+        ]
+      ],
+      "src_node_id": "node_003",
+      "src_side": "right",
+      "dst_node_id": "node_005",
+      "dst_side": "right",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_003",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_005",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_002",
+      "points": [
+        [
+          377,
+          213
+        ],
+        [
+          376,
+          213
+        ],
+        [
+          376,
+          322
+        ],
+        [
+          496,
+          322
+        ],
+        [
+          496,
+          313
+        ]
+      ],
+      "src_node_id": "node_003",
+      "src_side": "left",
+      "dst_node_id": "node_001",
+      "dst_side": "right",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_003",
+          "side": "left",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_001",
+          "side": "right",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_003",
+      "points": [
+        [
+          436,
+          170
+        ],
+        [
+          436,
+          171
+        ],
+        [
+          441,
+          171
+        ],
+        [
+          441,
+          138
+        ],
+        [
+          588,
+          138
+        ]
+      ],
+      "src_node_id": "node_003",
+      "src_side": "top",
+      "dst_node_id": "node_004",
+      "dst_side": "bottom",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_003",
+          "side": "top",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_004",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_004",
+      "points": [
+        [
+          588,
+          138
+        ],
+        [
+          447,
+          138
+        ],
+        [
+          447,
+          268
+        ],
+        [
+          588,
+          268
+        ],
+        [
+          588,
+          269
+        ],
+        [
+          594,
+          269
+        ]
+      ],
+      "src_node_id": "node_004",
+      "src_side": "bottom",
+      "dst_node_id": "node_005",
+      "dst_side": "bottom",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_004",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_005",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    },
+    {
+      "id": "connector_005",
+      "points": [
+        [
+          87,
+          75
+        ],
+        [
+          87,
+          74
+        ],
+        [
+          92,
+          74
+        ],
+        [
+          92,
+          173
+        ],
+        [
+          87,
+          173
+        ]
+      ],
+      "src_node_id": "node_002",
+      "src_side": "bottom",
+      "dst_node_id": "node_007",
+      "dst_side": "bottom",
+      "confidence": 0.85,
+      "debug": {
+        "src_attachment": {
+          "node_id": "node_002",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "dst_attachment": {
+          "node_id": "node_007",
+          "side": "bottom",
+          "distance": 0.0,
+          "snapped": true
+        },
+        "orphan": false
+      }
+    }
+  ],
+  "routes": [
+    {
+      "id": "route_001",
+      "src_node_id": "node_003",
+      "src_side": "right",
+      "dst_node_id": "node_005",
+      "dst_side": "right",
+      "vertex_path": [
+        "v_072",
+        "v_073",
+        "v_074",
+        "v_093"
+      ],
+      "points": [
+        [
+          496,
+          213
+        ],
+        [
+          497,
+          213
+        ],
+        [
+          497,
+          225
+        ],
+        [
+          636,
+          225
+        ],
+        [
+          636,
+          254
+        ],
+        [
+          635,
+          254
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 3,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_072",
+          "v_093"
+        ],
+        "attachment_distances": [
+          12.04,
+          29.07
+        ],
+        "attachment_distance_sum": 41.11,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 8,
+        "point_count_after_cleanup": 6,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 5
+      }
+    },
+    {
+      "id": "route_002",
+      "src_node_id": "node_003",
+      "src_side": "left",
+      "dst_node_id": "node_001",
+      "dst_side": "right",
+      "vertex_path": [
+        "v_068",
+        "v_108",
+        "v_109"
+      ],
+      "points": [
+        [
+          377,
+          213
+        ],
+        [
+          376,
+          213
+        ],
+        [
+          376,
+          322
+        ],
+        [
+          496,
+          322
+        ],
+        [
+          496,
+          313
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 2,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_068",
+          "v_109"
+        ],
+        "attachment_distances": [
+          85.59,
+          26.0
+        ],
+        "attachment_distance_sum": 111.59,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 6,
+        "point_count_after_cleanup": 5,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 10
+      }
+    },
+    {
+      "id": "route_003",
+      "src_node_id": "node_003",
+      "src_side": "top",
+      "dst_node_id": "node_004",
+      "dst_side": "bottom",
+      "vertex_path": [
+        "v_056",
+        "v_043",
+        "v_044",
+        "v_045"
+      ],
+      "points": [
+        [
+          436,
+          170
+        ],
+        [
+          436,
+          171
+        ],
+        [
+          441,
+          171
+        ],
+        [
+          441,
+          138
+        ],
+        [
+          588,
+          138
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 3,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_056",
+          "v_045"
+        ],
+        "attachment_distances": [
+          32.25,
+          9.0
+        ],
+        "attachment_distance_sum": 41.25,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 7,
+        "point_count_after_cleanup": 5,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 4
+      }
+    },
+    {
+      "id": "route_004",
+      "src_node_id": "node_004",
+      "src_side": "bottom",
+      "dst_node_id": "node_005",
+      "dst_side": "bottom",
+      "vertex_path": [
+        "v_045",
+        "v_044",
+        "v_057",
+        "v_090",
+        "v_095",
+        "v_097",
+        "v_100"
+      ],
+      "points": [
+        [
+          588,
+          138
+        ],
+        [
+          447,
+          138
+        ],
+        [
+          447,
+          268
+        ],
+        [
+          588,
+          268
+        ],
+        [
+          588,
+          269
+        ],
+        [
+          594,
+          269
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 6,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_045",
+          "v_100"
+        ],
+        "attachment_distances": [
+          59.0,
+          6.0
+        ],
+        "attachment_distance_sum": 65.0,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 9,
+        "point_count_after_cleanup": 6,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 6
+      }
+    },
+    {
+      "id": "route_005",
+      "src_node_id": "node_002",
+      "src_side": "bottom",
+      "dst_node_id": "node_007",
+      "dst_side": "bottom",
+      "vertex_path": [
+        "v_017",
+        "v_062"
+      ],
+      "points": [
+        [
+          87,
+          75
+        ],
+        [
+          87,
+          74
+        ],
+        [
+          92,
+          74
+        ],
+        [
+          92,
+          173
+        ],
+        [
+          87,
+          173
+        ]
+      ],
+      "confidence": 0.8,
+      "ambiguous": false,
+      "debug": {
+        "simplified_edge_count": 1,
+        "fallback_used": false,
+        "unsimplified_component_rejected": false,
+        "attachment_pair": [
+          "v_017",
+          "v_062"
+        ],
+        "attachment_distances": [
+          5.39,
+          5.0
+        ],
+        "attachment_distance_sum": 10.39,
+        "stub_absorbed": false,
+        "point_count_before_cleanup": 5,
+        "point_count_after_cleanup": 5,
+        "micro_bends_removed": 0,
+        "endpoint_normalized": false,
+        "axis_normalized": false,
+        "support_count": 9
+      }
+    }
+  ],
+  "graph": {
+    "vertices": [
+      {
+        "id": "v_017",
+        "kind": "endpoint",
+        "x": 92,
+        "y": 74,
+        "degree": 1
+      },
+      {
+        "id": "v_043",
+        "kind": "bend",
+        "x": 441,
+        "y": 138,
+        "degree": 2
+      },
+      {
+        "id": "v_044",
+        "kind": "junction",
+        "x": 447,
+        "y": 138,
+        "degree": 3
+      },
+      {
+        "id": "v_045",
+        "kind": "endpoint",
+        "x": 580,
+        "y": 138,
+        "degree": 1
+      },
+      {
+        "id": "v_056",
+        "kind": "endpoint",
+        "x": 441,
+        "y": 171,
+        "degree": 1
+      },
+      {
+        "id": "v_057",
+        "kind": "bend",
+        "x": 447,
+        "y": 171,
+        "degree": 2
+      },
+      {
+        "id": "v_062",
+        "kind": "endpoint",
+        "x": 92,
+        "y": 173,
+        "degree": 1
+      },
+      {
+        "id": "v_068",
+        "kind": "endpoint",
+        "x": 376,
+        "y": 198,
+        "degree": 1
+      },
+      {
+        "id": "v_072",
+        "kind": "endpoint",
+        "x": 497,
+        "y": 225,
+        "degree": 1
+      },
+      {
+        "id": "v_073",
+        "kind": "bend",
+        "x": 498,
+        "y": 225,
+        "degree": 2
+      },
+      {
+        "id": "v_074",
+        "kind": "bend",
+        "x": 636,
+        "y": 225,
+        "degree": 2
+      },
+      {
+        "id": "v_090",
+        "kind": "bend",
+        "x": 447,
+        "y": 256,
+        "degree": 2
+      },
+      {
+        "id": "v_093",
+        "kind": "endpoint",
+        "x": 636,
+        "y": 260,
+        "degree": 1
+      },
+      {
+        "id": "v_095",
+        "kind": "bend",
+        "x": 447,
+        "y": 268,
+        "degree": 2
+      },
+      {
+        "id": "v_097",
+        "kind": "bend",
+        "x": 588,
+        "y": 268,
+        "degree": 2
+      },
+      {
+        "id": "v_100",
+        "kind": "endpoint",
+        "x": 588,
+        "y": 269,
+        "degree": 1
+      },
+      {
+        "id": "v_108",
+        "kind": "bend",
+        "x": 376,
+        "y": 322,
+        "degree": 2
+      },
+      {
+        "id": "v_109",
+        "kind": "endpoint",
+        "x": 496,
+        "y": 322,
+        "degree": 1
+      }
+    ],
+    "edges": [
+      {
+        "id": "e_009",
+        "v_start": "v_068",
+        "v_end": "v_108",
+        "orientation": "V",
+        "length": 124.0,
+        "debug": {
+          "source_segment_id": "seg_001_013",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_012",
+        "v_start": "v_044",
+        "v_end": "v_057",
+        "orientation": "V",
+        "length": 33.0,
+        "debug": {
+          "source_segment_id": "seg_001_022",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_013",
+        "v_start": "v_057",
+        "v_end": "v_090",
+        "orientation": "V",
+        "length": 85.0,
+        "debug": {
+          "source_segment_id": "seg_001_022",
+          "split_from_intersection": true,
+          "split_index": 2,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_014",
+        "v_start": "v_090",
+        "v_end": "v_095",
+        "orientation": "V",
+        "length": 12.0,
+        "debug": {
+          "source_segment_id": "seg_001_022",
+          "split_from_intersection": true,
+          "split_index": 3,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_032",
+        "v_start": "v_043",
+        "v_end": "v_044",
+        "orientation": "H",
+        "length": 6.0,
+        "debug": {
+          "source_segment_id": "seg_002_015",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_033",
+        "v_start": "v_044",
+        "v_end": "v_045",
+        "orientation": "H",
+        "length": 133.0,
+        "debug": {
+          "source_segment_id": "seg_002_015",
+          "split_from_intersection": true,
+          "split_index": 2,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_037",
+        "v_start": "v_043",
+        "v_end": "v_056",
+        "orientation": "V",
+        "length": 33.0,
+        "debug": {
+          "source_segment_id": "seg_002_017",
+          "split_from_intersection": true,
+          "split_index": 0,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_040",
+        "v_start": "v_072",
+        "v_end": "v_073",
+        "orientation": "H",
+        "length": 1.0,
+        "debug": {
+          "source_segment_id": "seg_003_001",
+          "split_from_intersection": true,
+          "split_index": 0,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_041",
+        "v_start": "v_073",
+        "v_end": "v_074",
+        "orientation": "H",
+        "length": 138.0,
+        "debug": {
+          "source_segment_id": "seg_003_001",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_047",
+        "v_start": "v_074",
+        "v_end": "v_093",
+        "orientation": "V",
+        "length": 35.0,
+        "debug": {
+          "source_segment_id": "seg_003_002",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_054",
+        "v_start": "v_108",
+        "v_end": "v_109",
+        "orientation": "H",
+        "length": 120.0,
+        "debug": {
+          "source_segment_id": "seg_001_049",
+          "split_from_intersection": true,
+          "split_index": 1,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_074",
+        "v_start": "v_097",
+        "v_end": "v_100",
+        "orientation": "V",
+        "length": 1.0,
+        "debug": {
+          "source_segment_id": "seg_001_031",
+          "split_from_intersection": true,
+          "split_index": 2,
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_090",
+        "v_start": "v_017",
+        "v_end": "v_062",
+        "orientation": "V",
+        "length": 99.0,
+        "debug": {
+          "source_segment_id": "seg_002_001",
+          "split_from_intersection": true,
+          "merged_from_edges": [
+            "e_067",
+            "e_068"
+          ],
+          "source_segment_stage": "collapsed_segments"
+        }
+      },
+      {
+        "id": "e_092",
+        "v_start": "v_095",
+        "v_end": "v_097",
+        "orientation": "H",
+        "length": 141.0,
+        "debug": {
+          "source_segment_id": "seg_001_033",
+          "split_from_intersection": true,
+          "merged_from_edges": [
+            "e_028",
+            "e_029"
+          ],
+          "source_segment_stage": "collapsed_segments"
+        }
+      }
+    ],
+    "segments": [
+      {
+        "id": "seg_002_040",
+        "orientation": "H",
+        "x1": 149,
+        "y1": 111,
+        "x2": 547,
+        "y2": 111,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_040"
+        ]
+      },
+      {
+        "id": "seg_002_012",
+        "orientation": "H",
+        "x1": 264,
+        "y1": 125,
+        "x2": 637,
+        "y2": 125,
+        "component_id": "comp_002",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_002_012",
+          "seg_002_013",
+          "seg_003_008",
+          "seg_003_005"
+        ]
+      },
+      {
+        "id": "seg_001_037",
+        "orientation": "H",
+        "x1": 213,
+        "y1": 246,
+        "x2": 554,
+        "y2": 246,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_037"
+        ]
+      },
+      {
+        "id": "seg_001_043",
+        "orientation": "H",
+        "x1": 76,
+        "y1": 174,
+        "x2": 375,
+        "y2": 174,
+        "component_id": "comp_001",
+        "source_count": 6,
+        "collapsed_from_ids": [
+          "seg_001_043",
+          "seg_001_044",
+          "seg_002_007",
+          "seg_002_008",
+          "seg_002_009",
+          "seg_002_010"
+        ]
+      },
+      {
+        "id": "seg_001_013",
+        "orientation": "V",
+        "x1": 376,
+        "y1": 60,
+        "x2": 376,
+        "y2": 324,
+        "component_id": "comp_001",
+        "source_count": 9,
+        "collapsed_from_ids": [
+          "seg_001_013",
+          "seg_001_014",
+          "seg_001_045",
+          "seg_001_046",
+          "seg_001_047",
+          "seg_001_048",
+          "seg_002_023",
+          "seg_002_024",
+          "seg_002_025"
+        ]
+      },
+      {
+        "id": "seg_001_022",
+        "orientation": "V",
+        "x1": 447,
+        "y1": 99,
+        "x2": 447,
+        "y2": 339,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_022",
+          "seg_001_025",
+          "seg_001_056"
+        ]
+      },
+      {
+        "id": "seg_001_012",
+        "orientation": "H",
+        "x1": 147,
+        "y1": 60,
+        "x2": 378,
+        "y2": 60,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_012"
+        ]
+      },
+      {
+        "id": "seg_002_026",
+        "orientation": "H",
+        "x1": 376,
+        "y1": 198,
+        "x2": 587,
+        "y2": 198,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_026"
+        ]
+      },
+      {
+        "id": "seg_001_016",
+        "orientation": "V",
+        "x1": 422,
+        "y1": 170,
+        "x2": 422,
+        "y2": 339,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_016",
+          "seg_001_020",
+          "seg_002_035"
+        ]
+      },
+      {
+        "id": "seg_003_009",
+        "orientation": "V",
+        "x1": 333,
+        "y1": 126,
+        "x2": 333,
+        "y2": 289,
+        "component_id": "comp_003",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_003_009",
+          "seg_003_010",
+          "seg_003_011"
+        ]
+      },
+      {
+        "id": "seg_001_023",
+        "orientation": "H",
+        "x1": 334,
+        "y1": 287,
+        "x2": 496,
+        "y2": 287,
+        "component_id": "comp_001",
+        "source_count": 7,
+        "collapsed_from_ids": [
+          "seg_001_023",
+          "seg_001_024",
+          "seg_001_059",
+          "seg_003_012",
+          "seg_003_013",
+          "seg_002_018",
+          "seg_002_019"
+        ]
+      },
+      {
+        "id": "seg_001_033",
+        "orientation": "H",
+        "x1": 442,
+        "y1": 268,
+        "x2": 600,
+        "y2": 268,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_033",
+          "seg_001_034",
+          "seg_002_028",
+          "seg_002_029"
+        ]
+      },
+      {
+        "id": "seg_002_015",
+        "orientation": "H",
+        "x1": 440,
+        "y1": 138,
+        "x2": 597,
+        "y2": 138,
+        "component_id": "comp_002",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_002_015",
+          "seg_002_016"
+        ]
+      },
+      {
+        "id": "seg_001_026",
+        "orientation": "H",
+        "x1": 447,
+        "y1": 99,
+        "x2": 597,
+        "y2": 99,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_026",
+          "seg_001_027"
+        ]
+      },
+      {
+        "id": "seg_002_017",
+        "orientation": "V",
+        "x1": 441,
+        "y1": 138,
+        "x2": 441,
+        "y2": 286,
+        "component_id": "comp_002",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_002_017",
+          "seg_002_030"
+        ]
+      },
+      {
+        "id": "seg_003_001",
+        "orientation": "H",
+        "x1": 497,
+        "y1": 225,
+        "x2": 637,
+        "y2": 225,
+        "component_id": "comp_003",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_003_001"
+        ]
+      },
+      {
+        "id": "seg_001_028",
+        "orientation": "V",
+        "x1": 580,
+        "y1": 99,
+        "x2": 580,
+        "y2": 237,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_028",
+          "seg_002_014"
+        ]
+      },
+      {
+        "id": "seg_003_002",
+        "orientation": "V",
+        "x1": 636,
+        "y1": 127,
+        "x2": 636,
+        "y2": 260,
+        "component_id": "comp_003",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_003_002",
+          "seg_003_003",
+          "seg_003_004"
+        ]
+      },
+      {
+        "id": "seg_001_019",
+        "orientation": "H",
+        "x1": 422,
+        "y1": 171,
+        "x2": 547,
+        "y2": 171,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_019",
+          "seg_002_031",
+          "seg_002_036",
+          "seg_002_037"
+        ]
+      },
+      {
+        "id": "seg_001_049",
+        "orientation": "H",
+        "x1": 375,
+        "y1": 322,
+        "x2": 498,
+        "y2": 322,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_049",
+          "seg_001_050",
+          "seg_001_055",
+          "seg_002_022"
+        ]
+      },
+      {
+        "id": "seg_001_001",
+        "orientation": "H",
+        "x1": 27,
+        "y1": 156,
+        "x2": 147,
+        "y2": 156,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_001"
+        ]
+      },
+      {
+        "id": "seg_001_004",
+        "orientation": "H",
+        "x1": 28,
+        "y1": 74,
+        "x2": 147,
+        "y2": 74,
+        "component_id": "comp_001",
+        "source_count": 4,
+        "collapsed_from_ids": [
+          "seg_001_004",
+          "seg_001_005",
+          "seg_001_006",
+          "seg_002_000"
+        ]
+      },
+      {
+        "id": "seg_001_010",
+        "orientation": "H",
+        "x1": 28,
+        "y1": 39,
+        "x2": 147,
+        "y2": 39,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_010"
+        ]
+      },
+      {
+        "id": "seg_001_040",
+        "orientation": "H",
+        "x1": 98,
+        "y1": 138,
+        "x2": 217,
+        "y2": 138,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_040",
+          "seg_001_041"
+        ]
+      },
+      {
+        "id": "seg_001_002",
+        "orientation": "V",
+        "x1": 148,
+        "y1": 39,
+        "x2": 148,
+        "y2": 157,
+        "component_id": "comp_001",
+        "source_count": 6,
+        "collapsed_from_ids": [
+          "seg_001_002",
+          "seg_001_003",
+          "seg_001_011",
+          "seg_002_041",
+          "seg_002_042",
+          "seg_006_000"
+        ]
+      },
+      {
+        "id": "seg_001_038",
+        "orientation": "V",
+        "x1": 213,
+        "y1": 139,
+        "x2": 213,
+        "y2": 246,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_038",
+          "seg_001_039"
+        ]
+      },
+      {
+        "id": "seg_002_001",
+        "orientation": "V",
+        "x1": 92,
+        "y1": 73,
+        "x2": 92,
+        "y2": 173,
+        "component_id": "comp_002",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_002_001",
+          "seg_002_002",
+          "seg_002_006"
+        ]
+      },
+      {
+        "id": "seg_001_018",
+        "orientation": "V",
+        "x1": 453,
+        "y1": 170,
+        "x2": 453,
+        "y2": 257,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_018"
+        ]
+      },
+      {
+        "id": "seg_002_032",
+        "orientation": "V",
+        "x1": 429,
+        "y1": 172,
+        "x2": 429,
+        "y2": 255,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_032"
+        ]
+      },
+      {
+        "id": "seg_001_031",
+        "orientation": "V",
+        "x1": 588,
+        "y1": 197,
+        "x2": 588,
+        "y2": 269,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_031",
+          "seg_001_032",
+          "seg_002_027"
+        ]
+      },
+      {
+        "id": "seg_002_038",
+        "orientation": "V",
+        "x1": 546,
+        "y1": 111,
+        "x2": 546,
+        "y2": 171,
+        "component_id": "comp_002",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_002_038",
+          "seg_002_039"
+        ]
+      },
+      {
+        "id": "seg_002_011",
+        "orientation": "V",
+        "x1": 285,
+        "y1": 122,
+        "x2": 285,
+        "y2": 173,
+        "component_id": "comp_002",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_002_011"
+        ]
+      },
+      {
+        "id": "seg_001_058",
+        "orientation": "V",
+        "x1": 432,
+        "y1": 290,
+        "x2": 432,
+        "y2": 338,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_058"
+        ]
+      },
+      {
+        "id": "seg_001_015",
+        "orientation": "H",
+        "x1": 378,
+        "y1": 228,
+        "x2": 420,
+        "y2": 228,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_015"
+        ]
+      },
+      {
+        "id": "seg_001_051",
+        "orientation": "V",
+        "x1": 496,
+        "y1": 286,
+        "x2": 496,
+        "y2": 324,
+        "component_id": "comp_001",
+        "source_count": 5,
+        "collapsed_from_ids": [
+          "seg_001_051",
+          "seg_001_052",
+          "seg_001_054",
+          "seg_002_020",
+          "seg_002_021"
+        ]
+      },
+      {
+        "id": "seg_001_007",
+        "orientation": "V",
+        "x1": 27,
+        "y1": 38,
+        "x2": 27,
+        "y2": 75,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_007",
+          "seg_001_008",
+          "seg_001_009"
+        ]
+      },
+      {
+        "id": "seg_001_042",
+        "orientation": "V",
+        "x1": 99,
+        "y1": 139,
+        "x2": 99,
+        "y2": 173,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_042"
+        ]
+      },
+      {
+        "id": "seg_001_017",
+        "orientation": "H",
+        "x1": 420,
+        "y1": 256,
+        "x2": 452,
+        "y2": 256,
+        "component_id": "comp_001",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_001_017",
+          "seg_002_033",
+          "seg_002_034"
+        ]
+      },
+      {
+        "id": "seg_003_000",
+        "orientation": "V",
+        "x1": 498,
+        "y1": 198,
+        "x2": 498,
+        "y2": 226,
+        "component_id": "comp_003",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_003_000"
+        ]
+      },
+      {
+        "id": "seg_001_021",
+        "orientation": "H",
+        "x1": 423,
+        "y1": 339,
+        "x2": 447,
+        "y2": 339,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_021",
+          "seg_001_057"
+        ]
+      },
+      {
+        "id": "seg_001_035",
+        "orientation": "V",
+        "x1": 555,
+        "y1": 246,
+        "x2": 555,
+        "y2": 269,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_035",
+          "seg_001_036"
+        ]
+      },
+      {
+        "id": "seg_001_000",
+        "orientation": "V",
+        "x1": 27,
+        "y1": 137,
+        "x2": 27,
+        "y2": 157,
+        "component_id": "comp_001",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_001_000"
+        ]
+      },
+      {
+        "id": "seg_004_000",
+        "orientation": "H",
+        "x1": 630,
+        "y1": 4,
+        "x2": 650,
+        "y2": 4,
+        "component_id": "comp_004",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_004_000",
+          "seg_005_002"
+        ]
+      },
+      {
+        "id": "seg_007_000",
+        "orientation": "H",
+        "x1": 77,
+        "y1": 24,
+        "x2": 97,
+        "y2": 24,
+        "component_id": "comp_007",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_007_000"
+        ]
+      },
+      {
+        "id": "seg_001_029",
+        "orientation": "H",
+        "x1": 581,
+        "y1": 237,
+        "x2": 600,
+        "y2": 237,
+        "component_id": "comp_001",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_001_029",
+          "seg_001_030"
+        ]
+      },
+      {
+        "id": "seg_002_003",
+        "orientation": "H",
+        "x1": 78,
+        "y1": 123,
+        "x2": 97,
+        "y2": 123,
+        "component_id": "comp_002",
+        "source_count": 3,
+        "collapsed_from_ids": [
+          "seg_002_003",
+          "seg_002_004",
+          "seg_002_005"
+        ]
+      },
+      {
+        "id": "seg_003_006",
+        "orientation": "V",
+        "x1": 627,
+        "y1": 110,
+        "x2": 627,
+        "y2": 127,
+        "component_id": "comp_003",
+        "source_count": 2,
+        "collapsed_from_ids": [
+          "seg_003_006",
+          "seg_003_007"
+        ]
+      },
+      {
+        "id": "seg_005_000",
+        "orientation": "H",
+        "x1": 632,
+        "y1": 12,
+        "x2": 649,
+        "y2": 12,
+        "component_id": "comp_005",
+        "source_count": 1,
+        "collapsed_from_ids": [
+          "seg_005_000"
+        ]
+      }
+    ],
+    "gate_attachments": [
+      {
+        "node_id": "node_001",
+        "side": "top",
+        "gate_point": [
+          436,
+          288
+        ],
+        "vertex_id": "v_106",
+        "graph_vertex_id": "v_106",
+        "distance": 4.47,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_001",
+        "side": "right",
+        "gate_point": [
+          496,
+          313
+        ],
+        "vertex_id": "v_109",
+        "graph_vertex_id": "v_109",
+        "distance": 9.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_001",
+        "side": "bottom",
+        "gate_point": [
+          436,
+          339
+        ],
+        "vertex_id": "v_113",
+        "graph_vertex_id": "v_113",
+        "distance": 4.12,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_001",
+        "side": "left",
+        "gate_point": [
+          377,
+          313
+        ],
+        "vertex_id": "v_108",
+        "graph_vertex_id": "v_108",
+        "distance": 9.06,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_002",
+        "side": "top",
+        "gate_point": [
+          87,
+          24
+        ],
+        "vertex_id": "v_005",
+        "graph_vertex_id": "v_005",
+        "distance": 10.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_002",
+        "side": "right",
+        "gate_point": [
+          147,
+          49
+        ],
+        "vertex_id": "v_009",
+        "graph_vertex_id": "v_009",
+        "distance": 10.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_002",
+        "side": "bottom",
+        "gate_point": [
+          87,
+          75
+        ],
+        "vertex_id": "v_017",
+        "graph_vertex_id": "v_017",
+        "distance": 5.1,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_002",
+        "side": "left",
+        "gate_point": [
+          28,
+          49
+        ],
+        "vertex_id": "v_008",
+        "graph_vertex_id": "v_008",
+        "distance": 10.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_003",
+        "side": "top",
+        "gate_point": [
+          436,
+          170
+        ],
+        "vertex_id": "v_056",
+        "graph_vertex_id": "v_056",
+        "distance": 5.1,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_003",
+        "side": "right",
+        "gate_point": [
+          496,
+          213
+        ],
+        "vertex_id": "v_072",
+        "graph_vertex_id": "v_072",
+        "distance": 12.04,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_003",
+        "side": "bottom",
+        "gate_point": [
+          436,
+          257
+        ],
+        "vertex_id": "v_089",
+        "graph_vertex_id": "v_089",
+        "distance": 5.1,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_003",
+        "side": "left",
+        "gate_point": [
+          377,
+          213
+        ],
+        "vertex_id": "v_068",
+        "graph_vertex_id": "v_068",
+        "distance": 15.03,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_004",
+        "side": "top",
+        "gate_point": [
+          588,
+          99
+        ],
+        "vertex_id": "v_021",
+        "graph_vertex_id": "v_021",
+        "distance": 8.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_004",
+        "side": "right",
+        "gate_point": [
+          628,
+          118
+        ],
+        "vertex_id": "v_033",
+        "graph_vertex_id": "v_033",
+        "distance": 7.07,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_004",
+        "side": "bottom",
+        "gate_point": [
+          588,
+          138
+        ],
+        "vertex_id": "v_045",
+        "graph_vertex_id": "v_045",
+        "distance": 8.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_004",
+        "side": "left",
+        "gate_point": [
+          548,
+          118
+        ],
+        "vertex_id": "v_026",
+        "graph_vertex_id": "v_026",
+        "distance": 7.07,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_005",
+        "side": "top",
+        "gate_point": [
+          594,
+          239
+        ],
+        "vertex_id": "v_081",
+        "graph_vertex_id": "v_081",
+        "distance": 6.32,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_005",
+        "side": "right",
+        "gate_point": [
+          635,
+          254
+        ],
+        "vertex_id": "v_093",
+        "graph_vertex_id": "v_093",
+        "distance": 6.08,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_005",
+        "side": "bottom",
+        "gate_point": [
+          594,
+          269
+        ],
+        "vertex_id": "v_100",
+        "graph_vertex_id": "v_100",
+        "distance": 6.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_005",
+        "side": "left",
+        "gate_point": [
+          554,
+          254
+        ],
+        "vertex_id": "v_084",
+        "graph_vertex_id": "v_084",
+        "distance": 8.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_006",
+        "side": "top",
+        "gate_point": [
+          274,
+          122
+        ],
+        "vertex_id": "v_031",
+        "graph_vertex_id": "v_031",
+        "distance": 10.44,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_006",
+        "side": "right",
+        "gate_point": [
+          334,
+          147
+        ],
+        "vertex_id": "v_035",
+        "graph_vertex_id": "v_035",
+        "distance": 1,
+        "stub_absorbed": true,
+        "snapped_to_corridor": true,
+        "projected_point": [
+          333,
+          147
+        ],
+        "edge_id": "e_025"
+      },
+      {
+        "node_id": "node_006",
+        "side": "bottom",
+        "gate_point": [
+          274,
+          173
+        ],
+        "vertex_id": "v_064",
+        "graph_vertex_id": "v_064",
+        "distance": 11.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_006",
+        "side": "left",
+        "gate_point": [
+          215,
+          147
+        ],
+        "vertex_id": "v_048",
+        "graph_vertex_id": "v_048",
+        "distance": 8.25,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_007",
+        "side": "top",
+        "gate_point": [
+          87,
+          122
+        ],
+        "vertex_id": "v_029",
+        "graph_vertex_id": "v_029",
+        "distance": 5.1,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_007",
+        "side": "right",
+        "gate_point": [
+          147,
+          147
+        ],
+        "vertex_id": "v_050",
+        "graph_vertex_id": "v_050",
+        "distance": 9.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_007",
+        "side": "bottom",
+        "gate_point": [
+          87,
+          173
+        ],
+        "vertex_id": "v_062",
+        "graph_vertex_id": "v_062",
+        "distance": 5.0,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      },
+      {
+        "node_id": "node_007",
+        "side": "left",
+        "gate_point": [
+          28,
+          147
+        ],
+        "vertex_id": "v_049",
+        "graph_vertex_id": "v_049",
+        "distance": 9.06,
+        "stub_absorbed": false,
+        "snapped_to_corridor": false
+      }
+    ],
+    "crossings": [
+      {
+        "point": [
+          546,
+          111
+        ],
+        "first_segment_id": "seg_002_040",
+        "second_segment_id": "seg_002_038",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          285,
+          125
+        ],
+        "first_segment_id": "seg_002_012",
+        "second_segment_id": "seg_002_011",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          627,
+          125
+        ],
+        "first_segment_id": "seg_002_012",
+        "second_segment_id": "seg_003_006",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          213,
+          246
+        ],
+        "first_segment_id": "seg_001_037",
+        "second_segment_id": "seg_001_038",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          376,
+          60
+        ],
+        "first_segment_id": "seg_001_013",
+        "second_segment_id": "seg_001_012",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          376,
+          198
+        ],
+        "first_segment_id": "seg_001_013",
+        "second_segment_id": "seg_002_026",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          376,
+          322
+        ],
+        "first_segment_id": "seg_001_013",
+        "second_segment_id": "seg_001_049",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          447,
+          268
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_001_033",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          447,
+          138
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_002_015",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          447,
+          99
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_001_026",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          447,
+          171
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_001_019",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          447,
+          256
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_001_017",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          447,
+          339
+        ],
+        "first_segment_id": "seg_001_022",
+        "second_segment_id": "seg_001_021",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          148,
+          60
+        ],
+        "first_segment_id": "seg_001_012",
+        "second_segment_id": "seg_001_002",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          580,
+          198
+        ],
+        "first_segment_id": "seg_002_026",
+        "second_segment_id": "seg_001_028",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          498,
+          198
+        ],
+        "first_segment_id": "seg_002_026",
+        "second_segment_id": "seg_003_000",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          422,
+          171
+        ],
+        "first_segment_id": "seg_001_016",
+        "second_segment_id": "seg_001_019",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          422,
+          256
+        ],
+        "first_segment_id": "seg_001_016",
+        "second_segment_id": "seg_001_017",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          496,
+          287
+        ],
+        "first_segment_id": "seg_001_023",
+        "second_segment_id": "seg_001_051",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          588,
+          268
+        ],
+        "first_segment_id": "seg_001_033",
+        "second_segment_id": "seg_001_031",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          555,
+          268
+        ],
+        "first_segment_id": "seg_001_033",
+        "second_segment_id": "seg_001_035",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          441,
+          138
+        ],
+        "first_segment_id": "seg_002_015",
+        "second_segment_id": "seg_002_017",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          580,
+          138
+        ],
+        "first_segment_id": "seg_002_015",
+        "second_segment_id": "seg_001_028",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          580,
+          99
+        ],
+        "first_segment_id": "seg_001_026",
+        "second_segment_id": "seg_001_028",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          441,
+          171
+        ],
+        "first_segment_id": "seg_002_017",
+        "second_segment_id": "seg_001_019",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          441,
+          256
+        ],
+        "first_segment_id": "seg_002_017",
+        "second_segment_id": "seg_001_017",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          636,
+          225
+        ],
+        "first_segment_id": "seg_003_001",
+        "second_segment_id": "seg_003_002",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          498,
+          225
+        ],
+        "first_segment_id": "seg_003_001",
+        "second_segment_id": "seg_003_000",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          453,
+          171
+        ],
+        "first_segment_id": "seg_001_019",
+        "second_segment_id": "seg_001_018",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          546,
+          171
+        ],
+        "first_segment_id": "seg_001_019",
+        "second_segment_id": "seg_002_038",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          496,
+          322
+        ],
+        "first_segment_id": "seg_001_049",
+        "second_segment_id": "seg_001_051",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          92,
+          74
+        ],
+        "first_segment_id": "seg_001_004",
+        "second_segment_id": "seg_002_001",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          148,
+          138
+        ],
+        "first_segment_id": "seg_001_040",
+        "second_segment_id": "seg_001_002",
+        "connected_intersection": true,
+        "endpoint_supported": false,
+        "accepted": true
+      },
+      {
+        "point": [
+          92,
+          123
+        ],
+        "first_segment_id": "seg_002_001",
+        "second_segment_id": "seg_002_003",
+        "connected_intersection": true,
+        "endpoint_supported": true,
+        "accepted": true
+      },
+      {
+        "point": [
+          588,
+          237
+        ],
+        "first_segment_id": "seg_001_031",
+        "second_segment_id": "seg_001_029",
+        "connected_intersection": false,
+        "endpoint_supported": true,
+        "accepted": true
+      }
+    ],
+    "build_metrics": {
+      "intersections_candidates_raw": 66,
+      "intersections_detected_raw": 66,
+      "intersections_accepted_initial": 35,
+      "segments_split_initial": 30,
+      "split_edges_created_initial": 103,
+      "intersections_accepted": 14,
+      "segments_split": 10,
+      "split_edges_created": 14,
+      "junction_vertices_created": 1,
+      "max_splits_per_segment": 3,
+      "segments_blocked_from_splitting": 0
+    },
+    "intersections_rejected_by_reason": {
+      "weak_axis_support": 31,
+      "weak_segment_pair": 45
+    },
+    "diagnostics": {
+      "vertex_count": 18,
+      "edge_count": 14,
+      "reduced_degree2_vertices": 3,
+      "pruned_spurs": 3,
+      "collapsed_corridor_groups": 1,
+      "status": "pass",
+      "reason": null
+    },
+    "corridor_group_debug": [
+      {
+        "orientation": "H",
+        "member_segment_ids": [
+          "seg_001_023",
+          "seg_002_018"
+        ],
+        "collapsed": true,
+        "overlap_ratio_estimate": 0.31,
+        "perpendicular_distance": 4,
+        "rejection_reason": null
+      }
+    ]
+  },
+  "verification": {
+    "edge_overlap_score": 0.6152,
+    "pixel_difference_score": 0.0659,
+    "status": "pass",
+    "notes": [
+      "Rendered output closely matches the normalized source."
+    ]
+  }
+}

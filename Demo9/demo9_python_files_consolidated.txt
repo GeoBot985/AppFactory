@@ -1,0 +1,3363 @@
+Demo9\app.py
+
+from pathlib import Path
+
+from src.pipeline import discover_input_images, process_image
+
+
+def main() -> int:
+    base_dir = Path(__file__).resolve().parent
+    image_paths = discover_input_images(base_dir)
+
+    if not image_paths:
+        print("No input images found.")
+        return 0
+
+    for image_path in image_paths:
+        result = process_image(image_path, base_dir / "outputs")
+        print(
+            f"{image_path.name}: elements={result.element_count} "
+            f"contours={result.contour_count} connectors={result.connector_count} "
+            f"verification={result.verification_status}"
+        )
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+================================================================================
+
+Demo9\src\connectors.py
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+
+import cv2
+import numpy as np
+
+from .grid import snap_point, snap_points
+from .models import Node
+
+
+Point = tuple[int, int]
+
+
+@dataclass
+class ConnectorFragment:
+    points: list[Point]
+    length: float
+    angle: float
+    bbox: tuple[int, int, int, int]
+
+
+def _segment_length(points: list[Point]) -> float:
+    return math.dist(points[0], points[-1])
+
+
+def _segment_angle(points: list[Point]) -> float:
+    dx = points[-1][0] - points[0][0]
+    dy = points[-1][1] - points[0][1]
+    return math.degrees(math.atan2(dy, dx))
+
+
+def _bbox(points: list[Point]) -> tuple[int, int, int, int]:
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    return min_x, min_y, max_x - min_x, max_y - min_y
+
+
+def _orientation_bucket(angle: float, slanted_angle_tolerance: float) -> str:
+    normalized = abs(angle) % 180.0
+    if normalized <= slanted_angle_tolerance or abs(normalized - 180.0) <= slanted_angle_tolerance:
+        return "horizontal"
+    if abs(normalized - 90.0) <= slanted_angle_tolerance:
+        return "vertical"
+    return "slanted"
+
+
+def extract_connector_fragments(
+    line_mask: np.ndarray,
+    hough_threshold: int,
+    min_line_length: int,
+    max_line_gap: int,
+    orientation_tolerance: float,
+) -> list[ConnectorFragment]:
+    segments = cv2.HoughLinesP(
+        line_mask,
+        1,
+        np.pi / 180,
+        threshold=hough_threshold,
+        minLineLength=min_line_length,
+        maxLineGap=max_line_gap,
+    )
+    if segments is None:
+        return []
+
+    fragments: list[ConnectorFragment] = []
+    for segment in segments:
+        coords = segment.reshape(-1, 2)
+        points = [snap_point((int(coords[0][0]), int(coords[0][1]))), snap_point((int(coords[1][0]), int(coords[1][1])))]
+        length = _segment_length(points)
+        if length < min_line_length:
+            continue
+        angle = _segment_angle(points)
+        fragments.append(
+            ConnectorFragment(
+                points=points,
+                length=length,
+                angle=angle,
+                bbox=_bbox(points),
+            )
+        )
+
+    unique_fragments: list[ConnectorFragment] = []
+    for fragment in fragments:
+        is_duplicate = False
+        for existing in unique_fragments:
+            if (
+                _orientation_bucket(fragment.angle, orientation_tolerance)
+                == _orientation_bucket(existing.angle, orientation_tolerance)
+                and math.dist(fragment.points[0], existing.points[0]) <= 6
+                and math.dist(fragment.points[-1], existing.points[-1]) <= 6
+            ):
+                is_duplicate = True
+                break
+        if not is_duplicate:
+            unique_fragments.append(fragment)
+    return unique_fragments
+
+
+def _normalize_direction(points: list[Point]) -> list[Point]:
+    return points if points[0] <= points[-1] else list(reversed(points))
+
+
+def _can_merge(
+    first: list[Point],
+    second: list[Point],
+    endpoint_gap_threshold: int,
+    collinear_angle_tolerance: float,
+) -> bool:
+    first_angle = _segment_angle(first)
+    second_angle = _segment_angle(second)
+    angle_delta = abs(first_angle - second_angle)
+    angle_delta = min(angle_delta, abs(angle_delta - 180.0))
+    if angle_delta > collinear_angle_tolerance:
+        return False
+
+    endpoint_pairs = [
+        (first[0], second[0]),
+        (first[0], second[-1]),
+        (first[-1], second[0]),
+        (first[-1], second[-1]),
+    ]
+    if min(math.dist(a, b) for a, b in endpoint_pairs) <= endpoint_gap_threshold:
+        return True
+
+    first_box = _bbox(first)
+    second_box = _bbox(second)
+    overlap_x = min(first_box[0] + first_box[2], second_box[0] + second_box[2]) - max(first_box[0], second_box[0])
+    overlap_y = min(first_box[1] + first_box[3], second_box[1] + second_box[3]) - max(first_box[1], second_box[1])
+    return overlap_x >= -endpoint_gap_threshold or overlap_y >= -endpoint_gap_threshold
+
+
+def _merge_two_paths(first: list[Point], second: list[Point]) -> list[Point]:
+    candidates = [
+        _normalize_direction(first) + _normalize_direction(second),
+        _normalize_direction(first) + list(reversed(_normalize_direction(second))),
+        list(reversed(_normalize_direction(first))) + _normalize_direction(second),
+        list(reversed(_normalize_direction(first))) + list(reversed(_normalize_direction(second))),
+    ]
+    best = min(candidates, key=lambda path: sum(math.dist(path[i], path[i + 1]) for i in range(len(path) - 1)))
+    merged: list[Point] = []
+    for point in best:
+        snapped = snap_point(point)
+        if not merged or merged[-1] != snapped:
+            merged.append(snapped)
+    return merged
+
+
+def merge_connector_fragments(
+    fragments: list[ConnectorFragment],
+    endpoint_gap_threshold: int,
+    collinear_angle_tolerance: float,
+    min_merged_path_length: int,
+) -> tuple[list[list[Point]], list[int]]:
+    paths = [_normalize_direction(fragment.points) for fragment in fragments]
+    merge_group_ids = list(range(1, len(paths) + 1))
+
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(paths)):
+            if changed:
+                break
+            for j in range(i + 1, len(paths)):
+                if _can_merge(paths[i], paths[j], endpoint_gap_threshold, collinear_angle_tolerance):
+                    paths[i] = _merge_two_paths(paths[i], paths[j])
+                    merge_group_ids[i] = min(merge_group_ids[i], merge_group_ids[j])
+                    del paths[j]
+                    del merge_group_ids[j]
+                    changed = True
+                    break
+
+    merged_paths: list[list[Point]] = []
+    kept_group_ids: list[int] = []
+    for path, group_id in zip(paths, merge_group_ids):
+        length = sum(math.dist(path[i], path[i + 1]) for i in range(len(path) - 1))
+        if length < min_merged_path_length:
+            continue
+        merged_paths.append(path)
+        kept_group_ids.append(group_id)
+    return merged_paths, kept_group_ids
+
+
+def build_protected_node_mask(
+    image_width: int,
+    image_height: int,
+    nodes: list[Node],
+    inward_padding: int,
+    gate_padding: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    protected_mask = np.zeros((image_height, image_width), dtype=np.uint8)
+    gate_mask = np.zeros((image_height, image_width), dtype=np.uint8)
+
+    for node in nodes:
+        x, y, w, h = node.bbox
+        ex, ey, ew, eh = node.expanded_bbox
+        cv2.rectangle(protected_mask, (ex, ey), (ex + ew, ey + eh), 255, thickness=cv2.FILLED)
+        inner_x = min(max(x + inward_padding, 0), image_width - 1)
+        inner_y = min(max(y + inward_padding, 0), image_height - 1)
+        inner_w = max(w - 2 * inward_padding, 1)
+        inner_h = max(h - 2 * inward_padding, 1)
+        cv2.rectangle(
+            protected_mask,
+            (inner_x, inner_y),
+            (min(inner_x + inner_w, image_width - 1), min(inner_y + inner_h, image_height - 1)),
+            255,
+            thickness=cv2.FILLED,
+        )
+
+        for segment in node.gate_segments.values():
+            p1, p2 = segment
+            cv2.line(gate_mask, p1, p2, 255, thickness=max(1, gate_padding))
+
+    protected_mask = cv2.bitwise_and(protected_mask, cv2.bitwise_not(gate_mask))
+    return protected_mask, gate_mask
+
+
+def connector_space_from_masks(line_mask: np.ndarray, protected_node_mask: np.ndarray, gate_mask: np.ndarray) -> np.ndarray:
+    outside_nodes = cv2.bitwise_and(line_mask, cv2.bitwise_not(protected_node_mask))
+    return cv2.bitwise_or(outside_nodes, gate_mask)
+
+
+def _endpoint_direction(path: list[Point], at_start: bool) -> tuple[float, float]:
+    if len(path) < 2:
+        return (0.0, 0.0)
+    if at_start:
+        origin, target = path[0], path[1]
+    else:
+        origin, target = path[-1], path[-2]
+    return float(origin[0] - target[0]), float(origin[1] - target[1])
+
+
+def _direction_compatible(side: str, direction: tuple[float, float], min_axis_ratio: float) -> bool:
+    dx, dy = direction
+    abs_dx = abs(dx)
+    abs_dy = abs(dy)
+    if side in {"left", "right"}:
+        return abs_dx >= max(1.0, abs_dy * min_axis_ratio)
+    return abs_dy >= max(1.0, abs_dx * min_axis_ratio)
+
+
+def snap_connector_endpoints_to_nodes(
+    paths: list[list[Point]],
+    nodes: list[Node],
+    snap_distance_tolerance: int,
+    directional_axis_ratio: float,
+) -> tuple[list[dict[str, object]], list[Point], list[list[Point]]]:
+    snapped_records: list[dict[str, object]] = []
+    endpoint_candidates: list[Point] = []
+    snapped_paths: list[list[Point]] = []
+
+    gate_records: list[dict[str, object]] = []
+    for node in nodes:
+        for side, point in node.gates.items():
+            gate_records.append({"node_id": node.id, "side": side, "point": point})
+
+    for path in paths:
+        if len(path) < 2:
+            continue
+        snapped_path = snap_points(path)
+        endpoint_candidates.extend([snapped_path[0], snapped_path[-1]])
+        attachments: list[dict[str, object] | None] = []
+
+        for at_start in (True, False):
+            endpoint = snapped_path[0] if at_start else snapped_path[-1]
+            direction = _endpoint_direction(snapped_path, at_start)
+            matches: list[tuple[float, dict[str, object]]] = []
+            for gate in gate_records:
+                if not _direction_compatible(str(gate["side"]), direction, directional_axis_ratio):
+                    continue
+                distance = math.dist(endpoint, gate["point"])
+                if distance <= snap_distance_tolerance:
+                    matches.append((distance, gate))
+            if matches:
+                matches.sort(key=lambda item: item[0])
+                distance, gate = matches[0]
+                snapped_point = snap_point(gate["point"])
+                if at_start:
+                    snapped_path[0] = snapped_point
+                else:
+                    snapped_path[-1] = snapped_point
+                attachments.append(
+                    {
+                        "node_id": gate["node_id"],
+                        "side": gate["side"],
+                        "distance": round(distance, 2),
+                        "snapped": True,
+                    }
+                )
+            else:
+                attachments.append(None)
+
+        snapped_paths.append(snapped_path)
+        src_attachment = attachments[0]
+        dst_attachment = attachments[1]
+        attachment_count = sum(1 for item in attachments if item is not None)
+        confidence = 0.45 + 0.2 * attachment_count
+        snapped_records.append(
+            {
+                "points": snapped_path,
+                "src_node_id": None if src_attachment is None else src_attachment["node_id"],
+                "src_side": None if src_attachment is None else src_attachment["side"],
+                "dst_node_id": None if dst_attachment is None else dst_attachment["node_id"],
+                "dst_side": None if dst_attachment is None else dst_attachment["side"],
+                "confidence": min(confidence, 0.95),
+                "debug": {
+                    "src_attachment": src_attachment,
+                    "dst_attachment": dst_attachment,
+                    "orphan": attachment_count == 0,
+                },
+            }
+        )
+
+    return snapped_records, endpoint_candidates, snapped_paths
+
+================================================================================
+
+Demo9\src\contours.py
+
+from __future__ import annotations
+
+import math
+
+import cv2
+
+from .geometry import build_connector_element, build_shape_element, build_unknown_element
+from .models import Element
+from .separation import SeparationCandidate
+
+
+def _segment_length(path: list[tuple[int, int]]) -> float:
+    return math.dist(path[0], path[-1])
+
+
+def _segment_angle(path: list[tuple[int, int]]) -> float:
+    dx = path[-1][0] - path[0][0]
+    dy = path[-1][1] - path[0][1]
+    return math.degrees(math.atan2(dy, dx))
+
+
+def _segment_midpoint(path: list[tuple[int, int]]) -> tuple[float, float]:
+    return ((path[0][0] + path[-1][0]) / 2.0, (path[0][1] + path[-1][1]) / 2.0)
+
+
+def _is_duplicate_path(
+    path: list[tuple[int, int]],
+    existing_paths: list[list[tuple[int, int]]],
+    midpoint_tolerance: float = 10.0,
+    angle_tolerance: float = 8.0,
+    length_ratio_tolerance: float = 0.2,
+) -> bool:
+    candidate_mid = _segment_midpoint(path)
+    candidate_angle = _segment_angle(path)
+    candidate_length = max(_segment_length(path), 1.0)
+
+    for existing in existing_paths:
+        existing_mid = _segment_midpoint(existing)
+        existing_angle = _segment_angle(existing)
+        existing_length = max(_segment_length(existing), 1.0)
+        midpoint_distance = math.dist(candidate_mid, existing_mid)
+        angle_delta = abs(candidate_angle - existing_angle)
+        angle_delta = min(angle_delta, abs(angle_delta - 180.0))
+        length_delta_ratio = abs(candidate_length - existing_length) / max(candidate_length, existing_length)
+        if (
+            midpoint_distance <= midpoint_tolerance
+            and angle_delta <= angle_tolerance
+            and length_delta_ratio <= length_ratio_tolerance
+        ):
+            return True
+    return False
+
+
+def extract_primitives(
+    shape_candidates: list[SeparationCandidate],
+    connector_paths: list[list[tuple[int, int]]],
+    connector_group_ids: list[int],
+    min_contour_area: int,
+    contour_epsilon_ratio: float,
+    min_connector_path_length: int,
+) -> tuple[list[Element], list, list[list[tuple[int, int]]]]:
+    elements: list[Element] = []
+    kept_contours: list = []
+
+    shape_index = 1
+    unknown_index = 1
+
+    for candidate in shape_candidates:
+        contour = candidate.contour
+        area = cv2.contourArea(contour)
+        if area < min_contour_area:
+            continue
+
+        kept_contours.append(contour)
+        perimeter = cv2.arcLength(contour, True)
+        approx = cv2.approxPolyDP(contour, max(1.0, perimeter * contour_epsilon_ratio), True)
+        is_closed = len(approx) >= 3
+
+        debug = {
+            "source_mask": "shape_mask",
+            "parent_shape_id": candidate.parent_shape_id,
+            "is_internal_noise": False,
+            "rejection_reason": None,
+            "separation_metrics": candidate.metrics,
+        }
+
+        if is_closed:
+            element = build_shape_element(f"shape_{shape_index:03d}", contour, contour_epsilon_ratio)
+            element.debug.update(debug)
+            elements.append(element)
+            shape_index += 1
+        else:
+            element = build_unknown_element(f"unknown_{unknown_index:03d}", contour, contour_epsilon_ratio)
+            element.debug.update(debug)
+            elements.append(element)
+            unknown_index += 1
+
+    line_paths: list[list[tuple[int, int]]] = []
+    connector_index = 1
+    for path, group_id in zip(connector_paths, connector_group_ids):
+        if len(path) < 2:
+            continue
+        if _segment_length(path) < float(min_connector_path_length):
+            continue
+        if _is_duplicate_path(path, line_paths):
+            continue
+        line_paths.append(path)
+        element = build_connector_element(f"connector_{connector_index:03d}", path, closed=False)
+        element.debug.update(
+            {
+                "source_mask": "line_mask",
+                "parent_shape_id": None,
+                "is_internal_noise": False,
+                "merge_group_id": int(group_id),
+                "rejection_reason": None,
+                "separation_metrics": {
+                    "line_length": round(_segment_length(path), 2),
+                    "aspect_ratio": round(
+                        max(abs(path[-1][0] - path[0][0]), abs(path[-1][1] - path[0][1]))
+                        / max(min(max(abs(path[-1][0] - path[0][0]), 1), max(abs(path[-1][1] - path[0][1]), 1)), 1),
+                        4,
+                    ),
+                    "bbox_fill_ratio": 0.0,
+                    "border_touch_count": 0,
+                },
+            }
+        )
+        elements.append(element)
+        connector_index += 1
+
+    return elements, kept_contours, line_paths
+
+================================================================================
+
+Demo9\src\debug_outputs.py
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+
+def ensure_output_dir(output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def write_image(output_dir: Path, filename: str, image: np.ndarray) -> None:
+    ensure_output_dir(output_dir)
+    cv2.imwrite(str(output_dir / filename), image)
+
+
+def write_text(output_dir: Path, filename: str, text: str) -> None:
+    ensure_output_dir(output_dir)
+    (output_dir / filename).write_text(text, encoding="utf-8")
+
+================================================================================
+
+Demo9\src\edges.py
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+
+def detect_edges(
+    normalized_grayscale: np.ndarray,
+    canny_low: int,
+    canny_high: int,
+    aperture_size: int,
+) -> np.ndarray:
+    return cv2.Canny(
+        normalized_grayscale,
+        canny_low,
+        canny_high,
+        apertureSize=aperture_size,
+        L2gradient=True,
+    )
+
+================================================================================
+
+Demo9\src\geometry.py
+
+from __future__ import annotations
+
+import math
+
+import cv2
+import numpy as np
+
+from .grid import snap_point, snap_points
+from .models import Connector, Element, InterpretedGeometry, Node, RawGeometry
+
+
+def contour_to_points(contour: np.ndarray) -> list[tuple[int, int]]:
+    return snap_points([(int(p[0][0]), int(p[0][1])) for p in contour])
+
+
+def simplify_contour(contour: np.ndarray, epsilon_ratio: float) -> np.ndarray:
+    perimeter = cv2.arcLength(contour, True)
+    epsilon = max(1.0, perimeter * epsilon_ratio)
+    return cv2.approxPolyDP(contour, epsilon, True)
+
+
+def bbox_and_center(points: list[tuple[int, int]]) -> tuple[tuple[int, int, int, int], tuple[int, int]]:
+    xs = [point[0] for point in points]
+    ys = [point[1] for point in points]
+    min_x, max_x = min(xs), max(xs)
+    min_y, max_y = min(ys), max(ys)
+    bbox = (int(min_x), int(min_y), int(max_x - min_x), int(max_y - min_y))
+    center = (int(round((min_x + max_x) / 2)), int(round((min_y + max_y) / 2)))
+    return bbox, center
+
+
+def classify_shape(contour: np.ndarray, simplified: np.ndarray) -> tuple[str, float]:
+    area = cv2.contourArea(contour)
+    perimeter = cv2.arcLength(contour, True)
+    if area <= 0 or perimeter <= 0:
+        return "unknown-shape", 0.2
+
+    approx_vertices = len(simplified)
+    x, y, w, h = cv2.boundingRect(contour)
+    bbox_area = max(w * h, 1)
+    fill_ratio = area / bbox_area
+    circularity = (4.0 * math.pi * area) / max(perimeter * perimeter, 1.0)
+
+    if approx_vertices == 4 and fill_ratio >= 0.55:
+        return "rectangle-like", 0.9
+    if approx_vertices >= 8 and circularity >= 0.68:
+        return "ellipse-like", 0.78
+    if 3 <= approx_vertices <= 10:
+        return "polygon-like", 0.7
+    return "unknown-shape", 0.35
+
+
+def classify_path(is_closed: bool) -> tuple[str, float]:
+    if is_closed:
+        return "closed-path", 0.7
+    return "polyline", 0.72
+
+
+def build_shape_element(
+    element_id: str,
+    contour: np.ndarray,
+    epsilon_ratio: float,
+) -> Element:
+    simplified = simplify_contour(contour, epsilon_ratio)
+    raw_points = contour_to_points(contour)
+    render_points = contour_to_points(simplified)
+    bbox, center = bbox_and_center(render_points or raw_points)
+    shape_type, confidence = classify_shape(contour, simplified)
+    raw_geometry = RawGeometry(
+        outline_points=raw_points,
+        contour_area=int(round(cv2.contourArea(contour))),
+        perimeter=int(round(cv2.arcLength(contour, True))),
+    )
+    interpreted_geometry = InterpretedGeometry(
+        shape_type=shape_type,
+        render_points=render_points,
+        closed=True,
+    )
+    return Element(
+        id=element_id,
+        element_type="shape_candidate",
+        raw_geometry=raw_geometry,
+        interpreted_geometry=interpreted_geometry,
+        bbox=bbox,
+        center=center,
+        confidence=round(confidence, 3),
+        debug={"approx_vertices": len(simplified)},
+    )
+
+
+def build_connector_element(
+    element_id: str,
+    points: list[tuple[int, int]],
+    closed: bool,
+) -> Element:
+    snapped_points = snap_points(points)
+    bbox, center = bbox_and_center(snapped_points)
+    path_type, confidence = classify_path(closed)
+    raw_geometry = RawGeometry(
+        path_points=snapped_points,
+        perimeter=int(
+            round(
+                sum(
+                    math.dist(snapped_points[i], snapped_points[i + 1])
+                    for i in range(len(snapped_points) - 1)
+                )
+            )
+        ),
+    )
+    interpreted_geometry = InterpretedGeometry(
+        path_type=path_type,
+        render_points=snapped_points,
+        closed=closed,
+    )
+    return Element(
+        id=element_id,
+        element_type="connector_candidate",
+        raw_geometry=raw_geometry,
+        interpreted_geometry=interpreted_geometry,
+        bbox=bbox,
+        center=center,
+        confidence=round(confidence, 3),
+        debug={"point_count": len(snapped_points)},
+    )
+
+
+def build_unknown_element(
+    element_id: str,
+    contour: np.ndarray,
+    epsilon_ratio: float,
+) -> Element:
+    simplified = simplify_contour(contour, epsilon_ratio)
+    raw_points = contour_to_points(contour)
+    render_points = contour_to_points(simplified)
+    bbox, center = bbox_and_center(render_points or raw_points)
+    raw_geometry = RawGeometry(
+        outline_points=raw_points,
+        contour_area=int(round(cv2.contourArea(contour))),
+        perimeter=int(round(cv2.arcLength(contour, True))),
+    )
+    interpreted_geometry = InterpretedGeometry(
+        shape_type="unknown-shape",
+        render_points=render_points,
+        closed=bool(cv2.isContourConvex(simplified)),
+    )
+    return Element(
+        id=element_id,
+        element_type="unknown_candidate",
+        raw_geometry=raw_geometry,
+        interpreted_geometry=interpreted_geometry,
+        bbox=bbox,
+        center=center,
+        confidence=0.25,
+        debug={"approx_vertices": len(simplified)},
+    )
+
+
+def build_line_path(points: np.ndarray) -> list[tuple[int, int]]:
+    reshaped = points.reshape(-1, 2)
+    return [snap_point((int(x), int(y))) for x, y in reshaped]
+
+
+def bbox_contains(outer: tuple[int, int, int, int], inner: tuple[int, int, int, int], margin: int = 0) -> bool:
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    return (
+        ix >= ox + margin
+        and iy >= oy + margin
+        and ix + iw <= ox + ow - margin
+        and iy + ih <= oy + oh - margin
+    )
+
+
+def bbox_iou(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> float:
+    ax1, ay1, aw, ah = first
+    bx1, by1, bw, bh = second
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx2, by2 = bx1 + bw, by1 + bh
+    inter_w = max(0, min(ax2, bx2) - max(ax1, bx1))
+    inter_h = max(0, min(ay2, by2) - max(ay1, by1))
+    inter_area = inter_w * inter_h
+    if inter_area <= 0:
+        return 0.0
+    union = aw * ah + bw * bh - inter_area
+    return inter_area / max(union, 1)
+
+
+def expand_bbox(
+    bbox: tuple[int, int, int, int],
+    outward_padding: int,
+    image_width: int,
+    image_height: int,
+) -> tuple[int, int, int, int]:
+    x, y, w, h = bbox
+    min_x = max(0, x - outward_padding)
+    min_y = max(0, y - outward_padding)
+    max_x = min(image_width - 1, x + w + outward_padding)
+    max_y = min(image_height - 1, y + h + outward_padding)
+    return min_x, min_y, max_x - min_x, max_y - min_y
+
+
+def _gate_half_span(bbox: tuple[int, int, int, int], min_span: int, max_span: int) -> int:
+    _, _, w, h = bbox
+    return int(max(min_span, min(max_span, round(min(w, h) * 0.18))))
+
+
+def build_node_from_element(
+    node_id: str,
+    element: Element,
+    image_width: int,
+    image_height: int,
+    outward_padding: int,
+    label_height_ratio: float,
+    gate_min_span: int,
+    gate_max_span: int,
+) -> Node:
+    x, y, w, h = element.bbox
+    center = (x + w // 2, y + h // 2)
+    side_midpoints = {
+        "top": (x + w // 2, y),
+        "right": (x + w, y + h // 2),
+        "bottom": (x + w // 2, y + h),
+        "left": (x, y + h // 2),
+    }
+    gate_half_span = _gate_half_span(element.bbox, gate_min_span, gate_max_span)
+    gates = {side: point for side, point in side_midpoints.items()}
+    gate_segments = {
+        "top": [(gates["top"][0] - gate_half_span, y), (gates["top"][0] + gate_half_span, y)],
+        "bottom": [(gates["bottom"][0] - gate_half_span, y + h), (gates["bottom"][0] + gate_half_span, y + h)],
+        "left": [(x, gates["left"][1] - gate_half_span), (x, gates["left"][1] + gate_half_span)],
+        "right": [(x + w, gates["right"][1] - gate_half_span), (x + w, gates["right"][1] + gate_half_span)],
+    }
+    label_height = max(12, int(round(h * label_height_ratio)))
+    label_region = (x + 4, y + 4, max(w - 8, 1), max(min(label_height, h - 8), 1))
+    return Node(
+        id=node_id,
+        bbox=element.bbox,
+        center=center,
+        side_midpoints=side_midpoints,
+        expanded_bbox=expand_bbox(element.bbox, outward_padding, image_width, image_height),
+        label_region=label_region,
+        gates=gates,
+        gate_segments=gate_segments,
+        debug={
+            "source_element_id": element.id,
+            "shape_type": element.interpreted_geometry.shape_type,
+            "frozen": True,
+        },
+    )
+
+
+def build_connector(
+    connector_id: str,
+    points: list[tuple[int, int]],
+    src_node_id: str | None,
+    src_side: str | None,
+    dst_node_id: str | None,
+    dst_side: str | None,
+    confidence: float,
+    debug: dict[str, object] | None = None,
+) -> Connector:
+    return Connector(
+        id=connector_id,
+        points=snap_points(points),
+        src_node_id=src_node_id,
+        src_side=src_side,
+        dst_node_id=dst_node_id,
+        dst_side=dst_side,
+        confidence=round(confidence, 3),
+        debug=debug or {},
+    )
+
+================================================================================
+
+Demo9\src\graph.py
+
+from __future__ import annotations
+
+import math
+from collections import defaultdict, deque
+
+import cv2
+import numpy as np
+
+from .grid import snap_point
+from .models import ConnectorRoute, GraphDiagnostics, GraphEdge, GraphVertex, Node, OrthoSegment
+
+
+Point = tuple[int, int]
+
+
+def orthogonalize_paths(
+    paths: list[list[Point]],
+    orth_axis_tolerance: int,
+    spur_min_length: int,
+) -> list[list[Point]]:
+    ortho_paths: list[list[Point]] = []
+    for path in paths:
+        if len(path) < 2:
+            continue
+        current: list[Point] = [snap_point(path[0])]
+        for point in path[1:]:
+            prev = current[-1]
+            point = snap_point(point)
+            dx = point[0] - prev[0]
+            dy = point[1] - prev[1]
+            if abs(dx) <= orth_axis_tolerance and abs(dy) <= orth_axis_tolerance:
+                continue
+            if abs(dy) <= orth_axis_tolerance:
+                next_point = (point[0], prev[1])
+                if next_point != current[-1]:
+                    current.append(next_point)
+            elif abs(dx) <= orth_axis_tolerance:
+                next_point = (prev[0], point[1])
+                if next_point != current[-1]:
+                    current.append(next_point)
+            else:
+                bend = (point[0], prev[1]) if abs(dx) >= abs(dy) else (prev[0], point[1])
+                if bend != current[-1]:
+                    current.append(bend)
+                if point != current[-1]:
+                    current.append(point)
+        simplified = [current[0]]
+        for point in current[1:]:
+            if point != simplified[-1]:
+                simplified.append(point)
+        if len(simplified) >= 2:
+            length = sum(math.dist(simplified[i], simplified[i + 1]) for i in range(len(simplified) - 1))
+            if length >= spur_min_length:
+                ortho_paths.append(simplified)
+    return ortho_paths
+
+
+def build_ortho_segments(paths: list[list[Point]]) -> list[OrthoSegment]:
+    segments: list[OrthoSegment] = []
+    for path_index, path in enumerate(paths, start=1):
+        for i in range(len(path) - 1):
+            x1, y1 = path[i]
+            x2, y2 = path[i + 1]
+            if x1 == x2 and y1 == y2:
+                continue
+            orientation = "H" if abs(y1 - y2) <= abs(x1 - x2) else "V"
+            if orientation == "H":
+                y = int(round((y1 + y2) / 2))
+                x1, x2 = sorted([int(x1), int(x2)])
+                segments.append(OrthoSegment(id=f"seg_{path_index:03d}_{i:03d}", orientation="H", x1=x1, y1=y, x2=x2, y2=y, component_id=f"comp_{path_index:03d}"))
+            else:
+                x = int(round((x1 + x2) / 2))
+                y1, y2 = sorted([int(y1), int(y2)])
+                segments.append(OrthoSegment(id=f"seg_{path_index:03d}_{i:03d}", orientation="V", x1=x, y1=y1, x2=x, y2=y2, component_id=f"comp_{path_index:03d}"))
+    return segments
+
+
+def normalize_ortho_segments(
+    segments: list[OrthoSegment],
+    axis_snap_tolerance: int,
+) -> list[OrthoSegment]:
+    normalized: list[OrthoSegment] = []
+    for segment in segments:
+        if segment.orientation == "H":
+            axis = segment.y1
+            snapped_axis = int(round(axis / max(axis_snap_tolerance, 1))) * max(axis_snap_tolerance, 1)
+            normalized.append(
+                OrthoSegment(
+                    id=segment.id,
+                    orientation="H",
+                    x1=min(segment.x1, segment.x2),
+                    y1=snapped_axis,
+                    x2=max(segment.x1, segment.x2),
+                    y2=snapped_axis,
+                    component_id=segment.component_id,
+                    source_count=segment.source_count,
+                    collapsed_from_ids=list(segment.collapsed_from_ids or [segment.id]),
+                )
+            )
+        else:
+            axis = segment.x1
+            snapped_axis = int(round(axis / max(axis_snap_tolerance, 1))) * max(axis_snap_tolerance, 1)
+            normalized.append(
+                OrthoSegment(
+                    id=segment.id,
+                    orientation="V",
+                    x1=snapped_axis,
+                    y1=min(segment.y1, segment.y2),
+                    x2=snapped_axis,
+                    y2=max(segment.y1, segment.y2),
+                    component_id=segment.component_id,
+                    source_count=segment.source_count,
+                    collapsed_from_ids=list(segment.collapsed_from_ids or [segment.id]),
+                )
+            )
+    return normalized
+
+
+def _segment_span(segment: OrthoSegment) -> tuple[int, int]:
+    return (segment.x1, segment.x2) if segment.orientation == "H" else (segment.y1, segment.y2)
+
+
+def _same_axis(first: OrthoSegment, second: OrthoSegment, offset_tolerance: int) -> bool:
+    if first.orientation != second.orientation:
+        return False
+    if first.orientation == "H":
+        return abs(first.y1 - second.y1) <= offset_tolerance
+    return abs(first.x1 - second.x1) <= offset_tolerance
+
+
+def _merge_two_collinear(first: OrthoSegment, second: OrthoSegment) -> OrthoSegment:
+    if first.orientation == "H":
+        xs = [first.x1, first.x2, second.x1, second.x2]
+        axis = int(round((first.y1 + second.y1) / 2))
+        return OrthoSegment(
+            id=first.id,
+            orientation="H",
+            x1=min(xs),
+            y1=axis,
+            x2=max(xs),
+            y2=axis,
+            component_id=first.component_id,
+            source_count=first.source_count + second.source_count,
+            collapsed_from_ids=(first.collapsed_from_ids or [first.id]) + (second.collapsed_from_ids or [second.id]),
+        )
+    ys = [first.y1, first.y2, second.y1, second.y2]
+    axis = int(round((first.x1 + second.x1) / 2))
+    return OrthoSegment(
+        id=first.id,
+        orientation="V",
+        x1=axis,
+        y1=min(ys),
+        x2=axis,
+        y2=max(ys),
+        component_id=first.component_id,
+        source_count=first.source_count + second.source_count,
+        collapsed_from_ids=(first.collapsed_from_ids or [first.id]) + (second.collapsed_from_ids or [second.id]),
+    )
+
+
+def iterative_collinear_merge(
+    segments: list[OrthoSegment],
+    merge_gap_tolerance: int,
+    parallel_offset_tolerance: int,
+) -> list[OrthoSegment]:
+    merged = list(segments)
+    changed = True
+    while changed:
+        changed = False
+        next_segments: list[OrthoSegment] = []
+        used = [False] * len(merged)
+        for i, segment in enumerate(merged):
+            if used[i]:
+                continue
+            current = segment
+            for j in range(i + 1, len(merged)):
+                if used[j]:
+                    continue
+                other = merged[j]
+                if not _same_axis(current, other, parallel_offset_tolerance):
+                    continue
+                a1, a2 = _segment_span(current)
+                b1, b2 = _segment_span(other)
+                if max(a1, b1) <= min(a2, b2) + merge_gap_tolerance:
+                    current = _merge_two_collinear(current, other)
+                    used[j] = True
+                    changed = True
+            next_segments.append(current)
+            used[i] = True
+        merged = next_segments
+    return merged
+
+
+def collapse_parallel_corridors(
+    segments: list[OrthoSegment],
+    overlap_ratio_min: float,
+    parallel_distance_max: int,
+    min_group_size: int,
+) -> tuple[list[OrthoSegment], int, list[dict[str, object]]]:
+    def overlap_exists(first: OrthoSegment, second: OrthoSegment) -> bool:
+        if first.orientation == "H":
+            overlap = min(first.x2, second.x2) - max(first.x1, second.x1)
+            min_span = max(1, min(first.x2 - first.x1, second.x2 - second.x1))
+        else:
+            overlap = min(first.y2, second.y2) - max(first.y1, second.y1)
+            min_span = max(1, min(first.y2 - first.y1, second.y2 - second.y1))
+        return overlap > 0 and (overlap / min_span) >= overlap_ratio_min
+
+    current = list(segments)
+    total_collapsed_groups = 0
+    debug_groups: list[dict[str, object]] = []
+    changed = True
+    while changed:
+        changed = False
+        collapsed: list[OrthoSegment] = []
+        used = [False] * len(current)
+        for i, segment in enumerate(current):
+            if used[i]:
+                continue
+            group = [segment]
+            used[i] = True
+            grew = True
+            while grew:
+                grew = False
+                for j, other in enumerate(current):
+                    if used[j]:
+                        continue
+                    if any(
+                        item.orientation == other.orientation
+                        and abs((item.y1 if item.orientation == "H" else item.x1) - (other.y1 if other.orientation == "H" else other.x1)) <= parallel_distance_max
+                        and overlap_exists(item, other)
+                        for item in group
+                    ):
+                        group.append(other)
+                        used[j] = True
+                        grew = True
+            if len(group) >= min_group_size:
+                changed = True
+                total_collapsed_groups += 1
+                debug_groups.append(
+                    {
+                        "orientation": segment.orientation,
+                        "member_segment_ids": [item.id for item in group],
+                        "collapsed": True,
+                        "overlap_ratio_estimate": round(
+                            min(
+                                (
+                                    max(
+                                        0,
+                                        min(a.x2 if a.orientation == "H" else a.y2, b.x2 if b.orientation == "H" else b.y2)
+                                        - max(a.x1 if a.orientation == "H" else a.y1, b.x1 if b.orientation == "H" else b.y1),
+                                    )
+                                    / max(
+                                        1,
+                                        min(
+                                            (a.x2 - a.x1) if a.orientation == "H" else (a.y2 - a.y1),
+                                            (b.x2 - b.x1) if b.orientation == "H" else (b.y2 - b.y1),
+                                        ),
+                                    )
+                                )
+                                for a in group
+                                for b in group
+                                if a.id != b.id
+                            ),
+                            3,
+                        ) if len(group) > 1 else 1.0,
+                        "perpendicular_distance": int(
+                            max(
+                                abs((item.y1 if item.orientation == "H" else item.x1) - (group[0].y1 if group[0].orientation == "H" else group[0].x1))
+                                for item in group
+                            )
+                        ),
+                        "rejection_reason": None,
+                    }
+                )
+                if segment.orientation == "H":
+                    x1 = min(item.x1 for item in group)
+                    x2 = max(item.x2 for item in group)
+                    y = int(round(np.median([item.y1 for item in group])))
+                    collapsed.append(
+                        OrthoSegment(
+                            id=group[0].id,
+                            orientation="H",
+                            x1=x1,
+                            y1=y,
+                            x2=x2,
+                            y2=y,
+                            component_id=group[0].component_id,
+                            source_count=sum(item.source_count for item in group),
+                            collapsed_from_ids=[sid for item in group for sid in (item.collapsed_from_ids or [item.id])],
+                        )
+                    )
+                else:
+                    y1 = min(item.y1 for item in group)
+                    y2 = max(item.y2 for item in group)
+                    x = int(round(np.median([item.x1 for item in group])))
+                    collapsed.append(
+                        OrthoSegment(
+                            id=group[0].id,
+                            orientation="V",
+                            x1=x,
+                            y1=y1,
+                            x2=x,
+                            y2=y2,
+                            component_id=group[0].component_id,
+                            source_count=sum(item.source_count for item in group),
+                            collapsed_from_ids=[sid for item in group for sid in (item.collapsed_from_ids or [item.id])],
+                        )
+                    )
+            else:
+                if len(group) > 1:
+                    debug_groups.append(
+                        {
+                            "orientation": segment.orientation,
+                            "member_segment_ids": [item.id for item in group],
+                            "collapsed": False,
+                            "overlap_ratio_estimate": 0.0,
+                            "perpendicular_distance": int(
+                                max(
+                                    abs((item.y1 if item.orientation == "H" else item.x1) - (group[0].y1 if group[0].orientation == "H" else group[0].x1))
+                                    for item in group
+                                )
+                            ),
+                            "rejection_reason": "group_size_below_threshold",
+                        }
+                    )
+                collapsed.extend(group)
+        current = collapsed
+    return current, total_collapsed_groups, debug_groups
+
+
+def filter_dominant_segments(
+    segments: list[OrthoSegment],
+    parallel_offset_tolerance: int,
+) -> list[OrthoSegment]:
+    kept: list[OrthoSegment] = []
+    for segment in sorted(segments, key=_segment_length, reverse=True):
+        dominated = False
+        for existing in kept:
+            if segment.orientation != existing.orientation:
+                continue
+            if segment.orientation == "H":
+                if abs(segment.y1 - existing.y1) <= parallel_offset_tolerance and existing.x1 <= segment.x1 and segment.x2 <= existing.x2:
+                    dominated = True
+                    break
+            else:
+                if abs(segment.x1 - existing.x1) <= parallel_offset_tolerance and existing.y1 <= segment.y1 and segment.y2 <= existing.y2:
+                    dominated = True
+                    break
+        if not dominated:
+            kept.append(segment)
+    return kept
+
+
+def _segment_length(segment: OrthoSegment) -> float:
+    return float(abs(segment.x2 - segment.x1) + abs(segment.y2 - segment.y1))
+
+
+def _point_on_segment(point: Point, segment: OrthoSegment) -> bool:
+    x, y = point
+    if segment.orientation == "H":
+        return y == segment.y1 and segment.x1 <= x <= segment.x2
+    return x == segment.x1 and segment.y1 <= y <= segment.y2
+
+
+def _graph_points_from_segments(segments: list[OrthoSegment]) -> dict[Point, set[int]]:
+    point_map: dict[Point, set[int]] = defaultdict(set)
+    for index, segment in enumerate(segments):
+        point_map[(segment.x1, segment.y1)].add(index)
+        point_map[(segment.x2, segment.y2)].add(index)
+        for other_index in range(index + 1, len(segments)):
+            other = segments[other_index]
+            if segment.orientation == other.orientation:
+                continue
+            h = segment if segment.orientation == "H" else other
+            v = other if segment.orientation == "V" else segment
+            if h.x1 <= v.x1 <= h.x2 and v.y1 <= h.y1 <= v.y2:
+                point_map[(v.x1, h.y1)].update({index, other_index})
+    return point_map
+
+
+def prune_spurs(
+    segments: list[OrthoSegment],
+    gate_points: list[Point],
+    spur_prune_length: int,
+) -> tuple[list[OrthoSegment], int]:
+    point_map = _graph_points_from_segments(segments)
+    protected_points = set(gate_points)
+    kept: list[OrthoSegment] = []
+    pruned = 0
+    for index, segment in enumerate(segments):
+        degree_start = len(point_map[(segment.x1, segment.y1)])
+        degree_end = len(point_map[(segment.x2, segment.y2)])
+        if (
+            _segment_length(segment) <= spur_prune_length
+            and (degree_start == 1 or degree_end == 1)
+            and (segment.x1, segment.y1) not in protected_points
+            and (segment.x2, segment.y2) not in protected_points
+        ):
+            pruned += 1
+            continue
+        kept.append(segment)
+    return kept, pruned
+
+
+def segments_to_component_graph(segments: list[OrthoSegment]) -> dict[int, set[int]]:
+    graph: dict[int, set[int]] = {i: set() for i in range(len(segments))}
+    point_map = _graph_points_from_segments(segments)
+    for indexes in point_map.values():
+        index_list = list(indexes)
+        for i in range(len(index_list)):
+            for j in range(i + 1, len(index_list)):
+                graph[index_list[i]].add(index_list[j])
+                graph[index_list[j]].add(index_list[i])
+    return graph
+
+
+def filter_gate_relevant_segments(
+    segments: list[OrthoSegment],
+    gate_points: list[Point],
+    component_gate_distance_max: int,
+) -> tuple[list[OrthoSegment], int]:
+    graph = segments_to_component_graph(segments)
+    seen: set[int] = set()
+    components: list[list[int]] = []
+    component_points: list[list[Point]] = []
+    for start in range(len(segments)):
+        if start in seen:
+            continue
+        queue = deque([start])
+        component: list[int] = []
+        seen.add(start)
+        while queue:
+            current = queue.popleft()
+            component.append(current)
+            for neighbor in graph[current]:
+                if neighbor not in seen:
+                    seen.add(neighbor)
+                    queue.append(neighbor)
+        components.append(component)
+        pts: list[Point] = []
+        for index in component:
+            seg = segments[index]
+            pts.extend([(seg.x1, seg.y1), (seg.x2, seg.y2)])
+        component_points.append(pts)
+
+    component_graph: dict[int, set[int]] = {i: set() for i in range(len(components))}
+    for i in range(len(components)):
+        box_i = (
+            min(p[0] for p in component_points[i]),
+            min(p[1] for p in component_points[i]),
+            max(p[0] for p in component_points[i]),
+            max(p[1] for p in component_points[i]),
+        )
+        for j in range(i + 1, len(components)):
+            box_j = (
+                min(p[0] for p in component_points[j]),
+                min(p[1] for p in component_points[j]),
+                max(p[0] for p in component_points[j]),
+                max(p[1] for p in component_points[j]),
+            )
+            dx = max(0, max(box_i[0], box_j[0]) - min(box_i[2], box_j[2]))
+            dy = max(0, max(box_i[1], box_j[1]) - min(box_i[3], box_j[3]))
+            if max(dx, dy) <= component_gate_distance_max:
+                component_graph[i].add(j)
+                component_graph[j].add(i)
+
+    seed_components = set()
+    for index, pts in enumerate(component_points):
+        min_distance = min(math.dist(point, gate) for point in pts for gate in gate_points) if gate_points else float("inf")
+        if min_distance <= component_gate_distance_max:
+            seed_components.add(index)
+
+    kept_component_indexes = set(seed_components)
+    queue = deque(seed_components)
+    while queue:
+        current = queue.popleft()
+        for neighbor in component_graph[current]:
+            if neighbor not in kept_component_indexes:
+                kept_component_indexes.add(neighbor)
+                queue.append(neighbor)
+
+    kept_indexes: set[int] = set()
+    for component_index in kept_component_indexes:
+        kept_indexes.update(components[component_index])
+    kept = [segment for i, segment in enumerate(segments) if i in kept_indexes]
+    return kept, len(kept_component_indexes)
+
+
+def filter_graph_to_gate_reachable(
+    vertices: list[GraphVertex],
+    edges: list[GraphEdge],
+    seed_vertex_ids: list[str] | None = None,
+) -> tuple[list[GraphVertex], list[GraphEdge], int]:
+    adjacency: defaultdict[str, set[str]] = defaultdict(set)
+    for edge in edges:
+        adjacency[edge.v_start].add(edge.v_end)
+        adjacency[edge.v_end].add(edge.v_start)
+
+    gate_vertex_ids = set(seed_vertex_ids or [vertex.id for vertex in vertices if vertex.kind == "gate_attach"])
+    reachable = set(gate_vertex_ids)
+    queue = deque(gate_vertex_ids)
+    while queue:
+        current = queue.popleft()
+        for neighbor in adjacency[current]:
+            if neighbor not in reachable:
+                reachable.add(neighbor)
+                queue.append(neighbor)
+
+    kept_vertices = [vertex for vertex in vertices if vertex.id in reachable]
+    kept_edges = [edge for edge in edges if edge.v_start in reachable and edge.v_end in reachable]
+    return kept_vertices, kept_edges, len(gate_vertex_ids)
+
+
+def _segment_intersection(first: OrthoSegment, second: OrthoSegment) -> Point | None:
+    if first.orientation == second.orientation:
+        return None
+    h = first if first.orientation == "H" else second
+    v = second if first.orientation == "H" else first
+    if h.x1 <= v.x1 <= h.x2 and v.y1 <= h.y1 <= v.y2:
+        return (v.x1, h.y1)
+    return None
+
+
+def _connected_intersection(point: Point, connector_space: np.ndarray, continuity_radius: int) -> bool:
+    x, y = point
+    h, w = connector_space.shape[:2]
+    x1 = max(0, x - continuity_radius)
+    y1 = max(0, y - continuity_radius)
+    x2 = min(w, x + continuity_radius + 1)
+    y2 = min(h, y + continuity_radius + 1)
+    roi = connector_space[y1:y2, x1:x2]
+    return int(cv2.countNonZero(roi)) >= max(3, continuity_radius * 2)
+
+
+def _intersection_endpoint_supported(
+    point: Point,
+    first: OrthoSegment,
+    second: OrthoSegment,
+    endpoint_tolerance: int,
+) -> bool:
+    first_endpoints = [(first.x1, first.y1), (first.x2, first.y2)]
+    second_endpoints = [(second.x1, second.y1), (second.x2, second.y2)]
+    first_near = min(math.dist(point, endpoint) for endpoint in first_endpoints) <= endpoint_tolerance
+    second_near = min(math.dist(point, endpoint) for endpoint in second_endpoints) <= endpoint_tolerance
+    return first_near or second_near
+
+
+def build_graph(
+    segments: list[OrthoSegment],
+    connector_space: np.ndarray,
+    continuity_radius: int,
+    endpoint_intersection_tolerance: int,
+) -> tuple[list[GraphVertex], list[GraphEdge], list[dict[str, object]]]:
+    del connector_space, continuity_radius, endpoint_intersection_tolerance
+    point_counts: defaultdict[Point, int] = defaultdict(int)
+    for segment in segments:
+        point_counts[(segment.x1, segment.y1)] += 1
+        point_counts[(segment.x2, segment.y2)] += 1
+
+    sorted_points = sorted(point_counts.keys(), key=lambda p: (p[1], p[0]))
+    vertices: list[GraphVertex] = []
+    vertex_ids: dict[Point, str] = {}
+    for index, point in enumerate(sorted_points, start=1):
+        kind = "junction" if point_counts[point] >= 3 else "endpoint"
+        vertex = GraphVertex(id=f"v_{index:03d}", kind=kind, x=point[0], y=point[1], degree=0)
+        vertices.append(vertex)
+        vertex_ids[point] = vertex.id
+
+    edges: list[GraphEdge] = []
+    adjacency: defaultdict[str, set[str]] = defaultdict(set)
+    for segment in segments:
+        start = vertex_ids[(segment.x1, segment.y1)]
+        end = vertex_ids[(segment.x2, segment.y2)]
+        if start == end:
+            continue
+        edge = GraphEdge(
+            id=f"e_{len(edges)+1:03d}",
+            v_start=start,
+            v_end=end,
+            orientation=segment.orientation,
+            length=round(_segment_length(segment), 2),
+            debug={
+                "source_segment_id": segment.id,
+                "source_segment_stage": "collapsed_segments",
+            },
+        )
+        edges.append(edge)
+        adjacency[start].add(end)
+        adjacency[end].add(start)
+
+    for vertex in vertices:
+        vertex.degree = len(adjacency[vertex.id])
+        if vertex.degree >= 3:
+            vertex.kind = "junction"
+        elif vertex.degree == 2:
+            vertex.kind = "bend"
+    return vertices, edges, []
+
+
+def reduce_degree2_vertices(vertices: list[GraphVertex], edges: list[GraphEdge]) -> tuple[list[GraphVertex], list[GraphEdge], int, int]:
+    vertex_lookup = {vertex.id: vertex for vertex in vertices}
+    adjacency: defaultdict[str, list[GraphEdge]] = defaultdict(list)
+    for edge in edges:
+        adjacency[edge.v_start].append(edge)
+        adjacency[edge.v_end].append(edge)
+
+    removed = 0
+    candidate_count = 0
+    changed = True
+    current_edges = list(edges)
+    current_vertices = list(vertices)
+    while changed:
+        changed = False
+        adjacency = defaultdict(list)
+        for edge in current_edges:
+            adjacency[edge.v_start].append(edge)
+            adjacency[edge.v_end].append(edge)
+        for vertex in list(current_vertices):
+            if vertex.kind in {"junction", "crossing", "gate_attach"}:
+                continue
+            incident = adjacency.get(vertex.id, [])
+            if len(incident) != 2:
+                continue
+            first, second = incident
+            if first.orientation != second.orientation:
+                continue
+            candidate_count += 1
+            other_a = first.v_end if first.v_start == vertex.id else first.v_start
+            other_b = second.v_end if second.v_start == vertex.id else second.v_start
+            if other_a == other_b:
+                continue
+            current_edges = [edge for edge in current_edges if edge.id not in {first.id, second.id}]
+            current_edges.append(
+                GraphEdge(
+                    id=f"e_{len(current_edges)+1:03d}",
+                    v_start=other_a,
+                    v_end=other_b,
+                    orientation=first.orientation,
+                    length=round(first.length + second.length, 2),
+                    debug={
+                        "source_segment_id": first.debug.get("source_segment_id"),
+                        "source_segment_stage": "collapsed_segments",
+                        "merged_from_edges": [first.id, second.id],
+                    },
+                )
+            )
+            current_vertices = [item for item in current_vertices if item.id != vertex.id]
+            removed += 1
+            changed = True
+            break
+    degree_counts: defaultdict[str, int] = defaultdict(int)
+    for edge in current_edges:
+        degree_counts[edge.v_start] += 1
+        degree_counts[edge.v_end] += 1
+    for vertex in current_vertices:
+        vertex.degree = degree_counts[vertex.id]
+    return current_vertices, current_edges, removed, candidate_count
+
+
+def _manhattan(point_a: Point, point_b: Point) -> int:
+    return abs(point_a[0] - point_b[0]) + abs(point_a[1] - point_b[1])
+
+
+def _project_point_to_segment(point: Point, segment: OrthoSegment) -> Point:
+    if segment.orientation == "H":
+        return (min(max(point[0], segment.x1), segment.x2), segment.y1)
+    return (segment.x1, min(max(point[1], segment.y1), segment.y2))
+
+
+def _segment_axis_distance(point: Point, segment: OrthoSegment) -> int:
+    projection = _project_point_to_segment(point, segment)
+    return _manhattan(point, projection)
+
+
+def absorb_gate_stubs_and_cleanup(
+    nodes: list[Node],
+    segments: list[OrthoSegment],
+    vertices: list[GraphVertex],
+    edges: list[GraphEdge],
+    attach_tolerance: int,
+    micro_bend_threshold: int,
+) -> tuple[list[GraphVertex], list[GraphEdge], list[dict[str, object]], dict[str, int]]:
+    vertex_lookup = {vertex.id: vertex for vertex in vertices}
+    segment_by_id = {segment.id: segment for segment in segments}
+    attachments: list[dict[str, object]] = []
+    gate_stubs_absorbed = 0
+    corridor_contacts_snapped = 0
+
+    for node in nodes:
+        for side, gate_point in node.gates.items():
+            best_vertex = None
+            best_vertex_distance = float("inf")
+            for vertex in vertices:
+                distance = math.dist(gate_point, (vertex.x, vertex.y))
+                if distance < best_vertex_distance:
+                    best_vertex_distance = distance
+                    best_vertex = vertex
+
+            best_edge = None
+            best_edge_distance = float("inf")
+            best_projection = None
+            for edge in edges:
+                segment_id = edge.debug.get("source_segment_id")
+                segment = segment_by_id.get(segment_id)
+                if segment is None:
+                    continue
+                distance = _segment_axis_distance(gate_point, segment)
+                if distance < best_edge_distance:
+                    best_edge_distance = distance
+                    best_edge = edge
+                    best_projection = _project_point_to_segment(gate_point, segment)
+
+            if best_vertex is not None and best_vertex_distance <= attach_tolerance:
+                attachments.append(
+                    {
+                        "node_id": node.id,
+                        "side": side,
+                        "gate_point": gate_point,
+                        "vertex_id": best_vertex.id,
+                        "graph_vertex_id": best_vertex.id,
+                        "distance": round(best_vertex_distance, 2),
+                        "stub_absorbed": False,
+                        "snapped_to_corridor": False,
+                    }
+                )
+                continue
+
+            if best_edge is not None and best_edge_distance <= attach_tolerance and best_projection is not None:
+                start_vertex = vertex_lookup.get(best_edge.v_start)
+                end_vertex = vertex_lookup.get(best_edge.v_end)
+                if start_vertex is None or end_vertex is None:
+                    continue
+                preferred_vertex = start_vertex
+                preferred_distance = _manhattan(best_projection, (start_vertex.x, start_vertex.y))
+                end_distance = _manhattan(best_projection, (end_vertex.x, end_vertex.y))
+                if end_distance < preferred_distance:
+                    preferred_vertex = end_vertex
+                attachments.append(
+                    {
+                        "node_id": node.id,
+                        "side": side,
+                        "gate_point": gate_point,
+                        "vertex_id": preferred_vertex.id,
+                        "graph_vertex_id": preferred_vertex.id,
+                        "distance": round(best_edge_distance, 2),
+                        "stub_absorbed": True,
+                        "snapped_to_corridor": True,
+                        "projected_point": best_projection,
+                        "edge_id": best_edge.id,
+                    }
+                )
+                gate_stubs_absorbed += 1
+                corridor_contacts_snapped += 1
+
+    reduced_vertices, reduced_edges, degree2_removed, _ = reduce_degree2_vertices(vertices, edges)
+
+    vertex_lookup = {vertex.id: vertex for vertex in reduced_vertices}
+    edge_lookup: defaultdict[str, list[GraphEdge]] = defaultdict(list)
+    for edge in reduced_edges:
+        edge_lookup[edge.v_start].append(edge)
+        edge_lookup[edge.v_end].append(edge)
+
+    micro_bends_removed = 0
+    changed = True
+    while changed:
+        changed = False
+        for vertex in list(reduced_vertices):
+            if vertex.kind not in {"bend", "endpoint"}:
+                continue
+            incident = edge_lookup.get(vertex.id, [])
+            if len(incident) != 2:
+                continue
+            first, second = incident
+            other_a = first.v_end if first.v_start == vertex.id else first.v_start
+            other_b = second.v_end if second.v_start == vertex.id else second.v_start
+            if other_a == other_b:
+                continue
+            if first.orientation == second.orientation:
+                continue
+            point_a = (vertex_lookup[other_a].x, vertex_lookup[other_a].y)
+            point_b = (vertex_lookup[other_b].x, vertex_lookup[other_b].y)
+            if _manhattan((vertex.x, vertex.y), point_a) > micro_bend_threshold and _manhattan((vertex.x, vertex.y), point_b) > micro_bend_threshold:
+                continue
+            new_orientation = "H" if abs(point_a[1] - point_b[1]) <= abs(point_a[0] - point_b[0]) else "V"
+            reduced_edges = [edge for edge in reduced_edges if edge.id not in {first.id, second.id}]
+            reduced_edges.append(
+                GraphEdge(
+                    id=f"e_{len(reduced_edges)+1:03d}",
+                    v_start=other_a,
+                    v_end=other_b,
+                    orientation=new_orientation,
+                    length=round(math.dist(point_a, point_b), 2),
+                    debug={
+                        "source_segment_id": first.debug.get("source_segment_id"),
+                        "source_segment_stage": "collapsed_segments",
+                        "merged_from_edges": [first.id, second.id],
+                        "micro_bend_removed": True,
+                    },
+                )
+            )
+            reduced_vertices = [item for item in reduced_vertices if item.id != vertex.id]
+            vertex_lookup.pop(vertex.id, None)
+            micro_bends_removed += 1
+            changed = True
+            edge_lookup = defaultdict(list)
+            for edge in reduced_edges:
+                edge_lookup[edge.v_start].append(edge)
+                edge_lookup[edge.v_end].append(edge)
+            break
+
+    degree_counts: defaultdict[str, int] = defaultdict(int)
+    for edge in reduced_edges:
+        degree_counts[edge.v_start] += 1
+        degree_counts[edge.v_end] += 1
+    for vertex in reduced_vertices:
+        vertex.degree = degree_counts[vertex.id]
+        if vertex.degree >= 3:
+            vertex.kind = "junction"
+        elif vertex.degree == 2:
+            vertex.kind = "bend"
+        else:
+            vertex.kind = "endpoint"
+
+    attachment_vertex_ids = {attachment["vertex_id"] for attachment in attachments}
+    degree2_endpoints_reclassified = sum(
+        1
+        for attachment in attachments
+        if attachment.get("stub_absorbed") or (
+            attachment["vertex_id"] in attachment_vertex_ids
+            and any(vertex.id == attachment["vertex_id"] and vertex.degree == 2 and vertex.kind == "bend" for vertex in reduced_vertices)
+        )
+    )
+
+    return reduced_vertices, reduced_edges, attachments, {
+        "degree2_endpoints_reclassified": degree2_endpoints_reclassified,
+        "gate_stubs_absorbed": gate_stubs_absorbed,
+        "micro_bends_removed": micro_bends_removed,
+        "corridor_contacts_snapped": corridor_contacts_snapped,
+        "degree2_vertices_removed_post_attach": degree2_removed,
+    }
+
+
+def attach_gates_to_graph(
+    nodes: list[Node],
+    segments: list[OrthoSegment],
+    vertices: list[GraphVertex],
+    edges: list[GraphEdge],
+    attach_tolerance: int,
+    micro_bend_threshold: int,
+) -> tuple[list[GraphVertex], list[GraphEdge], list[dict[str, object]], dict[str, int]]:
+    return absorb_gate_stubs_and_cleanup(
+        nodes=nodes,
+        segments=segments,
+        vertices=vertices,
+        edges=edges,
+        attach_tolerance=attach_tolerance,
+        micro_bend_threshold=micro_bend_threshold,
+    )
+
+
+def route_recovered_paths_via_graph(
+    ortho_paths: list[list[Point]],
+    attachments: list[dict[str, object]],
+    vertices: list[GraphVertex],
+    edges: list[GraphEdge],
+    endpoint_tolerance: int,
+) -> list[ConnectorRoute]:
+    del ortho_paths, endpoint_tolerance
+    vertex_lookup = {vertex.id: (vertex.x, vertex.y) for vertex in vertices}
+    adjacency: defaultdict[str, list[str]] = defaultdict(list)
+    for edge in edges:
+        adjacency[edge.v_start].append(edge.v_end)
+        adjacency[edge.v_end].append(edge.v_start)
+
+    routes: list[ConnectorRoute] = []
+    best_routes: dict[tuple[str, str], ConnectorRoute] = {}
+    for start_attachment in attachments:
+        for end_attachment in attachments:
+            if start_attachment["node_id"] == end_attachment["node_id"]:
+                continue
+            node_pair = tuple(sorted([start_attachment["node_id"], end_attachment["node_id"]]))
+
+            start_id = start_attachment["graph_vertex_id"]
+            end_id = end_attachment["graph_vertex_id"]
+            queue = deque([(start_id, [start_id])])
+            seen = {start_id}
+            chosen_path: list[str] | None = None
+            while queue:
+                current, vertex_path = queue.popleft()
+                if current == end_id:
+                    chosen_path = vertex_path
+                    break
+                for neighbor in adjacency[current]:
+                    if neighbor in seen:
+                        continue
+                    seen.add(neighbor)
+                    queue.append((neighbor, vertex_path + [neighbor]))
+            if chosen_path is None or len(chosen_path) < 2:
+                continue
+
+            points = [vertex_lookup[vertex_id] for vertex_id in chosen_path]
+            candidate = ConnectorRoute(
+                id="",
+                src_node_id=start_attachment["node_id"],
+                src_side=start_attachment["side"],
+                dst_node_id=end_attachment["node_id"],
+                dst_side=end_attachment["side"],
+                vertex_path=chosen_path,
+                points=points,
+                confidence=0.8,
+                ambiguous=False,
+                debug={
+                    "simplified_edge_count": max(len(chosen_path) - 1, 0),
+                    "fallback_used": False,
+                    "unsimplified_component_rejected": False,
+                    "attachment_pair": [start_attachment["graph_vertex_id"], end_attachment["graph_vertex_id"]],
+                    "stub_absorbed": bool(start_attachment.get("stub_absorbed")) or bool(end_attachment.get("stub_absorbed")),
+                },
+            )
+            existing = best_routes.get(node_pair)
+            if existing is None or len(candidate.vertex_path) < len(existing.vertex_path):
+                best_routes[node_pair] = candidate
+
+    for index, route in enumerate(best_routes.values(), start=1):
+        route.id = f"route_{index:03d}"
+        routes.append(route)
+    return routes
+
+
+def graph_sanity(
+    vertices: list[GraphVertex],
+    edges: list[GraphEdge],
+    reduced_degree2_vertices: int,
+    pruned_spurs: int,
+    collapsed_corridor_groups: int,
+    warn_vertices: int,
+    fail_vertices: int,
+    warn_edges: int,
+    fail_edges: int,
+) -> GraphDiagnostics:
+    vertex_count = len(vertices)
+    edge_count = len(edges)
+    status = "pass"
+    reason = None
+    if vertex_count > fail_vertices or edge_count > fail_edges:
+        status = "fail"
+        reason = "graph_over_fragmented"
+    elif vertex_count > warn_vertices or edge_count > warn_edges:
+        status = "warn"
+        reason = "graph_still_dense"
+    return GraphDiagnostics(
+        vertex_count=vertex_count,
+        edge_count=edge_count,
+        reduced_degree2_vertices=reduced_degree2_vertices,
+        pruned_spurs=pruned_spurs,
+        collapsed_corridor_groups=collapsed_corridor_groups,
+        status=status,
+        reason=reason,
+    )
+
+
+def run_simplification_self_test() -> None:
+    segments = [
+        OrthoSegment(id="t1", orientation="H", x1=10, y1=50, x2=30, y2=50, component_id="test"),
+        OrthoSegment(id="t2", orientation="H", x1=12, y1=52, x2=32, y2=52, component_id="test"),
+        OrthoSegment(id="t3", orientation="H", x1=11, y1=49, x2=31, y2=49, component_id="test"),
+        OrthoSegment(id="t4", orientation="H", x1=9, y1=51, x2=29, y2=51, component_id="test"),
+        OrthoSegment(id="t5", orientation="H", x1=8, y1=50, x2=33, y2=50, component_id="test"),
+    ]
+    working = normalize_ortho_segments(segments, axis_snap_tolerance=1)
+    working = iterative_collinear_merge(working, merge_gap_tolerance=18, parallel_offset_tolerance=0)
+    working, collapsed_groups, _ = collapse_parallel_corridors(working, overlap_ratio_min=0.2, parallel_distance_max=4, min_group_size=2)
+    working = filter_dominant_segments(working, parallel_offset_tolerance=3)
+    if collapsed_groups <= 0:
+        raise RuntimeError("Synthetic corridor-collapse self-test failed: no corridor groups collapsed")
+    if len(working) != 1:
+        raise RuntimeError(f"Synthetic corridor-collapse self-test failed: expected 1 segment, got {len(working)}")
+    graph_vertices, graph_edges, _ = build_graph(working, np.zeros((100, 100), dtype=np.uint8), continuity_radius=2, endpoint_intersection_tolerance=8)
+    graph_vertices, graph_edges, removed, _ = reduce_degree2_vertices(graph_vertices, graph_edges)
+    if len(graph_vertices) != 2 or len(graph_edges) != 1 or removed != 0:
+        raise RuntimeError(
+            f"Synthetic graph self-test failed: expected 2 vertices/1 edge/0 removed, got {len(graph_vertices)}/{len(graph_edges)}/{removed}"
+        )
+
+================================================================================
+
+Demo9\src\grid.py
+
+from __future__ import annotations
+
+from typing import Iterable
+
+from .models import Point
+
+
+def snap_point(point: tuple[float, float] | tuple[int, int]) -> Point:
+    return int(round(point[0])), int(round(point[1]))
+
+
+def snap_points(points: Iterable[tuple[float, float] | tuple[int, int]]) -> list[Point]:
+    return [snap_point(point) for point in points]
+
+================================================================================
+
+Demo9\src\image_io.py
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+
+def load_image(image_path: Path) -> tuple[np.ndarray, np.ndarray]:
+    color = cv2.imread(str(image_path), cv2.IMREAD_COLOR)
+    if color is None or color.size == 0:
+        raise ValueError(f"Unable to load image: {image_path}")
+
+    grayscale = cv2.cvtColor(color, cv2.COLOR_BGR2GRAY)
+    return color, grayscale
+
+================================================================================
+
+Demo9\src\json_export.py
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from .models import DiagramDocument
+
+
+def export_document(document: DiagramDocument, output_path: Path) -> None:
+    output_path.write_text(json.dumps(document.to_dict(), indent=2), encoding="utf-8")
+
+================================================================================
+
+Demo9\src\models.py
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+
+Point = tuple[int, int]
+
+
+@dataclass
+class RawGeometry:
+    outline_points: list[Point] = field(default_factory=list)
+    path_points: list[Point] = field(default_factory=list)
+    contour_area: int = 0
+    perimeter: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class InterpretedGeometry:
+    shape_type: str | None = None
+    path_type: str | None = None
+    render_points: list[Point] = field(default_factory=list)
+    closed: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Element:
+    id: str
+    element_type: str
+    raw_geometry: RawGeometry
+    interpreted_geometry: InterpretedGeometry
+    bbox: tuple[int, int, int, int]
+    center: Point
+    confidence: float | None = None
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        data = asdict(self)
+        data["raw_geometry"] = self.raw_geometry.to_dict()
+        data["interpreted_geometry"] = self.interpreted_geometry.to_dict()
+        return data
+
+
+@dataclass
+class Node:
+    id: str
+    bbox: tuple[int, int, int, int]
+    center: Point
+    side_midpoints: dict[str, Point]
+    expanded_bbox: tuple[int, int, int, int]
+    label_region: tuple[int, int, int, int] | None = None
+    gates: dict[str, Point] = field(default_factory=dict)
+    gate_segments: dict[str, list[Point]] = field(default_factory=dict)
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Connector:
+    id: str
+    points: list[Point]
+    src_node_id: str | None
+    src_side: str | None
+    dst_node_id: str | None
+    dst_side: str | None
+    confidence: float
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class OrthoSegment:
+    id: str
+    orientation: str
+    x1: int
+    y1: int
+    x2: int
+    y2: int
+    component_id: str
+    source_count: int = 1
+    collapsed_from_ids: list[str] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class GraphVertex:
+    id: str
+    kind: str
+    x: int
+    y: int
+    degree: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class GraphEdge:
+    id: str
+    v_start: str
+    v_end: str
+    orientation: str
+    length: float
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class ConnectorRoute:
+    id: str
+    src_node_id: str
+    src_side: str
+    dst_node_id: str
+    dst_side: str
+    vertex_path: list[str]
+    points: list[Point]
+    confidence: float
+    ambiguous: bool = False
+    debug: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class GraphDiagnostics:
+    vertex_count: int
+    edge_count: int
+    reduced_degree2_vertices: int
+    pruned_spurs: int
+    collapsed_corridor_groups: int
+    status: str
+    reason: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class Verification:
+    edge_overlap_score: float
+    pixel_difference_score: float
+    status: str
+    notes: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class DiagramDocument:
+    schema_version: str
+    diagram_id: str
+    source_file: str
+    image_width: int
+    image_height: int
+    metadata: dict[str, Any]
+    processing_parameters: dict[str, Any]
+    separation_summary: dict[str, Any]
+    elements: list[Element]
+    nodes: list[Node]
+    connectors: list[Connector]
+    routes: list[ConnectorRoute]
+    graph: dict[str, Any]
+    verification: Verification
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "diagram_id": self.diagram_id,
+            "source_file": self.source_file,
+            "image_width": self.image_width,
+            "image_height": self.image_height,
+            "metadata": self.metadata,
+            "processing_parameters": self.processing_parameters,
+            "separation_summary": self.separation_summary,
+            "elements": [element.to_dict() for element in self.elements],
+            "nodes": [node.to_dict() for node in self.nodes],
+            "connectors": [connector.to_dict() for connector in self.connectors],
+            "routes": [route.to_dict() for route in self.routes],
+            "graph": self.graph,
+            "verification": self.verification.to_dict(),
+        }
+
+
+@dataclass
+class ProcessingSummary:
+    image_name: str
+    element_count: int
+    contour_count: int
+    connector_count: int
+    verification_status: str
+
+================================================================================
+
+Demo9\src\pipeline.py
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from .connectors import (
+    build_protected_node_mask,
+    connector_space_from_masks,
+    extract_connector_fragments,
+    merge_connector_fragments,
+    snap_connector_endpoints_to_nodes,
+)
+from .contours import extract_primitives
+from .debug_outputs import write_image, write_text
+from .edges import detect_edges
+from .graph import attach_gates_to_graph, build_graph, build_ortho_segments, orthogonalize_paths, route_recovered_paths_via_graph, run_simplification_self_test
+from .graph import (
+    collapse_parallel_corridors,
+    filter_graph_to_gate_reachable,
+    filter_dominant_segments,
+    graph_sanity,
+    iterative_collinear_merge,
+    normalize_ortho_segments,
+    prune_spurs,
+    reduce_degree2_vertices,
+)
+from .geometry import bbox_contains, bbox_iou, build_connector, build_node_from_element
+from .image_io import load_image
+from .json_export import export_document
+from .models import Connector, DiagramDocument, Element, InterpretedGeometry, Node, ProcessingSummary, RawGeometry, Verification
+from .preprocess import normalize_image
+from .render import (
+    overlay_gates,
+    overlay_graph,
+    overlay_interpretation,
+    overlay_nodes,
+    overlay_segments,
+    overlay_vertices,
+    render_graph_structure,
+)
+from .separation import SeparationCandidate, separate_geometry
+from .verify import verify_render
+
+
+@dataclass(frozen=True)
+class PipelineParameters:
+    blur_kernel_size: int = 5
+    clahe_clip_limit: float = 2.0
+    clahe_grid_size: int = 8
+    adaptive_block_size: int = 31
+    adaptive_c: int = 7
+    canny_low: int = 50
+    canny_high: int = 150
+    canny_aperture_size: int = 3
+    min_contour_area: int = 150
+    contour_epsilon_ratio: float = 0.02
+    shape_close_kernel_size: int = 7
+    shape_dilate_kernel_size: int = 3
+    min_shape_area: int = 250
+    max_shape_area_ratio: float = 0.28
+    artifact_border_margin: int = 6
+    artifact_border_touch_reject_count: int = 2
+    artifact_extreme_span_ratio: float = 0.88
+    artifact_frame_fill_ratio_threshold: float = 0.35
+    internal_containment_margin: int = 5
+    internal_small_box_area_limit: int = 1400
+    internal_text_like_max_height: int = 18
+    internal_text_like_aspect_ratio: float = 3.0
+    internal_child_area_ratio_threshold: float = 0.16
+    internal_child_bbox_area_ratio_threshold: float = 0.18
+    node_outward_padding: int = 6
+    node_inward_padding: int = 2
+    node_gate_padding: int = 3
+    node_gate_min_span: int = 6
+    node_gate_max_span: int = 14
+    node_label_height_ratio: float = 0.35
+    node_overlap_reject_iou: float = 0.32
+    node_contains_multiple_reject: int = 2
+    connector_hough_threshold: int = 12
+    connector_min_line_length: int = 12
+    connector_max_line_gap: int = 18
+    connector_orientation_tolerance: float = 10.0
+    connector_merge_gap_threshold: int = 18
+    connector_merge_angle_tolerance: float = 10.0
+    connector_min_merged_path_length: int = 18
+    connector_snap_distance_tolerance: int = 18
+    connector_directional_axis_ratio: float = 1.4
+    graph_orth_axis_tolerance: int = 3
+    graph_spur_min_length: int = 12
+    graph_intersection_continuity_radius: int = 2
+    graph_endpoint_intersection_tolerance: int = 8
+    graph_gate_attach_tolerance: int = 20
+    simplify_axis_snap_tolerance: int = 3
+    simplify_merge_gap_tolerance: int = 18
+    simplify_parallel_offset_tolerance: int = 3
+    corridor_overlap_ratio_min: float = 0.2
+    corridor_parallel_distance_max: int = 4
+    corridor_min_group_size: int = 2
+    spur_prune_length: int = 12
+    graph_component_gate_distance_max: int = 25
+    graph_micro_bend_threshold: int = 10
+    graph_vertices_warn: int = 80
+    graph_vertices_fail: int = 120
+    graph_edges_warn: int = 100
+    graph_edges_fail: int = 160
+    expected_min_nodes: int = 6
+    edge_overlap_pass: float = 0.5
+    edge_overlap_warn: float = 0.25
+    pixel_diff_pass: float = 0.08
+    pixel_diff_warn: float = 0.16
+
+
+def discover_input_images(base_dir: Path) -> list[Path]:
+    candidates: list[Path] = []
+    search_dirs = [base_dir, base_dir / "inputs"]
+
+    seen: set[Path] = set()
+    for search_dir in search_dirs:
+        if not search_dir.exists():
+            continue
+        for pattern in ("*.jpg", "*.jpeg", "*.png", "*.JPG", "*.JPEG", "*.PNG"):
+            for path in sorted(search_dir.glob(pattern)):
+                resolved = path.resolve()
+                if resolved not in seen and path.is_file():
+                    candidates.append(path)
+                    seen.add(resolved)
+    return candidates
+
+
+def _draw_lines(image: np.ndarray, line_paths: list[list[tuple[int, int]]], color: tuple[int, int, int] = (0, 128, 255)) -> np.ndarray:
+    canvas = image.copy()
+    for path in line_paths:
+        if len(path) < 2:
+            continue
+        points = np.array(path, dtype=np.int32).reshape(-1, 1, 2)
+        cv2.polylines(canvas, [points], False, color, 2)
+    return canvas
+
+
+def _draw_points(image: np.ndarray, points: list[tuple[int, int]], color: tuple[int, int, int]) -> np.ndarray:
+    canvas = image.copy()
+    for point in points:
+        cv2.circle(canvas, point, 3, color, thickness=cv2.FILLED)
+    return canvas
+
+
+def _draw_candidate_overlay(image: np.ndarray, candidates: list[SeparationCandidate], color: tuple[int, int, int]) -> np.ndarray:
+    canvas = image.copy()
+    for candidate in candidates:
+        cv2.drawContours(canvas, [candidate.contour], -1, color, 2)
+    return canvas
+
+
+def _draw_corridor_group_debug(
+    image: np.ndarray,
+    segments_by_id: dict[str, object],
+    group_debug: list[dict[str, object]],
+) -> np.ndarray:
+    canvas = image.copy()
+    palette = [(255, 0, 0), (0, 180, 255), (0, 255, 0), (255, 0, 255), (255, 180, 0)]
+    for index, group in enumerate(group_debug):
+        color = palette[index % len(palette)] if group["collapsed"] else (128, 128, 128)
+        for segment_id in group["member_segment_ids"]:
+            segment = segments_by_id.get(segment_id)
+            if segment is None:
+                continue
+            cv2.line(canvas, (segment.x1, segment.y1), (segment.x2, segment.y2), color, 2)
+    return canvas
+
+
+def _build_summary_text(
+    image_path: Path,
+    contour_count: int,
+    raw_contours_found: int,
+    shape_count: int,
+    node_count: int,
+    connector_count: int,
+    artifacts_rejected: int,
+    internal_noise_rejected: int,
+    connector_fragments_found: int,
+    connector_paths_merged: int,
+    route_count: int,
+    graph_sanity_status: str,
+    structural_diagnostics: list[str],
+    verification: Verification,
+) -> str:
+    lines = [
+        f"source_file: {image_path.name}",
+        f"contours_found: {contour_count}",
+        f"raw_contours_found: {raw_contours_found}",
+        f"shape_candidates_kept: {shape_count}",
+        f"canonical_nodes_kept: {node_count}",
+        f"connector_candidates_kept: {connector_count}",
+        f"artifacts_rejected: {artifacts_rejected}",
+        f"internal_noise_rejected: {internal_noise_rejected}",
+        f"connector_fragments_found: {connector_fragments_found}",
+        f"connector_paths_merged: {connector_paths_merged}",
+        f"route_count: {route_count}",
+        f"graph_sanity_status: {graph_sanity_status}",
+        f"verification_status: {verification.status}",
+        f"edge_overlap_score: {verification.edge_overlap_score}",
+        f"pixel_difference_score: {verification.pixel_difference_score}",
+    ]
+    lines.extend(f"diagnostic: {diagnostic}" for diagnostic in structural_diagnostics)
+    return "\n".join(lines)
+
+
+def _freeze_canonical_nodes(
+    elements: list[Element],
+    image_width: int,
+    image_height: int,
+    params: PipelineParameters,
+) -> tuple[list[Node], list[dict[str, object]]]:
+    shape_elements = [element for element in elements if element.element_type == "shape_candidate"]
+    scored: list[tuple[float, Element, dict[str, object]]] = []
+    for element in shape_elements:
+        metrics = element.debug.get("separation_metrics", {})
+        bbox = element.bbox
+        contains_count = 0
+        overlaps_count = 0
+        for other in shape_elements:
+            if other.id == element.id:
+                continue
+            if bbox_contains(bbox, other.bbox, margin=6):
+                contains_count += 1
+            if bbox_iou(bbox, other.bbox) > 0.05:
+                overlaps_count += 1
+        shape_type = element.interpreted_geometry.shape_type
+        shape_score = 2.6 if shape_type == "rectangle-like" else 0.9 if shape_type == "polygon-like" else 0.2
+        bbox_area = bbox[2] * bbox[3]
+        score = (
+            shape_score
+            + float(metrics.get("bbox_fill_ratio", 0.0))
+            + min(float(metrics.get("contour_area", 0)) / 8000.0, 1.2)
+            - contains_count * 1.0
+            - overlaps_count * 0.4
+            - (bbox_area / 40000.0)
+        )
+        scored.append((score, element, {"contains_count": contains_count, "overlaps_count": overlaps_count, "bbox_area": bbox_area}))
+
+    scored.sort(key=lambda item: (item[0], -item[2]["bbox_area"]), reverse=True)
+    nodes: list[Node] = []
+    rejected: list[dict[str, object]] = []
+
+    for _, element, debug in scored:
+        metrics = element.debug.get("separation_metrics", {})
+        shape_type = element.interpreted_geometry.shape_type
+        bbox = element.bbox
+        if bbox[2] < 24 or bbox[3] < 24:
+            rejected.append({"element_id": element.id, "reason": "too_small_for_canonical_node", "bbox": element.bbox})
+            continue
+        if shape_type != "rectangle-like" and debug["bbox_area"] > 25000:
+            rejected.append({"element_id": element.id, "reason": "oversized_non_rectangular_mass", "bbox": element.bbox})
+            continue
+        if shape_type != "rectangle-like" and float(metrics.get("bbox_fill_ratio", 0.0)) < 0.5 and debug["bbox_area"] > 12000:
+            rejected.append({"element_id": element.id, "reason": "large_low_fill_merged_mass", "bbox": element.bbox})
+            continue
+        if debug["contains_count"] >= 1 and shape_type != "rectangle-like":
+            rejected.append({"element_id": element.id, "reason": "contains_multiple_smaller_shapes", "bbox": element.bbox})
+            continue
+        if debug["overlaps_count"] >= 3 and shape_type != "rectangle-like":
+            rejected.append({"element_id": element.id, "reason": "overlaps_many_other_shapes", "bbox": element.bbox})
+            continue
+        if any(bbox_iou(element.bbox, node.bbox) >= 0.04 or bbox_contains(element.bbox, node.bbox, margin=2) for node in nodes):
+            rejected.append({"element_id": element.id, "reason": "overlaps_existing_node", "bbox": element.bbox})
+            continue
+        if int(metrics.get("contour_area", 0)) < params.min_shape_area:
+            rejected.append({"element_id": element.id, "reason": "below_node_area_threshold", "bbox": element.bbox})
+            continue
+        node = build_node_from_element(
+            node_id=f"node_{len(nodes) + 1:03d}",
+            element=element,
+            image_width=image_width,
+            image_height=image_height,
+            outward_padding=params.node_outward_padding,
+            label_height_ratio=params.node_label_height_ratio,
+            gate_min_span=params.node_gate_min_span,
+            gate_max_span=params.node_gate_max_span,
+        )
+        node.debug.update(
+            {
+                "source_metrics": metrics,
+                "bbox_frozen": True,
+                "contains_count": debug["contains_count"],
+                "overlaps_count": debug["overlaps_count"],
+            }
+        )
+        element.debug["canonical_node_id"] = node.id
+        nodes.append(node)
+
+    return nodes, rejected
+
+
+def _build_connector_objects(snapped_records: list[dict[str, object]]) -> list[Connector]:
+    connectors: list[Connector] = []
+    for index, record in enumerate(snapped_records, start=1):
+        connectors.append(
+            build_connector(
+                connector_id=f"connector_{index:03d}",
+                points=record["points"],
+                src_node_id=record["src_node_id"],
+                src_side=record["src_side"],
+                dst_node_id=record["dst_node_id"],
+                dst_side=record["dst_side"],
+                confidence=float(record["confidence"]),
+                debug=record["debug"],
+            )
+        )
+    return connectors
+
+
+def _apply_structural_failures(
+    verification: Verification,
+    diagnostics: list[str],
+) -> Verification:
+    if not diagnostics:
+        return verification
+    notes = list(verification.notes) + diagnostics
+    return Verification(
+        edge_overlap_score=verification.edge_overlap_score,
+        pixel_difference_score=verification.pixel_difference_score,
+        status="fail",
+        notes=notes,
+    )
+
+
+def process_image(image_path: Path, outputs_root: Path) -> ProcessingSummary:
+    run_simplification_self_test()
+    params = PipelineParameters()
+    output_dir = outputs_root / image_path.stem
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    color, grayscale = load_image(image_path)
+    write_image(output_dir, "01_original.png", color)
+    write_image(output_dir, "02_grayscale.png", grayscale)
+
+    normalized = normalize_image(
+        grayscale=grayscale,
+        blur_kernel_size=params.blur_kernel_size,
+        clahe_clip_limit=params.clahe_clip_limit,
+        clahe_grid_size=params.clahe_grid_size,
+        adaptive_block_size=params.adaptive_block_size,
+        adaptive_c=params.adaptive_c,
+    )
+    normalized_grayscale = normalized["normalized_grayscale"]
+    binary = normalized["binary"]
+    write_image(output_dir, "03_normalized.png", normalized_grayscale)
+    write_image(output_dir, "03b_binary.png", binary)
+
+    edges = detect_edges(
+        normalized_grayscale=normalized_grayscale,
+        canny_low=params.canny_low,
+        canny_high=params.canny_high,
+        aperture_size=params.canny_aperture_size,
+    )
+    write_image(output_dir, "04_edges.png", edges)
+
+    separation = separate_geometry(
+        binary=binary,
+        edges=edges,
+        shape_close_kernel_size=params.shape_close_kernel_size,
+        shape_dilate_kernel_size=params.shape_dilate_kernel_size,
+        min_shape_area=params.min_shape_area,
+        max_shape_area_ratio=params.max_shape_area_ratio,
+        artifact_border_margin=params.artifact_border_margin,
+        artifact_border_touch_reject_count=params.artifact_border_touch_reject_count,
+        artifact_extreme_span_ratio=params.artifact_extreme_span_ratio,
+        artifact_frame_fill_ratio_threshold=params.artifact_frame_fill_ratio_threshold,
+        internal_containment_margin=params.internal_containment_margin,
+        internal_small_box_area_limit=params.internal_small_box_area_limit,
+        internal_text_like_max_height=params.internal_text_like_max_height,
+        internal_text_like_aspect_ratio=params.internal_text_like_aspect_ratio,
+        internal_child_area_ratio_threshold=params.internal_child_area_ratio_threshold,
+        internal_child_bbox_area_ratio_threshold=params.internal_child_bbox_area_ratio_threshold,
+    )
+    write_image(output_dir, "04a_shape_mask.png", separation.shape_mask)
+    write_image(output_dir, "04b_line_mask.png", separation.line_mask)
+    write_image(output_dir, "04c_artifact_mask.png", separation.artifact_mask)
+    write_image(output_dir, "05h_shapes_subtracted_for_line_recovery.png", separation.shapes_subtracted_mask)
+
+    provisional_elements, contours, _ = extract_primitives(
+        shape_candidates=separation.shape_candidates,
+        connector_paths=[],
+        connector_group_ids=[],
+        min_contour_area=params.min_contour_area,
+        contour_epsilon_ratio=params.contour_epsilon_ratio,
+        min_connector_path_length=params.connector_min_merged_path_length,
+    )
+
+    nodes, rejected_node_candidates = _freeze_canonical_nodes(
+        elements=provisional_elements,
+        image_width=color.shape[1],
+        image_height=color.shape[0],
+        params=params,
+    )
+    node_ids = {node.id for node in nodes}
+    elements = [
+        element
+        for element in provisional_elements
+        if element.debug.get("canonical_node_id") in node_ids
+    ]
+
+    protected_node_mask, gate_mask = build_protected_node_mask(
+        image_width=color.shape[1],
+        image_height=color.shape[0],
+        nodes=nodes,
+        inward_padding=params.node_inward_padding,
+        gate_padding=params.node_gate_padding,
+    )
+    connector_space = connector_space_from_masks(separation.line_mask, protected_node_mask, gate_mask)
+
+    write_image(output_dir, "05_contours.png", overlay_interpretation(color, provisional_elements))
+    write_image(output_dir, "05a_shapes_overlay.png", overlay_interpretation(color, elements))
+    write_image(output_dir, "05c_shape_candidates_before_internal_filter.png", _draw_candidate_overlay(color, separation.shape_candidates_before_filter, (255, 0, 0)))
+    write_image(output_dir, "05d_shape_candidates_after_internal_filter.png", _draw_candidate_overlay(color, separation.shape_candidates, (0, 200, 0)))
+    write_image(output_dir, "05e_internal_noise_rejected.png", _draw_candidate_overlay(color, separation.internal_noise_candidates, (0, 0, 255)))
+
+    write_image(output_dir, "06a_canonical_nodes.png", overlay_nodes(color, nodes))
+    write_image(output_dir, "06b_node_protection_mask.png", protected_node_mask)
+    write_image(output_dir, "06c_attachment_gates.png", overlay_gates(color, nodes))
+    write_image(output_dir, "06d_connector_space.png", connector_space)
+
+    connector_fragments = extract_connector_fragments(
+        line_mask=connector_space,
+        hough_threshold=params.connector_hough_threshold,
+        min_line_length=params.connector_min_line_length,
+        max_line_gap=params.connector_max_line_gap,
+        orientation_tolerance=params.connector_orientation_tolerance,
+    )
+    write_image(output_dir, "05f_connector_fragments_overlay.png", _draw_lines(color, [fragment.points for fragment in connector_fragments], (255, 128, 0)))
+    write_image(output_dir, "06e_connector_fragments_protected.png", _draw_lines(color, [fragment.points for fragment in connector_fragments], (255, 128, 0)))
+
+    connector_paths, connector_group_ids = merge_connector_fragments(
+        fragments=connector_fragments,
+        endpoint_gap_threshold=params.connector_merge_gap_threshold,
+        collinear_angle_tolerance=params.connector_merge_angle_tolerance,
+        min_merged_path_length=params.connector_min_merged_path_length,
+    )
+    write_image(output_dir, "05g_connector_paths_merged.png", _draw_lines(color, connector_paths, (0, 255, 255)))
+
+    ortho_paths = orthogonalize_paths(
+        connector_paths,
+        orth_axis_tolerance=params.graph_orth_axis_tolerance,
+        spur_min_length=params.graph_spur_min_length,
+    )
+    working_segments = build_ortho_segments(ortho_paths)
+    ortho_segments_initial = list(working_segments)
+    segments_raw = len(working_segments)
+    working_segments = normalize_ortho_segments(
+        working_segments,
+        axis_snap_tolerance=params.simplify_axis_snap_tolerance,
+    )
+    ortho_segments_normalized = list(working_segments)
+    working_segments = iterative_collinear_merge(
+        working_segments,
+        merge_gap_tolerance=params.simplify_merge_gap_tolerance,
+        parallel_offset_tolerance=params.simplify_parallel_offset_tolerance,
+    )
+    ortho_segments_merged = list(working_segments)
+    segments_after_collinear_merge = len(working_segments)
+    corridor_debug_input = {segment.id: segment for segment in working_segments}
+    working_segments, corridor_groups_collapsed, corridor_group_debug = collapse_parallel_corridors(
+        working_segments,
+        overlap_ratio_min=params.corridor_overlap_ratio_min,
+        parallel_distance_max=params.corridor_parallel_distance_max,
+        min_group_size=params.corridor_min_group_size,
+    )
+    ortho_segments_collapsed = list(working_segments)
+    if corridor_groups_collapsed == 0:
+        raise RuntimeError("Corridor collapse did not execute")
+    segments_after_corridor_grouping = len(corridor_group_debug)
+    segments_after_corridor_collapse = len(working_segments)
+    if segments_after_corridor_collapse >= segments_after_collinear_merge and corridor_groups_collapsed == 0:
+        raise RuntimeError("corridor_collapse_no_effect")
+    working_segments = filter_dominant_segments(
+        working_segments,
+        parallel_offset_tolerance=params.simplify_parallel_offset_tolerance,
+    )
+    ortho_segments_dominant = list(working_segments)
+    segments_after_dominance_filter = len(working_segments)
+    gate_points = [point for node in nodes for point in node.gates.values()]
+    working_segments, spurs_pruned = prune_spurs(
+        working_segments,
+        gate_points=gate_points,
+        spur_prune_length=params.spur_prune_length,
+    )
+    graph_input_segments = working_segments
+    assert graph_input_segments is working_segments
+    write_image(output_dir, "07a_connector_skeleton.png", connector_space)
+    write_image(output_dir, "07b_connector_centerlines.png", _draw_lines(color, ortho_paths, (255, 180, 0)))
+    write_image(output_dir, "07c1_primitives_normalized.png", overlay_segments(color, ortho_segments_normalized, (0, 180, 255)))
+    write_image(output_dir, "07c2_collinear_segments_merged.png", overlay_segments(color, ortho_segments_merged, (0, 220, 255)))
+    write_image(output_dir, "07c3_corridors_collapsed.png", overlay_segments(color, ortho_segments_collapsed, (0, 255, 255)))
+    write_image(output_dir, "07c3b_corridor_group_debug.png", _draw_corridor_group_debug(color, corridor_debug_input, corridor_group_debug))
+    write_image(output_dir, "07c4_spurs_pruned.png", overlay_segments(color, graph_input_segments, (0, 255, 180)))
+    write_image(output_dir, "07c_orthogonal_segments.png", overlay_segments(color, graph_input_segments, (0, 255, 255)))
+
+    graph_vertices, graph_edges, crossing_debug = build_graph(
+        segments=graph_input_segments,
+        connector_space=connector_space,
+        continuity_radius=params.graph_intersection_continuity_radius,
+        endpoint_intersection_tolerance=params.graph_endpoint_intersection_tolerance,
+    )
+    graph_vertices_before_degree2 = len(graph_vertices)
+    graph_vertices, graph_edges, degree2_vertices_removed, degree2_candidate_count = reduce_degree2_vertices(graph_vertices, graph_edges)
+    graph_vertices_after_degree2 = len(graph_vertices)
+    if graph_vertices_before_degree2 == graph_vertices_after_degree2 and degree2_candidate_count > 10:
+        raise RuntimeError("degree2_compression_no_effect")
+    if any(edge.debug.get("source_segment_stage") != "collapsed_segments" for edge in graph_edges):
+        raise RuntimeError("graph_built_from_unsimplified_segments")
+    write_image(output_dir, "07d_graph_vertices.png", overlay_vertices(color, graph_vertices))
+    write_image(output_dir, "07d1_graph_vertices_reduced.png", overlay_vertices(color, graph_vertices))
+    write_image(output_dir, "07e_connector_graph.png", overlay_graph(color, graph_vertices, graph_edges))
+
+    graph_vertices, graph_edges, gate_attachments, gate_cleanup_metrics = attach_gates_to_graph(
+        nodes=nodes,
+        segments=graph_input_segments,
+        vertices=graph_vertices,
+        edges=graph_edges,
+        attach_tolerance=params.graph_gate_attach_tolerance,
+        micro_bend_threshold=params.graph_micro_bend_threshold,
+    )
+    graph_vertices, graph_edges, gate_relevant_components_kept = filter_graph_to_gate_reachable(
+        vertices=graph_vertices,
+        edges=graph_edges,
+        seed_vertex_ids=[attachment["graph_vertex_id"] for attachment in gate_attachments],
+    )
+    graph_vertices, graph_edges, degree2_removed_reachable, _ = reduce_degree2_vertices(graph_vertices, graph_edges)
+    degree2_vertices_removed += degree2_removed_reachable
+    gate_cleanup_metrics["degree2_vertices_removed_post_attach"] += degree2_removed_reachable
+    write_image(output_dir, "07e1_gate_relevant_graph.png", overlay_graph(color, graph_vertices, graph_edges))
+    write_image(output_dir, "07f_gate_graph_attachments.png", overlay_graph(color, graph_vertices, graph_edges))
+
+    simplified_paths_for_routing = [[(segment.x1, segment.y1), (segment.x2, segment.y2)] for segment in graph_input_segments]
+    routes = route_recovered_paths_via_graph(
+        ortho_paths=simplified_paths_for_routing,
+        attachments=gate_attachments,
+        vertices=graph_vertices,
+        edges=graph_edges,
+        endpoint_tolerance=params.graph_gate_attach_tolerance,
+    )
+    write_image(output_dir, "07g_routed_connectors.png", _draw_lines(color, [route.points for route in routes], (0, 255, 0)))
+    write_image(output_dir, "07g1_routes_from_simplified_graph.png", _draw_lines(color, [route.points for route in routes], (0, 255, 0)))
+
+    snapped_records, endpoint_candidates, snapped_paths = snap_connector_endpoints_to_nodes(
+        paths=[route.points for route in routes],
+        nodes=nodes,
+        snap_distance_tolerance=params.connector_snap_distance_tolerance,
+        directional_axis_ratio=params.connector_directional_axis_ratio,
+    )
+    write_image(output_dir, "06f_endpoint_candidates.png", _draw_points(color, endpoint_candidates, (0, 0, 255)))
+    write_image(output_dir, "06g_snapped_connectors.png", _draw_lines(color, snapped_paths, (0, 255, 255)))
+
+    connectors = _build_connector_objects(snapped_records)
+    for connector in connectors:
+        min_x = min(point[0] for point in connector.points)
+        min_y = min(point[1] for point in connector.points)
+        max_x = max(point[0] for point in connector.points)
+        max_y = max(point[1] for point in connector.points)
+        elements.append(
+            Element(
+                id=connector.id,
+                element_type="connector_candidate",
+                raw_geometry=RawGeometry(path_points=connector.points, perimeter=0),
+                interpreted_geometry=InterpretedGeometry(path_type="polyline", render_points=connector.points, closed=False),
+                bbox=(min_x, min_y, max_x - min_x, max_y - min_y),
+                center=(int(round((min_x + max_x) / 2)), int(round((min_y + max_y) / 2))),
+                confidence=connector.confidence,
+                debug={
+                    "source_mask": "protected_connector_space",
+                    "src_node_id": connector.src_node_id,
+                    "dst_node_id": connector.dst_node_id,
+                    "src_side": connector.src_side,
+                    "dst_side": connector.dst_side,
+                    **connector.debug,
+                },
+            )
+        )
+
+    rendered_structural = render_graph_structure(color.shape[1], color.shape[0], nodes, routes)
+    write_image(output_dir, "07h_rendered_graph_structure.png", rendered_structural)
+    write_image(output_dir, "07h1_rendered_simplified_graph_structure.png", rendered_structural)
+    write_image(output_dir, "07_rendered_structural.png", rendered_structural)
+    write_image(output_dir, "07_rendered.png", rendered_structural)
+
+    verification, diff_image = verify_render(
+        normalized_binary=binary,
+        rendered_image=rendered_structural,
+        edge_overlap_pass=params.edge_overlap_pass,
+        edge_overlap_warn=params.edge_overlap_warn,
+        pixel_diff_pass=params.pixel_diff_pass,
+        pixel_diff_warn=params.pixel_diff_warn,
+        canny_low=params.canny_low,
+        canny_high=params.canny_high,
+        aperture_size=params.canny_aperture_size,
+    )
+
+    structural_diagnostics: list[str] = []
+    if len(nodes) < params.expected_min_nodes:
+        structural_diagnostics.append(f"fewer_than_expected_nodes:{len(nodes)}")
+    for i, first in enumerate(nodes):
+        for second in nodes[i + 1 :]:
+            if bbox_iou(first.bbox, second.bbox) > 0.05:
+                structural_diagnostics.append(f"overlapping_nodes:{first.id}:{second.id}")
+    graph_diag = graph_sanity(
+        vertices=graph_vertices,
+        edges=graph_edges,
+        reduced_degree2_vertices=degree2_vertices_removed,
+        pruned_spurs=spurs_pruned,
+        collapsed_corridor_groups=corridor_groups_collapsed,
+        warn_vertices=params.graph_vertices_warn,
+        fail_vertices=params.graph_vertices_fail,
+        warn_edges=params.graph_edges_warn,
+        fail_edges=params.graph_edges_fail,
+    )
+    if graph_diag.status == "fail":
+        structural_diagnostics.append("graph_over_fragmented")
+    elif graph_diag.status == "warn":
+        structural_diagnostics.append("graph_still_dense")
+    if image_path.stem == "Diagram1":
+        if corridor_groups_collapsed <= 0:
+            structural_diagnostics.append("diagram1_expected_corridor_collapse_missing")
+        if len(graph_vertices) >= 55:
+            structural_diagnostics.append("diagram1_graph_vertices_above_expected_limit")
+        if len(routes) < 3:
+            structural_diagnostics.append("diagram1_route_count_below_expected")
+
+    verification = _apply_structural_failures(verification, structural_diagnostics)
+    if not routes:
+        structural_diagnostics.append("no_graph_routes_found")
+    write_image(output_dir, "08_diff_structural.png", diff_image)
+    write_image(output_dir, "08b_diff_graph_structure.png", diff_image)
+    write_image(output_dir, "08c_diff_simplified_graph_structure.png", diff_image)
+    write_image(output_dir, "08_diff.png", diff_image)
+
+    metadata = {
+        "diagram_metadata": {
+            "source_file": image_path.name,
+            "image_width": int(color.shape[1]),
+            "image_height": int(color.shape[0]),
+            "channels": int(color.shape[2]),
+        },
+        "separation_debug": {
+            "rejected_artifacts": [
+                {"rejection_reason": candidate.rejection_reason, "metrics": candidate.metrics}
+                for candidate in separation.rejected_candidates
+            ],
+            "internal_noise_rejected": [
+                {
+                    "rejection_reason": candidate.rejection_reason,
+                    "metrics": candidate.metrics,
+                    "parent_shape_id": candidate.parent_shape_id,
+                }
+                for candidate in separation.internal_noise_candidates
+            ],
+            "rejected_node_candidates": rejected_node_candidates,
+        },
+        "structural_render": {
+            "uses_canonical_nodes_only": True,
+            "uses_snapped_connectors_only": False,
+            "uses_graph_routed_connectors_only": True,
+            "fallback_to_contours": False,
+            "diagnostics": structural_diagnostics,
+        },
+        "graph_sanity": graph_diag.to_dict(),
+    }
+    separation_summary = dict(separation.summary)
+    separation_summary["connector_fragments_found"] = len(connector_fragments)
+    separation_summary["connector_paths_merged"] = len(connector_paths)
+    separation_summary["canonical_nodes_kept"] = len(nodes)
+    separation_summary["segments_raw"] = segments_raw
+    separation_summary["segments_before_simplification"] = len(ortho_segments_initial)
+    separation_summary["segments_after_collinear_merge"] = len(ortho_segments_merged)
+    separation_summary["segments_after_corridor_grouping"] = segments_after_corridor_grouping
+    separation_summary["segments_after_corridor_collapse"] = segments_after_corridor_collapse
+    separation_summary["segments_after_dominance_filter"] = segments_after_dominance_filter
+    separation_summary["corridor_groups_collapsed"] = corridor_groups_collapsed
+    separation_summary["spurs_pruned"] = spurs_pruned
+    separation_summary["degree2_vertices_removed"] = degree2_vertices_removed
+    separation_summary["degree2_endpoints_reclassified"] = gate_cleanup_metrics["degree2_endpoints_reclassified"]
+    separation_summary["gate_stubs_absorbed"] = gate_cleanup_metrics["gate_stubs_absorbed"]
+    separation_summary["micro_bends_removed"] = gate_cleanup_metrics["micro_bends_removed"]
+    separation_summary["corridor_contacts_snapped"] = gate_cleanup_metrics["corridor_contacts_snapped"]
+    separation_summary["degree2_vertices_removed_post_attach"] = gate_cleanup_metrics["degree2_vertices_removed_post_attach"]
+    separation_summary["graph_vertices_before_degree2"] = graph_vertices_before_degree2
+    separation_summary["graph_vertices_after_degree2"] = graph_vertices_after_degree2
+    separation_summary["gate_relevant_components_kept"] = gate_relevant_components_kept
+    separation_summary["graph_vertices"] = len(graph_vertices)
+    separation_summary["graph_edges"] = len(graph_edges)
+    separation_summary["route_count"] = len(routes)
+    separation_summary["graph_sanity_status"] = graph_diag.status
+
+    document = DiagramDocument(
+        schema_version="1.0.0",
+        diagram_id=image_path.stem,
+        source_file=image_path.name,
+        image_width=int(color.shape[1]),
+        image_height=int(color.shape[0]),
+        metadata=metadata,
+        processing_parameters=asdict(params),
+        separation_summary=separation_summary,
+        elements=elements,
+        nodes=nodes,
+        connectors=connectors,
+        routes=routes,
+        graph={
+            "vertices": [vertex.to_dict() for vertex in graph_vertices],
+            "edges": [edge.to_dict() for edge in graph_edges],
+            "segments": [segment.to_dict() for segment in graph_input_segments],
+            "gate_attachments": gate_attachments,
+            "crossings": crossing_debug,
+            "diagnostics": graph_diag.to_dict(),
+            "corridor_group_debug": corridor_group_debug,
+        },
+        verification=verification,
+    )
+    export_document(document, output_dir / "diagram.json")
+
+    write_text(
+        output_dir,
+        "summary.txt",
+        _build_summary_text(
+            image_path=image_path,
+            contour_count=len(contours),
+            raw_contours_found=separation.summary["raw_contours_found"],
+            shape_count=len([element for element in elements if element.element_type == "shape_candidate"]),
+            node_count=len(nodes),
+            connector_count=len(connectors),
+            artifacts_rejected=separation.summary["artifacts_rejected"],
+            internal_noise_rejected=separation.summary["internal_noise_rejected"],
+            connector_fragments_found=len(connector_fragments),
+            connector_paths_merged=len(connector_paths),
+            route_count=len(routes),
+            graph_sanity_status=graph_diag.status,
+            structural_diagnostics=structural_diagnostics,
+            verification=verification,
+        ),
+    )
+
+    return ProcessingSummary(
+        image_name=image_path.name,
+        element_count=len(elements),
+        contour_count=len(contours),
+        connector_count=len(connectors),
+        verification_status=verification.status,
+    )
+
+================================================================================
+
+Demo9\src\preprocess.py
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+
+def normalize_image(
+    grayscale: np.ndarray,
+    blur_kernel_size: int,
+    clahe_clip_limit: float,
+    clahe_grid_size: int,
+    adaptive_block_size: int,
+    adaptive_c: int,
+) -> dict[str, np.ndarray]:
+    blurred = cv2.GaussianBlur(grayscale, (blur_kernel_size, blur_kernel_size), 0)
+    clahe = cv2.createCLAHE(
+        clipLimit=clahe_clip_limit,
+        tileGridSize=(clahe_grid_size, clahe_grid_size),
+    )
+    normalized = clahe.apply(blurred)
+    binary = cv2.adaptiveThreshold(
+        normalized,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        adaptive_block_size,
+        adaptive_c,
+    )
+    return {
+        "normalized_grayscale": normalized,
+        "binary": binary,
+    }
+
+================================================================================
+
+Demo9\src\render.py
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+from .models import Connector, ConnectorRoute, Element, GraphEdge, GraphVertex, Node, OrthoSegment
+
+
+SHAPE_COLOR = (0, 0, 0)
+CONNECTOR_COLOR = (0, 0, 0)
+UNKNOWN_COLOR = (64, 64, 64)
+
+
+def render_elements(image_width: int, image_height: int, elements: list[Element]) -> np.ndarray:
+    canvas = np.full((image_height, image_width, 3), 255, dtype=np.uint8)
+
+    for element in elements:
+        interpreted = element.interpreted_geometry
+        points = interpreted.render_points or element.raw_geometry.outline_points or element.raw_geometry.path_points
+        if not points:
+            continue
+
+        points_array = np.array(points, dtype=np.int32).reshape(-1, 1, 2)
+        if element.element_type == "shape_candidate":
+            if interpreted.shape_type == "ellipse-like" and len(points) >= 5:
+                ellipse = cv2.fitEllipse(points_array)
+                cv2.ellipse(canvas, ellipse, SHAPE_COLOR, 2)
+            else:
+                cv2.polylines(canvas, [points_array], True, SHAPE_COLOR, 2)
+        elif element.element_type == "connector_candidate":
+            cv2.polylines(canvas, [points_array], interpreted.closed, CONNECTOR_COLOR, 2)
+        else:
+            cv2.polylines(canvas, [points_array], interpreted.closed, UNKNOWN_COLOR, 1)
+
+    return canvas
+
+
+def render_structure(image_width: int, image_height: int, nodes: list[Node], connectors: list[Connector]) -> np.ndarray:
+    canvas = np.full((image_height, image_width, 3), 255, dtype=np.uint8)
+    for node in nodes:
+        x, y, w, h = node.bbox
+        cv2.rectangle(canvas, (x, y), (x + w, y + h), SHAPE_COLOR, 2)
+    for connector in connectors:
+        if len(connector.points) < 2:
+            continue
+        points = np.array(connector.points, dtype=np.int32).reshape(-1, 1, 2)
+        cv2.polylines(canvas, [points], False, CONNECTOR_COLOR, 2)
+    return canvas
+
+
+def overlay_interpretation(image: np.ndarray, elements: list[Element]) -> np.ndarray:
+    overlay = image.copy()
+    for element in elements:
+        points = element.interpreted_geometry.render_points or element.raw_geometry.outline_points or element.raw_geometry.path_points
+        if not points:
+            continue
+
+        color = SHAPE_COLOR
+        if element.element_type == "connector_candidate":
+            color = (0, 128, 255)
+        elif element.element_type == "unknown_candidate":
+            color = UNKNOWN_COLOR
+
+        points_array = np.array(points, dtype=np.int32).reshape(-1, 1, 2)
+        cv2.polylines(overlay, [points_array], element.interpreted_geometry.closed, color, 2)
+        cv2.rectangle(
+            overlay,
+            (element.bbox[0], element.bbox[1]),
+            (element.bbox[0] + element.bbox[2], element.bbox[1] + element.bbox[3]),
+            (0, 200, 0),
+            1,
+        )
+    return overlay
+
+
+def overlay_nodes(image: np.ndarray, nodes: list[Node]) -> np.ndarray:
+    overlay = image.copy()
+    for node in nodes:
+        x, y, w, h = node.bbox
+        cv2.rectangle(overlay, (x, y), (x + w, y + h), (0, 200, 0), 2)
+    return overlay
+
+
+def overlay_gates(image: np.ndarray, nodes: list[Node]) -> np.ndarray:
+    overlay = image.copy()
+    for node in nodes:
+        ex, ey, ew, eh = node.expanded_bbox
+        cv2.rectangle(overlay, (ex, ey), (ex + ew, ey + eh), (180, 180, 0), 1)
+        for side, point in node.gates.items():
+            cv2.circle(overlay, point, 3, (0, 0, 255), thickness=cv2.FILLED)
+            segment = node.gate_segments[side]
+            cv2.line(overlay, segment[0], segment[1], (255, 0, 0), 2)
+    return overlay
+
+
+def overlay_segments(image: np.ndarray, segments: list[OrthoSegment], color: tuple[int, int, int]) -> np.ndarray:
+    overlay = image.copy()
+    for segment in segments:
+        cv2.line(overlay, (segment.x1, segment.y1), (segment.x2, segment.y2), color, 2)
+    return overlay
+
+
+def overlay_vertices(image: np.ndarray, vertices: list[GraphVertex]) -> np.ndarray:
+    overlay = image.copy()
+    color_by_kind = {
+        "endpoint": (0, 0, 255),
+        "bend": (255, 128, 0),
+        "junction": (0, 255, 255),
+        "crossing": (255, 0, 255),
+        "gate_attach": (0, 255, 0),
+    }
+    for vertex in vertices:
+        cv2.circle(overlay, (vertex.x, vertex.y), 3, color_by_kind.get(vertex.kind, (64, 64, 64)), thickness=cv2.FILLED)
+    return overlay
+
+
+def overlay_graph(image: np.ndarray, vertices: list[GraphVertex], edges: list[GraphEdge]) -> np.ndarray:
+    overlay = image.copy()
+    vertex_lookup = {vertex.id: (vertex.x, vertex.y) for vertex in vertices}
+    for edge in edges:
+        cv2.line(overlay, vertex_lookup[edge.v_start], vertex_lookup[edge.v_end], (255, 255, 0), 2)
+    return overlay_vertices(overlay, vertices)
+
+
+def render_graph_structure(image_width: int, image_height: int, nodes: list[Node], routes: list[ConnectorRoute]) -> np.ndarray:
+    canvas = np.full((image_height, image_width, 3), 255, dtype=np.uint8)
+    for node in nodes:
+        x, y, w, h = node.bbox
+        cv2.rectangle(canvas, (x, y), (x + w, y + h), SHAPE_COLOR, 2)
+    for route in routes:
+        if len(route.points) < 2:
+            continue
+        points = np.array(route.points, dtype=np.int32).reshape(-1, 1, 2)
+        cv2.polylines(canvas, [points], False, CONNECTOR_COLOR, 2)
+        for point in route.points[1:-1]:
+            cv2.circle(canvas, point, 2, CONNECTOR_COLOR, thickness=cv2.FILLED)
+    return canvas
+
+================================================================================
+
+Demo9\src\separation.py
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+import cv2
+import numpy as np
+
+
+@dataclass
+class SeparationCandidate:
+    contour: np.ndarray
+    metrics: dict[str, int | float]
+    bbox: tuple[int, int, int, int]
+    candidate_index: int
+    parent_index: int | None = None
+    parent_shape_id: str | None = None
+    is_internal_noise: bool = False
+    rejection_reason: str | None = None
+
+
+@dataclass
+class SeparationResult:
+    shape_mask: np.ndarray
+    line_mask: np.ndarray
+    artifact_mask: np.ndarray
+    shapes_subtracted_mask: np.ndarray
+    shape_candidates_before_filter: list[SeparationCandidate]
+    shape_candidates: list[SeparationCandidate]
+    rejected_candidates: list[SeparationCandidate]
+    internal_noise_candidates: list[SeparationCandidate]
+    summary: dict[str, int]
+
+
+def _border_touch_count(bbox: tuple[int, int, int, int], image_width: int, image_height: int, margin: int) -> int:
+    x, y, w, h = bbox
+    count = 0
+    if x <= margin:
+        count += 1
+    if y <= margin:
+        count += 1
+    if x + w >= image_width - margin:
+        count += 1
+    if y + h >= image_height - margin:
+        count += 1
+    return count
+
+
+def _bbox_contains(
+    outer: tuple[int, int, int, int],
+    inner: tuple[int, int, int, int],
+    margin: int,
+) -> bool:
+    ox, oy, ow, oh = outer
+    ix, iy, iw, ih = inner
+    return (
+        ix >= ox + margin
+        and iy >= oy + margin
+        and ix + iw <= ox + ow - margin
+        and iy + ih <= oy + oh - margin
+    )
+
+
+def _candidate_metrics(contour: np.ndarray, image_width: int, image_height: int, border_margin: int) -> tuple[dict[str, int | float], tuple[int, int, int, int]]:
+    area = float(cv2.contourArea(contour))
+    perimeter = float(cv2.arcLength(contour, True))
+    x, y, w, h = cv2.boundingRect(contour)
+    bbox_area = max(w * h, 1)
+    aspect_ratio = max(w, h) / max(min(w, h), 1)
+    metrics = {
+        "contour_area": int(round(area)),
+        "bbox_area": int(bbox_area),
+        "bbox_fill_ratio": round(area / bbox_area, 4),
+        "perimeter": int(round(perimeter)),
+        "aspect_ratio": round(aspect_ratio, 4),
+        "border_touch_count": _border_touch_count((x, y, w, h), image_width, image_height, border_margin),
+        "bbox_width_ratio": round(w / max(image_width, 1), 4),
+        "bbox_height_ratio": round(h / max(image_height, 1), 4),
+        "bbox_width": int(w),
+        "bbox_height": int(h),
+    }
+    return metrics, (x, y, w, h)
+
+
+def _artifact_reason(
+    metrics: dict[str, int | float],
+    image_area: int,
+    max_shape_area_ratio: float,
+    extreme_span_ratio: float,
+    border_touch_reject_count: int,
+    frame_fill_ratio_threshold: float,
+) -> str | None:
+    if float(metrics["contour_area"]) > image_area * max_shape_area_ratio:
+        return "area_exceeds_threshold"
+    if (
+        float(metrics["bbox_width_ratio"]) >= extreme_span_ratio
+        and float(metrics["bbox_height_ratio"]) >= extreme_span_ratio
+    ):
+        return "bbox_spans_most_of_image"
+    if int(metrics["border_touch_count"]) >= border_touch_reject_count:
+        return "touches_multiple_borders"
+    if (
+        int(metrics["border_touch_count"]) >= 2
+        and float(metrics["bbox_fill_ratio"]) <= frame_fill_ratio_threshold
+        and float(metrics["bbox_width_ratio"]) >= 0.75
+    ):
+        return "likely_enclosing_frame"
+    return None
+
+
+def _assign_parent_relationships(
+    candidates: list[SeparationCandidate],
+    containment_margin: int,
+) -> None:
+    sorted_candidates = sorted(candidates, key=lambda candidate: candidate.metrics["bbox_area"], reverse=True)
+    for candidate in sorted_candidates:
+        parent = None
+        for maybe_parent in sorted_candidates:
+            if maybe_parent.candidate_index == candidate.candidate_index:
+                continue
+            if int(maybe_parent.metrics["bbox_area"]) <= int(candidate.metrics["bbox_area"]):
+                continue
+            if _bbox_contains(maybe_parent.bbox, candidate.bbox, containment_margin):
+                parent = maybe_parent
+                break
+        if parent is not None:
+            candidate.parent_index = parent.candidate_index
+
+
+def _internal_noise_reason(
+    candidate: SeparationCandidate,
+    parent: SeparationCandidate | None,
+    small_box_area_limit: int,
+    text_like_max_height: int,
+    text_like_aspect_ratio: float,
+    child_area_ratio_threshold: float,
+    child_bbox_area_ratio_threshold: float,
+) -> str | None:
+    if parent is None:
+        return None
+
+    child_area = float(candidate.metrics["contour_area"])
+    parent_area = max(float(parent.metrics["contour_area"]), 1.0)
+    child_bbox_area = float(candidate.metrics["bbox_area"])
+    parent_bbox_area = max(float(parent.metrics["bbox_area"]), 1.0)
+    bbox_height = int(candidate.metrics["bbox_height"])
+    bbox_width = int(candidate.metrics["bbox_width"])
+    aspect_ratio = float(candidate.metrics["aspect_ratio"])
+
+    if child_area <= small_box_area_limit and bbox_height <= text_like_max_height and bbox_width <= text_like_max_height * 6:
+        return "too_small_and_enclosed"
+    if bbox_height <= text_like_max_height and aspect_ratio >= text_like_aspect_ratio:
+        return "text_like_small_contour"
+    if child_area / parent_area <= child_area_ratio_threshold and child_bbox_area / parent_bbox_area <= child_bbox_area_ratio_threshold:
+        return "internal_noise_inside_parent_shape"
+    return None
+
+
+def separate_geometry(
+    binary: np.ndarray,
+    edges: np.ndarray,
+    shape_close_kernel_size: int,
+    shape_dilate_kernel_size: int,
+    min_shape_area: int,
+    max_shape_area_ratio: float,
+    artifact_border_margin: int,
+    artifact_border_touch_reject_count: int,
+    artifact_extreme_span_ratio: float,
+    artifact_frame_fill_ratio_threshold: float,
+    internal_containment_margin: int,
+    internal_small_box_area_limit: int,
+    internal_text_like_max_height: int,
+    internal_text_like_aspect_ratio: float,
+    internal_child_area_ratio_threshold: float,
+    internal_child_bbox_area_ratio_threshold: float,
+) -> SeparationResult:
+    image_height, image_width = binary.shape[:2]
+    image_area = image_width * image_height
+
+    shape_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (shape_close_kernel_size, shape_close_kernel_size))
+    dilate_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (shape_dilate_kernel_size, shape_dilate_kernel_size))
+
+    closed_edges = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, shape_kernel)
+    contours, _ = cv2.findContours(closed_edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    artifact_mask = np.zeros_like(binary)
+    shapes_before_mask = np.zeros_like(binary)
+    filtered_shape_mask = np.zeros_like(binary)
+
+    provisional_candidates: list[SeparationCandidate] = []
+    rejected_candidates: list[SeparationCandidate] = []
+    internal_noise_candidates: list[SeparationCandidate] = []
+
+    for index, contour in enumerate(contours):
+        metrics, bbox = _candidate_metrics(contour, image_width, image_height, artifact_border_margin)
+        if int(metrics["contour_area"]) < min_shape_area:
+            rejected_candidates.append(
+                SeparationCandidate(
+                    contour=contour,
+                    metrics=metrics,
+                    bbox=bbox,
+                    candidate_index=index,
+                    rejection_reason="below_min_shape_area",
+                )
+            )
+            continue
+
+        rejection_reason = _artifact_reason(
+            metrics=metrics,
+            image_area=image_area,
+            max_shape_area_ratio=max_shape_area_ratio,
+            extreme_span_ratio=artifact_extreme_span_ratio,
+            border_touch_reject_count=artifact_border_touch_reject_count,
+            frame_fill_ratio_threshold=artifact_frame_fill_ratio_threshold,
+        )
+        candidate = SeparationCandidate(
+            contour=contour,
+            metrics=metrics,
+            bbox=bbox,
+            candidate_index=index,
+            rejection_reason=rejection_reason,
+        )
+        if rejection_reason is None:
+            provisional_candidates.append(candidate)
+            cv2.drawContours(shapes_before_mask, [contour], -1, 255, thickness=2)
+        else:
+            rejected_candidates.append(candidate)
+            cv2.drawContours(artifact_mask, [contour], -1, 255, thickness=cv2.FILLED)
+
+    _assign_parent_relationships(provisional_candidates, internal_containment_margin)
+    candidates_by_index = {candidate.candidate_index: candidate for candidate in provisional_candidates}
+
+    kept_candidates: list[SeparationCandidate] = []
+    for candidate in sorted(provisional_candidates, key=lambda item: item.metrics["bbox_area"], reverse=True):
+        parent = candidates_by_index.get(candidate.parent_index) if candidate.parent_index is not None else None
+        if parent is not None:
+            candidate.parent_shape_id = f"shape_candidate_{parent.candidate_index:03d}"
+        reason = _internal_noise_reason(
+            candidate=candidate,
+            parent=parent,
+            small_box_area_limit=internal_small_box_area_limit,
+            text_like_max_height=internal_text_like_max_height,
+            text_like_aspect_ratio=internal_text_like_aspect_ratio,
+            child_area_ratio_threshold=internal_child_area_ratio_threshold,
+            child_bbox_area_ratio_threshold=internal_child_bbox_area_ratio_threshold,
+        )
+        if reason is not None:
+            candidate.rejection_reason = reason
+            candidate.is_internal_noise = True
+            internal_noise_candidates.append(candidate)
+            cv2.drawContours(artifact_mask, [candidate.contour], -1, 255, thickness=cv2.FILLED)
+            continue
+        kept_candidates.append(candidate)
+        cv2.drawContours(filtered_shape_mask, [candidate.contour], -1, 255, thickness=2)
+
+    shape_mask = cv2.dilate(filtered_shape_mask, dilate_kernel, iterations=1)
+    filled_shape_mask = np.zeros_like(binary)
+    for candidate in kept_candidates:
+        cv2.drawContours(filled_shape_mask, [candidate.contour], -1, 255, thickness=cv2.FILLED)
+
+    inner_shape_mask = cv2.erode(filled_shape_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5)), iterations=1)
+    shapes_subtracted_mask = cv2.bitwise_and(binary, cv2.bitwise_not(inner_shape_mask))
+    edge_lines = cv2.bitwise_and(edges, cv2.bitwise_not(inner_shape_mask))
+    line_mask = cv2.bitwise_or(shapes_subtracted_mask, edge_lines)
+    line_mask = cv2.bitwise_and(line_mask, cv2.bitwise_not(artifact_mask))
+
+    return SeparationResult(
+        shape_mask=shape_mask,
+        line_mask=line_mask,
+        artifact_mask=artifact_mask,
+        shapes_subtracted_mask=shapes_subtracted_mask,
+        shape_candidates_before_filter=provisional_candidates,
+        shape_candidates=kept_candidates,
+        rejected_candidates=rejected_candidates,
+        internal_noise_candidates=internal_noise_candidates,
+        summary={
+            "raw_contours_found": len(contours),
+            "shape_candidates_before_internal_filter": len(provisional_candidates),
+            "shape_mask_contours_found": len(kept_candidates),
+            "artifacts_rejected": len(rejected_candidates),
+            "internal_noise_rejected": len(internal_noise_candidates),
+        },
+    )
+
+================================================================================
+
+Demo9\src\verify.py
+
+from __future__ import annotations
+
+import cv2
+import numpy as np
+
+from .models import Verification
+
+
+def _safe_ratio(numerator: int, denominator: int) -> float:
+    if denominator <= 0:
+        return 0.0
+    return float(numerator) / float(denominator)
+
+
+def verify_render(
+    normalized_binary: np.ndarray,
+    rendered_image: np.ndarray,
+    edge_overlap_pass: float,
+    edge_overlap_warn: float,
+    pixel_diff_pass: float,
+    pixel_diff_warn: float,
+    canny_low: int,
+    canny_high: int,
+    aperture_size: int,
+) -> tuple[Verification, np.ndarray]:
+    rendered_gray = cv2.cvtColor(rendered_image, cv2.COLOR_BGR2GRAY)
+    _, rendered_binary = cv2.threshold(rendered_gray, 200, 255, cv2.THRESH_BINARY_INV)
+
+    source_edges = cv2.Canny(normalized_binary, canny_low, canny_high, apertureSize=aperture_size, L2gradient=True)
+    rendered_edges = cv2.Canny(rendered_binary, canny_low, canny_high, apertureSize=aperture_size, L2gradient=True)
+
+    kernel = np.ones((3, 3), dtype=np.uint8)
+    dilated_source_edges = cv2.dilate(source_edges, kernel, iterations=1)
+    dilated_rendered_edges = cv2.dilate(rendered_edges, kernel, iterations=1)
+
+    source_hits = cv2.bitwise_and(dilated_source_edges, rendered_edges)
+    rendered_hits = cv2.bitwise_and(dilated_rendered_edges, source_edges)
+    source_edge_count = int(cv2.countNonZero(source_edges))
+    rendered_edge_count = int(cv2.countNonZero(rendered_edges))
+    source_coverage = _safe_ratio(int(cv2.countNonZero(source_hits)), source_edge_count)
+    rendered_coverage = _safe_ratio(int(cv2.countNonZero(rendered_hits)), rendered_edge_count)
+    edge_overlap_score = (source_coverage + rendered_coverage) / 2.0
+    overlap_mask = cv2.bitwise_or(source_hits, rendered_hits)
+
+    diff_mask = cv2.absdiff(normalized_binary, rendered_binary)
+    pixel_difference_score = _safe_ratio(
+        int(cv2.countNonZero(diff_mask)),
+        diff_mask.shape[0] * diff_mask.shape[1],
+    )
+
+    notes: list[str] = []
+    if edge_overlap_score >= edge_overlap_pass and pixel_difference_score <= pixel_diff_pass:
+        status = "pass"
+        notes.append("Rendered output closely matches the normalized source.")
+    elif edge_overlap_score >= edge_overlap_warn and pixel_difference_score <= pixel_diff_warn:
+        status = "warn"
+        notes.append("Rendered output is usable but shows moderate mismatch.")
+    else:
+        status = "fail"
+        notes.append("Rendered output diverges significantly from the normalized source.")
+
+    diff_bgr = cv2.cvtColor(diff_mask, cv2.COLOR_GRAY2BGR)
+    diff_bgr[np.where(overlap_mask > 0)] = (0, 255, 0)
+
+    verification = Verification(
+        edge_overlap_score=round(edge_overlap_score, 4),
+        pixel_difference_score=round(pixel_difference_score, 4),
+        status=status,
+        notes=notes,
+    )
+    return verification, diff_bgr
+
+================================================================================
+
