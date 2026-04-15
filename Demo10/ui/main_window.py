@@ -75,6 +75,8 @@ class AgentWorkbenchApp:
         self.status_action_var = tk.StringVar(value="LLM: idle")
         self.command_var = tk.StringVar()
         self.active_slot_var = tk.StringVar(value="Active Slot: none")
+        self.status_selected_slot_var = tk.StringVar(value="Selected Slot: 1")
+        self.selected_slot_index = 0
 
         self.spec_queue = self.queue_service.create_state()
         self.run_state_service.set_queue_state(self.spec_queue)
@@ -150,7 +152,7 @@ class AgentWorkbenchApp:
         self.model_combo.bind("<<ComboboxSelected>>", self._on_model_selected)
         ttk.Button(top, text="Refresh Models", command=self.refresh_models).grid(row=0, column=7)
 
-        ttk.Label(top, text="Specification", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        ttk.Label(top, text="Spec Editor", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
         spec_frame = ttk.Frame(top, style="Panel.TFrame")
         spec_frame.grid(row=1, column=1, columnspan=5, sticky="nsew", pady=(10, 0))
         spec_frame.rowconfigure(0, weight=1)
@@ -175,7 +177,7 @@ class AgentWorkbenchApp:
         queue_frame.grid(row=1, column=6, columnspan=2, sticky="nsew", pady=(10, 0), padx=(10, 0))
         queue_frame.rowconfigure(1, weight=1)
         queue_frame.columnconfigure(0, weight=1)
-        ttk.Label(queue_frame, text="Spec Queue (10 Slots)", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(queue_frame, text="Execution Queue", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
         self.queue_status_label = ttk.Label(queue_frame, textvariable=self.active_slot_var, style="Panel.TLabel")
         self.queue_status_label.grid(row=0, column=1, sticky="e")
         queue_slots_frame = ttk.Frame(queue_frame, style="Panel.TFrame")
@@ -197,9 +199,14 @@ class AgentWorkbenchApp:
                 insertbackground="#d4d4d4",
                 font=("Consolas", 9),
                 relief="flat",
+                state="disabled",
             )
             slot_text.grid(row=idx, column=2, sticky="ew", pady=(0, 4))
             self.queue_slot_widgets.append(slot_text)
+
+            slot_label.bind("<Button-1>", lambda e, i=idx: self.select_slot(i))
+            status_label.bind("<Button-1>", lambda e, i=idx: self.select_slot(i))
+            slot_text.bind("<Button-1>", lambda e, i=idx: self.select_slot(i))
         action_row = ttk.Frame(top, style="Panel.TFrame")
         action_row.grid(row=2, column=6, columnspan=2, sticky="e", pady=(8, 0))
         self.run_llm_button = ttk.Button(action_row, text="Run LLM", command=self.run_llm)
@@ -219,7 +226,10 @@ class AgentWorkbenchApp:
         self.stop_queue_button = ttk.Button(action_row, text="Stop Queue", command=self.stop_queue)
         self.stop_queue_button.pack(side="left", padx=(0, 8))
         self.stop_queue_button.state(["disabled"])
-        ttk.Button(action_row, text="Submit Spec", command=self.submit_spec).pack(side="left")
+        self.submit_spec_button = ttk.Button(action_row, text="Submit to Selected Slot", command=self.submit_spec)
+        self.submit_spec_button.pack(side="left", padx=(0, 8))
+        ttk.Button(action_row, text="Load Slot to Editor", command=self.load_slot_to_editor).pack(side="left", padx=(0, 8))
+        ttk.Button(action_row, text="Clear Slot", command=self.clear_slot).pack(side="left")
 
     def _build_main_section(self, parent: ttk.Frame) -> None:
         main = ttk.PanedWindow(parent, orient="horizontal")
@@ -463,13 +473,15 @@ class AgentWorkbenchApp:
     def _build_status_bar(self, parent: ttk.Frame) -> None:
         status = ttk.Frame(parent, style="Panel.TFrame", padding=(8, 6))
         status.grid(row=3, column=0, sticky="ew")
-        for idx in range(4):
+        for idx in range(6):
             status.columnconfigure(idx, weight=1)
 
         ttk.Label(status, textvariable=self.status_folder_var, style="Panel.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(status, textvariable=self.status_file_var, style="Panel.TLabel").grid(row=0, column=1, sticky="w")
         ttk.Label(status, textvariable=self.status_model_var, style="Panel.TLabel").grid(row=0, column=2, sticky="w")
-        ttk.Label(status, textvariable=self.status_action_var, style="Panel.TLabel").grid(row=0, column=3, sticky="w")
+        ttk.Label(status, textvariable=self.status_selected_slot_var, style="Panel.TLabel").grid(row=0, column=3, sticky="w")
+        ttk.Label(status, textvariable=self.active_slot_var, style="Panel.TLabel").grid(row=0, column=4, sticky="w")
+        ttk.Label(status, textvariable=self.status_action_var, style="Panel.TLabel").grid(row=0, column=5, sticky="w")
 
     def log_event(self, message: str) -> None:
         entry = self.log_service.create_entry(message)
@@ -632,27 +644,40 @@ class AgentWorkbenchApp:
             content = restore.to_preview_text()
         self._set_text_widget_content(self.restore_view, content)
 
+    def select_slot(self, index: int) -> None:
+        self.selected_slot_index = index
+        self.status_selected_slot_var.set(f"Selected Slot: {index + 1}")
+        self.log_event(f"Selected queue slot: {index + 1}")
+        self._refresh_queue_view()
+
     def _refresh_queue_view(self) -> None:
         queue_state = self.spec_queue
         active = queue_state.active_slot_index + 1 if queue_state.active_slot_index >= 0 else "none"
-        self.active_slot_var.set(f"Active Slot: {active} | Queue: {queue_state.queue_status}")
+        self.active_slot_var.set(f"Active Slot: {active} [{queue_state.queue_status}]")
         for idx, (slot, widget) in enumerate(zip(queue_state.queue_slots, self.queue_slot_widgets)):
             self.queue_slot_status_vars[idx].set(slot.status)
+            widget.configure(state="normal")
             current = widget.get("1.0", "end-1c")
             if current != slot.spec_text:
                 widget.delete("1.0", "end")
                 widget.insert("1.0", slot.spec_text)
+
             if slot.status == "running":
-                widget.configure(bg="#263238")
+                bg = "#263238"
             elif slot.status == "completed":
-                widget.configure(bg="#1f3b2d")
+                bg = "#1f3b2d"
             elif slot.status == "failed":
-                widget.configure(bg="#4b1f1f")
+                bg = "#4b1f1f"
             elif slot.status == "stopped":
-                widget.configure(bg="#4a3b1f")
+                bg = "#4a3b1f"
+            elif slot.status == "ready":
+                bg = "#2d2d30"
             else:
-                widget.configure(bg="#1b1b1c")
-            widget.configure(fg="#d4d4d4", insertbackground="#d4d4d4")
+                bg = "#1b1b1c"
+
+            highlight = "#ffffff" if idx == self.selected_slot_index else "#3c3c3c"
+            widget.configure(bg=bg, fg="#d4d4d4", insertbackground="#d4d4d4", highlightbackground=highlight, highlightthickness=1)
+            widget.configure(state="disabled")
 
     def _capture_queue_specs(self) -> list[str]:
         return [widget.get("1.0", "end-1c") for widget in self.queue_slot_widgets]
@@ -741,12 +766,28 @@ class AgentWorkbenchApp:
 
     def submit_spec(self) -> None:
         spec = self.spec_text.get("1.0", "end-1c")
-        model = self.model_var.get().strip() or "(none)"
-        folder = str(self.current_folder) if self.current_folder else "(none)"
-        self.log_event("spec received")
-        self.log_event(f"spec length: {len(spec)}")
-        self.log_event(f"current project folder: {folder}")
-        self.log_event(f"selected model: {model}")
+        idx = self.selected_slot_index
+        slot = self.spec_queue.queue_slots[idx]
+        slot.spec_text = spec
+        slot.status = "ready" if spec.strip() else "empty"
+        self.log_event(f"Spec submitted to slot {idx + 1}")
+        self._refresh_queue_view()
+
+    def load_slot_to_editor(self) -> None:
+        idx = self.selected_slot_index
+        slot = self.spec_queue.queue_slots[idx]
+        self.spec_text.delete("1.0", "end")
+        self.spec_text.insert("1.0", slot.spec_text)
+        self.log_event(f"Loaded slot {idx + 1} into editor")
+        self._refresh_prompt_preview()
+
+    def clear_slot(self) -> None:
+        idx = self.selected_slot_index
+        slot = self.spec_queue.queue_slots[idx]
+        slot.spec_text = ""
+        slot.status = "empty"
+        self.log_event(f"Cleared slot {idx + 1}")
+        self._refresh_queue_view()
 
     def run_command(self) -> None:
         command = self.command_var.get().strip()
@@ -870,6 +911,7 @@ class AgentWorkbenchApp:
         self.set_status_action("queue stopping")
 
     def _run_queue_worker(self) -> None:
+        self.ui_queue.put(("queue_log", "Queue started"))
         for slot in self.spec_queue.queue_slots:
             if self.spec_queue.stop_requested:
                 if slot.status == "ready":
@@ -882,8 +924,7 @@ class AgentWorkbenchApp:
 
             self.queue_service.mark_slot_running(self.spec_queue, slot)
             self.ui_queue.put(("queue_slot_state", slot.slot_index))
-            self.ui_queue.put(("queue_log", f"active slot changed: {slot.slot_index + 1}"))
-            self.ui_queue.put(("queue_log", f"slot started: {slot.slot_index + 1}"))
+            self.ui_queue.put(("queue_log", f"Active slot changed to {slot.slot_index + 1}"))
 
             try:
                 if not self.current_folder:
@@ -1286,7 +1327,7 @@ class AgentWorkbenchApp:
             if not isinstance(payload, int):
                 return
             self._refresh_queue_view()
-            self.log_event(f"slot completed: {payload + 1}")
+            self.log_event(f"Slot {payload + 1} completed")
             return
         if message == "queue_slot_failed":
             if not isinstance(payload, tuple) or len(payload) != 2:
@@ -1295,7 +1336,7 @@ class AgentWorkbenchApp:
             if not isinstance(slot_index, int):
                 return
             self._refresh_queue_view()
-            self.log_event(f"slot failed: {slot_index + 1}")
+            self.log_event(f"Slot {slot_index + 1} failed")
             self.log_event(f"failure reason: {reason}")
             return
         if message == "queue_slot_stopped":
@@ -1305,7 +1346,7 @@ class AgentWorkbenchApp:
             if not isinstance(slot_index, int):
                 return
             self._refresh_queue_view()
-            self.log_event(f"slot stopped: {slot_index + 1}")
+            self.log_event(f"Slot {slot_index + 1} stopped")
             self.log_event(f"stop reason: {reason}")
             return
         if message == "queue_finished":
