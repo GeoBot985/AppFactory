@@ -10,10 +10,11 @@ from tkinter import filedialog, ttk
 from services.file_service import FileService, TreeNode
 from services.log_service import LogService
 from services.bundle_service import BundleBuilder, WorkingSetBundle
+from services.bundle_edit_service import BundleEditRun, BundleOutputParser, BundleValidator, CandidateBundle
 from services.index_service import ArchitectureIndex, IndexBuilder
 from services.ollama_service import OllamaRunSnapshot, OllamaService
 from services.process_service import ProcessResult, ProcessService
-from services.prompt_service import PromptBuilder, PromptRequest
+from services.prompt_service import PromptBuilder, PromptRequest, BundleEditPromptBuilder
 from services.queue_service import QueueService
 from services.restore_service import RestoreResult, RestoreService
 from services.run_state_service import RunStateService
@@ -37,6 +38,9 @@ class AgentWorkbenchApp:
         self.restore_service = RestoreService()
         self.log_service = LogService()
         self.prompt_builder = PromptBuilder()
+        self.bundle_prompt_builder = BundleEditPromptBuilder()
+        self.bundle_parser = BundleOutputParser()
+        self.bundle_validator = BundleValidator()
         self.run_state_service = RunStateService()
         self.ui_queue: queue.Queue[tuple[str, object]] = queue.Queue()
 
@@ -46,11 +50,13 @@ class AgentWorkbenchApp:
         self.tree_build_thread: threading.Thread | None = None
         self.model_load_thread: threading.Thread | None = None
         self.llm_run_thread: threading.Thread | None = None
+        self.bundle_edit_thread: threading.Thread | None = None
         self.index_build_thread: threading.Thread | None = None
         self.selection_thread: threading.Thread | None = None
         self.queue_thread: threading.Thread | None = None
         self.restore_thread: threading.Thread | None = None
         self.llm_run_active = False
+        self.bundle_edit_active = False
         self.index_build_active = False
         self.selection_active = False
         self.queue_active = False
@@ -122,6 +128,7 @@ class AgentWorkbenchApp:
         self._refresh_index_view()
         self._refresh_selection_view()
         self._refresh_bundle_view()
+        self._refresh_candidate_view()
         self._refresh_queue_view()
         self._refresh_restore_view()
 
@@ -197,12 +204,16 @@ class AgentWorkbenchApp:
         action_row.grid(row=2, column=6, columnspan=2, sticky="e", pady=(8, 0))
         self.run_llm_button = ttk.Button(action_row, text="Run LLM", command=self.run_llm)
         self.run_llm_button.pack(side="left", padx=(0, 8))
+        self.edit_bundle_button = ttk.Button(action_row, text="Edit Bundle with LLM", command=self.run_bundle_edit)
+        self.edit_bundle_button.pack(side="left", padx=(0, 8))
         self.build_index_button = ttk.Button(action_row, text="Build Index", command=self.build_index)
         self.build_index_button.pack(side="left", padx=(0, 8))
         self.select_files_button = ttk.Button(action_row, text="Select Files", command=self.select_files)
         self.select_files_button.pack(side="left", padx=(0, 8))
         self.restore_bundle_button = ttk.Button(action_row, text="Restore Bundle", command=self.restore_bundle)
         self.restore_bundle_button.pack(side="left", padx=(0, 8))
+        self.restore_candidate_button = ttk.Button(action_row, text="Restore Candidate", command=self.restore_candidate)
+        self.restore_candidate_button.pack(side="left", padx=(0, 8))
         self.start_queue_button = ttk.Button(action_row, text="Start Queue", command=self.start_queue)
         self.start_queue_button.pack(side="left", padx=(0, 8))
         self.stop_queue_button = ttk.Button(action_row, text="Stop Queue", command=self.stop_queue)
@@ -248,6 +259,7 @@ class AgentWorkbenchApp:
         index_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         selection_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         bundle_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        candidate_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         restore_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         notebook.add(viewer_frame, text="File Viewer")
         notebook.add(prompt_frame, text="Prompt Preview")
@@ -255,9 +267,10 @@ class AgentWorkbenchApp:
         notebook.add(index_frame, text="Architecture Index")
         notebook.add(selection_frame, text="File Selection")
         notebook.add(bundle_frame, text="Bundle Preview")
+        notebook.add(candidate_frame, text="Candidate Bundle")
         notebook.add(restore_frame, text="Restore Result")
 
-        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, restore_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -359,6 +372,23 @@ class AgentWorkbenchApp:
         bundle_y.grid(row=0, column=1, sticky="ns")
         bundle_x.grid(row=1, column=0, sticky="ew")
         self.bundle_view.configure(state="disabled")
+
+        self.candidate_view = tk.Text(
+            candidate_frame,
+            wrap="none",
+            bg="#1b1b1c",
+            fg="#9cdcfe",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        candidate_y = ttk.Scrollbar(candidate_frame, orient="vertical", command=self.candidate_view.yview)
+        candidate_x = ttk.Scrollbar(candidate_frame, orient="horizontal", command=self.candidate_view.xview)
+        self.candidate_view.configure(yscrollcommand=candidate_y.set, xscrollcommand=candidate_x.set)
+        self.candidate_view.grid(row=0, column=0, sticky="nsew")
+        candidate_y.grid(row=0, column=1, sticky="ns")
+        candidate_x.grid(row=1, column=0, sticky="ew")
+        self.candidate_view.configure(state="disabled")
 
         self.restore_view = tk.Text(
             restore_frame,
@@ -551,6 +581,42 @@ class AgentWorkbenchApp:
         else:
             content = self.restore_service.preview_bundle(bundle) + "\n\n" + bundle.to_preview_text()
         self._set_text_widget_content(self.bundle_view, content)
+
+    def _refresh_candidate_view(self) -> None:
+        edit_state = self.run_state_service.bundle_edit_state
+        run = edit_state.latest_edit_run
+        if run is None:
+            if edit_state.status == "failed":
+                content = f"Bundle edit failed.\nReason: {edit_state.failure_reason or '-'}"
+            elif edit_state.status == "running":
+                content = "Bundle edit in progress..."
+            else:
+                content = "No bundle edit run yet."
+        else:
+            lines = [
+                f"Run ID: {run.run_id}",
+                f"Status: {run.status}",
+                f"Validation: {run.validation_status}",
+                f"Restore: {run.restore_status}",
+                f"Started: {run.started_at}",
+                f"Completed: {run.completed_at}",
+            ]
+            if run.validation_errors:
+                lines.append("\n[VALIDATION ERRORS]")
+                lines.extend(f"- {err}" for err in run.validation_errors)
+
+            if run.candidate_bundle:
+                lines.append("\n[CANDIDATE FILES]")
+                for f in run.candidate_bundle.files:
+                    lines.append(f"--- {f.relative_path} ({f.selection_kind}) ---")
+                    lines.append(f.file_content)
+                    lines.append("-" * 40)
+            elif run.raw_model_output:
+                lines.append("\n[RAW MODEL OUTPUT (PARSING FAILED)]")
+                lines.append(run.raw_model_output)
+
+            content = "\n".join(lines)
+        self._set_text_widget_content(self.candidate_view, content)
 
     def _refresh_restore_view(self) -> None:
         restore_state = self.run_state_service.restore_state
@@ -882,6 +948,134 @@ class AgentWorkbenchApp:
         except Exception as exc:
             self.ui_queue.put(("restore_failed", str(exc)))
 
+    def restore_candidate(self) -> None:
+        if self.restore_active:
+            self.log_event("Restore Candidate blocked: restore already in progress.")
+            return
+        if not self.current_folder:
+            self.log_event("Restore Candidate blocked: no project folder selected.")
+            return
+        edit_state = self.run_state_service.bundle_edit_state
+        run = edit_state.latest_edit_run
+        if run is None or run.candidate_bundle is None:
+            self.log_event("Restore Candidate blocked: no candidate bundle available.")
+            return
+        if run.validation_status != "passed":
+            self.log_event("Restore Candidate blocked: candidate bundle failed validation.")
+            return
+
+        self.restore_active = True
+        self.restore_candidate_button.state(["disabled"])
+        self.run_state_service.begin_restore()
+        self._refresh_restore_view()
+        run.restore_status = "started"
+        self._refresh_candidate_view()
+
+        self.log_event("restore started (candidate)")
+        self.log_event(f"project root used: {self.current_folder}")
+        self.log_event(f"candidate file count: {len(run.candidate_bundle.files)}")
+        self.set_status_action("restoring candidate")
+
+        thread = threading.Thread(target=self._restore_candidate_worker, args=(Path(self.current_folder), run), daemon=True)
+        self.restore_thread = thread
+        thread.start()
+
+    def _restore_candidate_worker(self, project_root: Path, edit_run: BundleEditRun) -> None:
+        try:
+            result = self.restore_service.restore_candidate_bundle(project_root, edit_run.candidate_bundle)
+            edit_run.restore_status = result.status
+            self.ui_queue.put(("restore_done", result))
+            self.ui_queue.put(("candidate_refresh", None))
+        except Exception as exc:
+            edit_run.restore_status = "failed"
+            self.ui_queue.put(("restore_failed", str(exc)))
+            self.ui_queue.put(("candidate_refresh", None))
+
+    def run_bundle_edit(self) -> None:
+        if self.bundle_edit_active:
+            self.log_event("Bundle Edit blocked: a run is already in progress.")
+            return
+
+        model = self.model_var.get().strip()
+        if not model:
+            self.log_event("Bundle Edit blocked: no model selected.")
+            return
+
+        spec = self.spec_text.get("1.0", "end-1c").strip()
+        if not spec:
+            self.log_event("Bundle Edit blocked: spec textbox is empty.")
+            return
+
+        bundle = self._active_bundle()
+        if not bundle:
+            self.log_event("Bundle Edit blocked: no source bundle available.")
+            return
+
+        self.log_event("bundle edit started")
+
+        queue_state = self.spec_queue
+        if queue_state.active_slot_index >= 0:
+             self.log_event(f"slot context identified: slot {queue_state.active_slot_index + 1}")
+        else:
+             self.log_event("spec context identified: current active spec")
+
+        self.log_event(f"source bundle file count: {bundle.total_files}")
+
+        try:
+            request = PromptRequest(
+                model_name=model,
+                project_folder=self._current_project_folder_text(),
+                spec_text=spec
+            )
+            assembled_prompt = self.bundle_prompt_builder.build(request, bundle)
+        except Exception as exc:
+            self.log_event(f"prompt assembly failed: {exc}")
+            return
+
+        self.log_event("prompt assembled")
+        self._set_text_widget_content(self.prompt_preview, assembled_prompt)
+
+        edit_run = BundleEditRun(
+            run_id=f"run_{int(time.time())}",
+            slot_index=-1, # TODO: integrate with queue if needed
+            model_name=model,
+            spec_text=spec,
+            source_bundle=bundle,
+            assembled_prompt=assembled_prompt,
+            started_at=self.run_state_service._now(),
+            status="running"
+        )
+        self.run_state_service.begin_bundle_edit(edit_run)
+        self._refresh_candidate_view()
+
+        snapshot = self.ollama_service.create_snapshot(model, assembled_prompt)
+        self.bundle_edit_active = True
+        self.edit_bundle_button.state(["disabled"])
+        self.set_status_action("editing bundle")
+        self.append_log_separator("Bundle Edit Run")
+        self.log_event("model selected")
+        self.log_event(f"prompt length: {len(assembled_prompt)}")
+
+        thread = threading.Thread(target=self._run_bundle_edit_worker, args=(snapshot, edit_run), daemon=True)
+        self.bundle_edit_thread = thread
+        thread.start()
+
+    def _run_bundle_edit_worker(self, snapshot: OllamaRunSnapshot, edit_run: BundleEditRun) -> None:
+        try:
+            self.ui_queue.put(("bundle_edit_streaming_started", None))
+            accumulator = []
+            for event in self.ollama_service.run_prompt_stream(snapshot):
+                if event["type"] == "chunk":
+                    chunk = event["text"]
+                    accumulator.append(chunk)
+                    self.ui_queue.put(("bundle_edit_chunk", chunk))
+                elif event["type"] == "done":
+                    raw_output = "".join(accumulator)
+                    edit_run.raw_model_output = raw_output
+                    self.ui_queue.put(("bundle_edit_streaming_done", edit_run))
+        except Exception as exc:
+            self.ui_queue.put(("bundle_edit_failed", (edit_run, str(exc))))
+
     def run_llm(self) -> None:
         if self.llm_run_active:
             self.log_event("Run LLM blocked: a run is already in progress.")
@@ -1183,6 +1377,64 @@ class AgentWorkbenchApp:
                 self.set_status_action("completed")
                 self.active_run_snapshot = None
                 return
+        if message == "candidate_refresh":
+            self._refresh_candidate_view()
+            return
+        if message == "bundle_edit_streaming_started":
+            self.log_event("generation/streaming active")
+            return
+        if message == "bundle_edit_chunk":
+            self.append_model_output(str(payload))
+            return
+        if message == "bundle_edit_streaming_done":
+            edit_run = payload
+            if not isinstance(edit_run, BundleEditRun):
+                return
+            self.log_event("raw output received")
+            self.log_event("bundle parse started")
+            try:
+                candidate = self.bundle_parser.parse(edit_run.raw_model_output)
+                edit_run.candidate_bundle = candidate
+                self.log_event("parse successful")
+            except Exception as exc:
+                self.log_event(f"parse failed: {exc}")
+                edit_run.status = "failed"
+                edit_run.completed_at = self.run_state_service._now()
+                self.bundle_edit_active = False
+                self.edit_bundle_button.state(["!disabled"])
+                self._refresh_candidate_view()
+                return
+
+            self.log_event("validation started")
+            errors = self.bundle_validator.validate(candidate, edit_run.source_bundle, edit_run.source_bundle.project_root)
+            if errors:
+                edit_run.validation_status = "failed"
+                edit_run.validation_errors = errors
+                self.log_event("validation failed")
+                for err in errors:
+                    self.log_event(f"error: {err}")
+            else:
+                edit_run.validation_status = "passed"
+                self.log_event("validation passed")
+                self.log_event("candidate bundle ready")
+
+            edit_run.status = "completed"
+            edit_run.completed_at = self.run_state_service._now()
+            self.bundle_edit_active = False
+            self.edit_bundle_button.state(["!disabled"])
+            self.set_status_action("edit completed")
+            self._refresh_candidate_view()
+            return
+        if message == "bundle_edit_failed":
+            edit_run, error = payload
+            self.log_event(f"bundle edit failed: {error}")
+            edit_run.status = "failed"
+            edit_run.completed_at = self.run_state_service._now()
+            self.bundle_edit_active = False
+            self.edit_bundle_button.state(["!disabled"])
+            self.set_status_action("edit failed")
+            self._refresh_candidate_view()
+            return
         if message == "llm_failed":
             self.llm_run_active = False
             self.run_llm_button.state(["!disabled"])
