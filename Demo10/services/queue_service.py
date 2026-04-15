@@ -60,11 +60,12 @@ class QueueService:
     def _initialize_pipeline(self, slot: QueueSlot) -> None:
         slot.pipeline_stages = [
             PipelineStage(name="Spec Intake"),
-            PipelineStage(name="Index Available"),
+            PipelineStage(name="Index Check / Build"),
             PipelineStage(name="File Selection"),
             PipelineStage(name="Bundle Build"),
             PipelineStage(name="LLM Edit"),
             PipelineStage(name="Validation"),
+            PipelineStage(name="Restore Preview"),
             PipelineStage(name="Restore"),
         ]
 
