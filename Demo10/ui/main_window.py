@@ -271,6 +271,7 @@ class AgentWorkbenchApp:
         bundle_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         candidate_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         restore_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        slot_detail_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         notebook.add(viewer_frame, text="File Viewer")
         notebook.add(prompt_frame, text="Prompt Preview")
         notebook.add(response_frame, text="Latest Response")
@@ -279,8 +280,9 @@ class AgentWorkbenchApp:
         notebook.add(bundle_frame, text="Bundle Preview")
         notebook.add(candidate_frame, text="Candidate Bundle")
         notebook.add(restore_frame, text="Restore Result")
+        notebook.add(slot_detail_frame, text="Slot Detail")
 
-        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_frame, slot_detail_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -416,6 +418,43 @@ class AgentWorkbenchApp:
         restore_y.grid(row=0, column=1, sticky="ns")
         restore_x.grid(row=1, column=0, sticky="ew")
         self.restore_view.configure(state="disabled")
+
+        # Slot Detail Tab
+        slot_detail_frame.rowconfigure(0, weight=0)
+        slot_detail_frame.rowconfigure(1, weight=1)
+
+        self.slot_detail_header = ttk.Frame(slot_detail_frame, style="Panel.TFrame")
+        self.slot_detail_header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+        self.slot_detail_title_var = tk.StringVar(value="Slot: none")
+        ttk.Label(self.slot_detail_header, textvariable=self.slot_detail_title_var, font=("Segoe UI", 11, "bold"), style="Panel.TLabel").pack(side="left", padx=(0, 20))
+
+        self.slot_detail_status_var = tk.StringVar(value="Status: -")
+        ttk.Label(self.slot_detail_header, textvariable=self.slot_detail_status_var, style="Panel.TLabel").pack(side="left", padx=(0, 20))
+
+        ttk.Button(self.slot_detail_header, text="Load Spec to Editor", command=self.load_slot_to_editor).pack(side="right")
+
+        self.slot_detail_view = tk.Text(
+            slot_detail_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        slot_detail_scroll = ttk.Scrollbar(slot_detail_frame, orient="vertical", command=self.slot_detail_view.yview)
+        self.slot_detail_view.configure(yscrollcommand=slot_detail_scroll.set)
+        self.slot_detail_view.grid(row=1, column=0, sticky="nsew")
+        slot_detail_scroll.grid(row=1, column=1, sticky="ns")
+        self.slot_detail_view.configure(state="disabled")
+
+        self.slot_detail_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 11, "bold"))
+        self.slot_detail_view.tag_configure("label", foreground="#9cdcfe")
+        self.slot_detail_view.tag_configure("value", foreground="#d4d4d4")
+        self.slot_detail_view.tag_configure("error", foreground="#f44747")
+        self.slot_detail_view.tag_configure("success", foreground="#6a9955")
+        self.slot_detail_view.tag_configure("dim", foreground="#808080")
 
         ttk.Label(right, text="Activity Log", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
         log_frame = ttk.Frame(right, style="Panel.TFrame")
@@ -644,11 +683,115 @@ class AgentWorkbenchApp:
             content = restore.to_preview_text()
         self._set_text_widget_content(self.restore_view, content)
 
+    def _refresh_slot_detail_view(self) -> None:
+        idx = self.selected_slot_index
+        slot = self.spec_queue.queue_slots[idx]
+
+        self.slot_detail_title_var.set(f"Slot: {idx + 1}")
+        status_text = f"Status: {slot.status}"
+        if self.spec_queue.active_slot_index == idx:
+            status_text += " (ACTIVE)"
+        self.slot_detail_status_var.set(status_text)
+
+        self.slot_detail_view.configure(state="normal")
+        self.slot_detail_view.delete("1.0", "end")
+
+        def add_section(title: str):
+            self.slot_detail_view.insert("end", f"\n=== {title} ===\n", "header")
+
+        def add_field(label: str, value: str, tag: str = "value"):
+            self.slot_detail_view.insert("end", f"{label}: ", "label")
+            self.slot_detail_view.insert("end", f"{value}\n", tag)
+
+        if slot.status == "empty":
+            self.slot_detail_view.insert("end", "\n[ Slot is empty ]\n", "dim")
+            self.slot_detail_view.configure(state="disabled")
+            return
+
+        # 1. Spec
+        add_section("SPEC")
+        if slot.spec_text.strip():
+            self.slot_detail_view.insert("end", slot.spec_text + "\n")
+        else:
+            self.slot_detail_view.insert("end", "(no spec text)\n", "dim")
+
+        # 2. Selection
+        add_section("SELECTION")
+        if slot.selection_result:
+            res = slot.selection_result
+            add_field("Total Selected", str(res.total_selected_count))
+            add_field("Primary", str(res.selected_primary_count))
+            add_field("Context", str(res.selected_context_count))
+            if res.unmatched_terms:
+                add_field("Unmatched Terms", ", ".join(res.unmatched_terms), "error")
+
+            self.slot_detail_view.insert("end", "\nSelected Files:\n", "label")
+            for file_path in res.primary_files:
+                self.slot_detail_view.insert("end", f"  [P] {file_path}\n", "value")
+            for file_path in res.context_files:
+                self.slot_detail_view.insert("end", f"  [C] {file_path}\n", "dim")
+        else:
+            self.slot_detail_view.insert("end", "No selection result available.\n", "dim")
+
+        # 3. Bundle
+        add_section("BUNDLE")
+        if slot.bundle_result:
+            b = slot.bundle_result
+            add_field("Total Files", str(b.total_files))
+            add_field("Characters", f"{b.total_chars:,}")
+
+            self.slot_detail_view.insert("end", "\nBundle Files:\n", "label")
+            for f in b.files:
+                self.slot_detail_view.insert("end", f"  {f.relative_path} ({f.selection_kind})\n", "value")
+        else:
+            self.slot_detail_view.insert("end", "No bundle result available.\n", "dim")
+
+        # 4. Restore
+        add_section("RESTORE")
+        if slot.restore_result:
+            r = slot.restore_result
+            add_field("Status", r.status, "success" if r.status == "completed" else "error")
+            add_field("Written", str(r.written_file_count))
+            add_field("Skipped", str(r.skipped_file_count))
+            add_field("Failed", str(r.failed_file_count), "error" if r.failed_file_count > 0 else "value")
+
+            if r.failures:
+                self.slot_detail_view.insert("end", "\nFailures:\n", "error")
+                for f, msg in r.failures.items():
+                    self.slot_detail_view.insert("end", f"  {f}: {msg}\n", "error")
+        else:
+            self.slot_detail_view.insert("end", "No restore result available.\n", "dim")
+
+        # 5. LLM / Edit Result
+        add_section("LLM EDIT RESULT")
+        if slot.llm_edit_run:
+            run = slot.llm_edit_run
+            add_field("Run ID", run.run_id)
+            add_field("Status", run.status)
+            add_field("Validation", run.validation_status, "success" if run.validation_status == "passed" else "error")
+            add_field("Restore", run.restore_status)
+
+            if run.validation_errors:
+                self.slot_detail_view.insert("end", "\nValidation Errors:\n", "error")
+                for err in run.validation_errors:
+                    self.slot_detail_view.insert("end", f"  - {err}\n", "error")
+        else:
+            self.slot_detail_view.insert("end", "No LLM edit result available.\n", "dim")
+
+        # 6. Failure Info
+        if slot.status == "failed" or slot.failure_reason:
+            add_section("FAILURE INFO")
+            add_field("Status", slot.status, "error")
+            add_field("Reason", slot.failure_reason or "unknown", "error")
+
+        self.slot_detail_view.configure(state="disabled")
+
     def select_slot(self, index: int) -> None:
         self.selected_slot_index = index
         self.status_selected_slot_var.set(f"Selected Slot: {index + 1}")
         self.log_event(f"Selected queue slot: {index + 1}")
         self._refresh_queue_view()
+        self._refresh_slot_detail_view()
 
     def _refresh_queue_view(self) -> None:
         queue_state = self.spec_queue
@@ -678,6 +821,7 @@ class AgentWorkbenchApp:
             highlight = "#ffffff" if idx == self.selected_slot_index else "#3c3c3c"
             widget.configure(bg=bg, fg="#d4d4d4", insertbackground="#d4d4d4", highlightbackground=highlight, highlightthickness=1)
             widget.configure(state="disabled")
+        self._refresh_slot_detail_view()
 
     def _capture_queue_specs(self) -> list[str]:
         return [widget.get("1.0", "end-1c") for widget in self.queue_slot_widgets]
@@ -831,8 +975,11 @@ class AgentWorkbenchApp:
     def build_bundle(self, selection_result: SelectionResult) -> WorkingSetBundle:
         self.run_state_service.begin_bundle_build()
         bundle = self.bundle_builder.build(selection_result)
+        if self.selected_slot_index >= 0:
+            self.spec_queue.queue_slots[self.selected_slot_index].bundle_result = bundle
         self.run_state_service.complete_bundle_build(bundle)
         self._refresh_bundle_view()
+        self._refresh_queue_view()
         return bundle
 
     def _set_active_artifacts(self, selection_result: SelectionResult | None, bundle: WorkingSetBundle | None) -> None:
@@ -849,6 +996,12 @@ class AgentWorkbenchApp:
             active_slot = queue_state.queue_slots[queue_state.active_slot_index]
             if active_slot.bundle_result is not None:
                 return active_slot.bundle_result
+
+        if self.selected_slot_index >= 0:
+            selected_slot = queue_state.queue_slots[self.selected_slot_index]
+            if selected_slot.bundle_result is not None:
+                return selected_slot.bundle_result
+
         return self.run_state_service.bundle_state.latest_bundle
 
     def select_files(self) -> None:
@@ -876,14 +1029,14 @@ class AgentWorkbenchApp:
         self.log_event(f"normalized term count: {term_count}")
         self.log_event("index availability confirmed")
         self.set_status_action("selection running")
-        thread = threading.Thread(target=self._select_files_worker, args=(spec, architecture_index), daemon=True)
+        thread = threading.Thread(target=self._select_files_worker, args=(spec, architecture_index, self.selected_slot_index), daemon=True)
         self.selection_thread = thread
         thread.start()
 
-    def _select_files_worker(self, spec: str, architecture_index: ArchitectureIndex) -> None:
+    def _select_files_worker(self, spec: str, architecture_index: ArchitectureIndex, slot_index: int) -> None:
         try:
             selection_result = self.file_selector.select(spec, architecture_index)
-            self.ui_queue.put(("selection_done", selection_result))
+            self.ui_queue.put(("selection_done", (slot_index, selection_result)))
         except Exception as exc:
             self.ui_queue.put(("selection_failed", str(exc)))
 
@@ -978,14 +1131,14 @@ class AgentWorkbenchApp:
         self.log_event(f"project root used: {self.current_folder}")
         self.log_event(f"bundle file count: {bundle.total_files}")
         self.set_status_action("restoring")
-        thread = threading.Thread(target=self._restore_bundle_worker, args=(Path(self.current_folder), bundle), daemon=True)
+        thread = threading.Thread(target=self._restore_bundle_worker, args=(Path(self.current_folder), bundle, self.selected_slot_index), daemon=True)
         self.restore_thread = thread
         thread.start()
 
-    def _restore_bundle_worker(self, project_root: Path, bundle: WorkingSetBundle) -> None:
+    def _restore_bundle_worker(self, project_root: Path, bundle: WorkingSetBundle, slot_index: int) -> None:
         try:
             result = self.restore_service.restore_bundle(project_root, bundle)
-            self.ui_queue.put(("restore_done", result))
+            self.ui_queue.put(("restore_done", (slot_index, result)))
         except Exception as exc:
             self.ui_queue.put(("restore_failed", str(exc)))
 
@@ -1017,15 +1170,15 @@ class AgentWorkbenchApp:
         self.log_event(f"candidate file count: {len(run.candidate_bundle.files)}")
         self.set_status_action("restoring candidate")
 
-        thread = threading.Thread(target=self._restore_candidate_worker, args=(Path(self.current_folder), run), daemon=True)
+        thread = threading.Thread(target=self._restore_candidate_worker, args=(Path(self.current_folder), run, self.selected_slot_index), daemon=True)
         self.restore_thread = thread
         thread.start()
 
-    def _restore_candidate_worker(self, project_root: Path, edit_run: BundleEditRun) -> None:
+    def _restore_candidate_worker(self, project_root: Path, edit_run: BundleEditRun, slot_index: int) -> None:
         try:
             result = self.restore_service.restore_candidate_bundle(project_root, edit_run.candidate_bundle)
             edit_run.restore_status = result.status
-            self.ui_queue.put(("restore_done", result))
+            self.ui_queue.put(("restore_done", (slot_index, result)))
             self.ui_queue.put(("candidate_refresh", None))
         except Exception as exc:
             edit_run.restore_status = "failed"
@@ -1056,9 +1209,9 @@ class AgentWorkbenchApp:
 
         queue_state = self.spec_queue
         if queue_state.active_slot_index >= 0:
-             self.log_event(f"slot context identified: slot {queue_state.active_slot_index + 1}")
+            self.log_event(f"slot context identified: slot {queue_state.active_slot_index + 1}")
         else:
-             self.log_event("spec context identified: current active spec")
+            self.log_event("spec context identified: current active spec")
 
         self.log_event(f"source bundle file count: {bundle.total_files}")
 
@@ -1078,7 +1231,7 @@ class AgentWorkbenchApp:
 
         edit_run = BundleEditRun(
             run_id=f"run_{int(time.time())}",
-            slot_index=-1, # TODO: integrate with queue if needed
+            slot_index=self.selected_slot_index,
             model_name=model,
             spec_text=spec,
             source_bundle=bundle,
@@ -1275,13 +1428,18 @@ class AgentWorkbenchApp:
             self.set_status_action("index failed")
             return
         if message == "selection_done":
-            selection_result = payload
+            if not isinstance(payload, tuple) or len(payload) != 2:
+                return
+            slot_index, selection_result = payload
             if not isinstance(selection_result, SelectionResult):
                 return
             self.selection_active = False
             self.select_files_button.state(["!disabled"])
+            if slot_index >= 0:
+                self.spec_queue.queue_slots[slot_index].selection_result = selection_result
             self.run_state_service.complete_selection(selection_result)
             self._refresh_selection_view()
+            self._refresh_queue_view()
             self.log_event(f"primary files selected count: {selection_result.selected_primary_count}")
             self.log_event(f"context files selected count: {selection_result.selected_context_count}")
             self.log_event(f"unmatched terms count: {len(selection_result.unmatched_terms)}")
@@ -1308,6 +1466,7 @@ class AgentWorkbenchApp:
             slot_index, selection_result = payload
             if not isinstance(slot_index, int) or not isinstance(selection_result, SelectionResult):
                 return
+            self.spec_queue.queue_slots[slot_index].selection_result = selection_result
             self._set_active_artifacts(selection_result, None)
             self._refresh_queue_view()
             self.log_event(f"slot selection completed: {slot_index + 1}")
@@ -1318,6 +1477,7 @@ class AgentWorkbenchApp:
             slot_index, bundle = payload
             if not isinstance(slot_index, int) or not isinstance(bundle, WorkingSetBundle):
                 return
+            self.spec_queue.queue_slots[slot_index].bundle_result = bundle
             self._set_active_artifacts(None, bundle)
             self._refresh_queue_view()
             self.log_event(f"slot bundle built: {slot_index + 1}")
@@ -1360,13 +1520,18 @@ class AgentWorkbenchApp:
             self.set_status_action(f"queue {final_status}")
             return
         if message == "restore_done":
-            restore_result = payload
+            if not isinstance(payload, tuple) or len(payload) != 2:
+                return
+            slot_index, restore_result = payload
             if not isinstance(restore_result, RestoreResult):
                 return
             self.restore_active = False
             self.restore_bundle_button.state(["!disabled"])
+            if slot_index >= 0:
+                self.spec_queue.queue_slots[slot_index].restore_result = restore_result
             self.run_state_service.complete_restore(restore_result)
             self._refresh_restore_view()
+            self._refresh_queue_view()
             self.log_event(f"files written count: {restore_result.written_file_count}")
             self.log_event(f"files skipped count: {restore_result.skipped_file_count}")
             self.log_event(f"files failed count: {restore_result.failed_file_count}")
@@ -1444,6 +1609,9 @@ class AgentWorkbenchApp:
                 self.bundle_edit_active = False
                 self.edit_bundle_button.state(["!disabled"])
                 self._refresh_candidate_view()
+                if edit_run.slot_index >= 0:
+                    self.spec_queue.queue_slots[edit_run.slot_index].llm_edit_run = edit_run
+                    self._refresh_queue_view()
                 return
 
             self.log_event("validation started")
@@ -1465,6 +1633,9 @@ class AgentWorkbenchApp:
             self.edit_bundle_button.state(["!disabled"])
             self.set_status_action("edit completed")
             self._refresh_candidate_view()
+            if edit_run.slot_index >= 0:
+                self.spec_queue.queue_slots[edit_run.slot_index].llm_edit_run = edit_run
+                self._refresh_queue_view()
             return
         if message == "bundle_edit_failed":
             edit_run, error = payload
@@ -1475,6 +1646,9 @@ class AgentWorkbenchApp:
             self.edit_bundle_button.state(["!disabled"])
             self.set_status_action("edit failed")
             self._refresh_candidate_view()
+            if edit_run.slot_index >= 0:
+                self.spec_queue.queue_slots[edit_run.slot_index].llm_edit_run = edit_run
+                self._refresh_queue_view()
             return
         if message == "llm_failed":
             self.llm_run_active = False
