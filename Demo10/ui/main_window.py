@@ -4,8 +4,11 @@ import queue
 import shutil
 import threading
 import time
+import json
+import uuid
 import tkinter as tk
 from pathlib import Path
+from datetime import datetime
 from tkinter import filedialog, ttk
 
 from services.file_service import FileService, TreeNode
@@ -26,6 +29,12 @@ from services.spec_parser_service import SpecParserService
 from services.task_executor_service import TaskExecutorService
 from services.validation_service import ValidationService
 from services.audit_log_service import AuditLogService
+from services.run_ledger.models import RunState as DurableRunState, QueueState as DurableQueueState, QueueDefinition, RunMetadata, LedgerEvent
+from services.run_ledger.ledger import LedgerService
+from services.run_ledger.queue_store import QueueStore
+from services.run_ledger.recovery import RecoveryService, InterruptionCategory, RecoveryAction
+from services.run_ledger.executor import ResumeService, ReplayService
+from services.run_ledger.consistency import ConsistencyChecker
 
 from workspace.models import ExecutionMode, SourcePolicy, PromotionStatus
 from workspace.fingerprints import FingerprintService
@@ -107,6 +116,12 @@ class AgentWorkbenchApp:
         self.spec_parser = SpecParserService()
         self.validation_service = ValidationService()
         self.audit_log_service = AuditLogService(Path.cwd())
+        self.ledger_service = LedgerService(Path.cwd())
+        self.queue_store = QueueStore(Path.cwd())
+        self.recovery_service = RecoveryService(Path.cwd(), self.ledger_service)
+        self.resume_service = ResumeService(Path.cwd(), self.ledger_service)
+        self.replay_service = ReplayService(Path.cwd(), self.ledger_service, self.audit_log_service)
+        self.consistency_checker = ConsistencyChecker(Path.cwd(), self.ledger_service)
 
         self.profile_registry = ProfileRegistry()
         self._load_external_profiles()
@@ -180,6 +195,75 @@ class AgentWorkbenchApp:
         self._build_layout()
         self.root.after(100, self._process_ui_queue)
         self.root.after(150, self.refresh_models)
+        self.root.after(200, self._startup_recovery)
+
+    def _startup_recovery(self):
+        self.log_event("Attempting queue rehydration...")
+        current_queues = self.queue_store.load_current_queues()
+        if current_queues:
+            # Sort by updated_at or just take the last one
+            latest_q_id = list(current_queues.keys())[-1]
+            q_def = self.queue_store.get_queue_definition(latest_q_id)
+            if q_def:
+                self.log_event(f"Rehydrating queue {latest_q_id} (State: {q_def.state.value})")
+                self.spec_queue.queue_id = q_def.queue_id
+                self.spec_queue.queue_status = "paused" # Always start paused after recovery
+                for i, s_info in enumerate(q_def.slots):
+                    if i < len(self.spec_queue.queue_slots):
+                        slot = self.spec_queue.queue_slots[i]
+                        slot.spec_text = s_info.get("spec", "")
+
+                        # Find latest run for this slot in ledger
+                        all_runs = self.ledger_service.load_current_runs()
+                        slot_runs = [r for r in all_runs.values() if r.get("queue_id") == q_def.queue_id and r.get("slot_id") == str(i)]
+                        if slot_runs:
+                             # Sort by updated_at
+                             slot_runs.sort(key=lambda x: x.get("updated_at", ""))
+                             latest_run = slot_runs[-1]
+                             slot.current_run_id = latest_run.get("run_id")
+                             status_map = {
+                                 DurableRunState.COMPLETED.value: "completed",
+                                 DurableRunState.FAILED.value: "failed",
+                                 DurableRunState.INTERRUPTED.value: "interrupted",
+                                 DurableRunState.RECOVERY_PENDING.value: "interrupted",
+                             }
+                             slot.status = status_map.get(latest_run.get("state"), "ready" if slot.spec_text else "empty")
+
+                self._refresh_queue_view()
+
+        self.log_event("Starting durability recovery scan...")
+        plan = self.recovery_service.scan_for_interrupted_runs()
+        if plan:
+            self.log_event(f"Detected {len(plan)} interrupted run(s).")
+            self.recovery_service.persist_recovery_plan(plan)
+            for item in plan:
+                self.log_event(f"  - Run {item.run_id}: {item.category.value} -> Recommended: {item.recommended_action.value} ({item.reason})")
+
+                # Update ledger to mark as INTERRUPTED or RECOVERY_PENDING
+                metadata = self.ledger_service.get_run_metadata(item.run_id)
+                if metadata:
+                    metadata.state = DurableRunState.INTERRUPTED
+                    self.ledger_service.update_run_metadata(metadata)
+                    self.ledger_service.record_event(
+                        entity_type="run",
+                        entity_id=item.run_id,
+                        event_type="state_transition",
+                        new_state=DurableRunState.INTERRUPTED.value,
+                        run_id=item.run_id,
+                        payload={"reason": "startup_recovery_scan"}
+                    )
+        else:
+            self.log_event("No interrupted runs detected.")
+
+        self.log_event("Running ledger consistency check...")
+        issues = self.consistency_checker.check_consistency()
+        if issues:
+            self.log_event(f"Detected {len(issues)} consistency issue(s).")
+            self.consistency_checker.persist_consistency_report(issues)
+            for issue in issues:
+                self.log_event(f"  - [{issue.issue_type}] {issue.description}")
+        else:
+            self.log_event("Ledger consistency check passed.")
 
     def run(self) -> None:
         self.root.mainloop()
@@ -350,6 +434,14 @@ class AgentWorkbenchApp:
         self.submit_spec_button = ttk.Button(action_row, text="Submit to Selected Slot", command=self.submit_spec)
         self.submit_spec_button.pack(side="left", padx=(0, 8))
         Tooltip(self.submit_spec_button, "Copy the current spec into the selected queue slot.")
+
+        self.resume_run_button = ttk.Button(action_row, text="Resume", command=self.resume_run)
+        self.resume_run_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.resume_run_button, "Resume the selected interrupted run from the last safe phase boundary.")
+
+        self.replay_run_button = ttk.Button(action_row, text="Replay", command=self.replay_run)
+        self.replay_run_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.replay_run_button, "Re-execute a past run for diagnosis/comparison.")
 
         load_to_editor_btn = ttk.Button(action_row, text="Load Slot to Editor", command=self.load_slot_to_editor)
         load_to_editor_btn.pack(side="left", padx=(0, 8))
@@ -938,6 +1030,13 @@ class AgentWorkbenchApp:
             if stage.last_message:
                 self.pipeline_view.insert("end", f"      > {stage.last_message}\n", "pending")
 
+        # Durable Run Info
+        if slot.current_run_id:
+            metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+            if metadata:
+                 self.pipeline_view.insert("end", f"\n  Durable State: {metadata.state.value}\n", "completed")
+                 self.pipeline_view.insert("end", f"  Run ID: {slot.current_run_id}\n", "pending")
+
         self.pipeline_view.configure(state="disabled")
 
     def _refresh_slot_detail_view(self) -> None:
@@ -964,6 +1063,21 @@ class AgentWorkbenchApp:
             self.slot_detail_view.insert("end", "\n[ Slot is empty ]\n", "dim")
             self.slot_detail_view.configure(state="disabled")
             return
+
+        # 0. Durability & Lineage (SPEC 016)
+        add_section("DURABILITY & LINEAGE")
+        if slot.current_run_id:
+            add_field("Current Run ID", slot.current_run_id)
+            metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+            if metadata:
+                add_field("Durable State", metadata.state.value)
+                add_field("Last Updated", metadata.updated_at)
+                if metadata.replay_of_run_id:
+                    add_field("Replay Of", metadata.replay_of_run_id, "success")
+                if metadata.restart_of_run_id:
+                    add_field("Restart Of", metadata.restart_of_run_id, "success")
+        else:
+            add_field("Run ID", "None", "dim")
 
         # 0. Runtime Info (SPEC 015)
         add_section("RUNTIME ENVIRONMENT")
@@ -1153,6 +1267,8 @@ class AgentWorkbenchApp:
                 bg = "#4a3b1f"
             elif slot.status == "ready":
                 bg = "#2d2d30"
+            elif slot.status == "interrupted":
+                bg = "#4a3b1f" # same as stopped for now
             else:
                 bg = "#1b1b1c"
 
@@ -1268,8 +1384,54 @@ class AgentWorkbenchApp:
         slot = self.spec_queue.queue_slots[idx]
         slot.spec_text = ""
         slot.status = "empty"
+        slot.current_run_id = ""
         self.log_event(f"Cleared slot {idx + 1}")
         self._refresh_queue_view()
+
+    def resume_run(self) -> None:
+        idx = self.selected_slot_index
+        slot = self.spec_queue.queue_slots[idx]
+        if not slot.current_run_id:
+            self.log_event("Resume blocked: no run ID for selected slot.")
+            return
+
+        metadata = self.resume_service.prepare_resume(slot.current_run_id)
+        if not metadata:
+            self.log_event(f"Resume blocked: run {slot.current_run_id} is not resumable.")
+            return
+
+        self.log_event(f"Resuming run {slot.current_run_id} from phase {metadata.state.value}")
+        # Simplified resume: just start the queue from this slot
+        # In a full implementation, we would pass the metadata to the worker
+        self.start_queue()
+
+    def replay_run(self) -> None:
+        idx = self.selected_slot_index
+        slot = self.spec_queue.queue_slots[idx]
+        if not slot.current_run_id:
+            self.log_event("Replay blocked: no run ID for selected slot.")
+            return
+
+        replay_metadata = self.replay_service.create_replay_run(slot.current_run_id)
+        if not replay_metadata:
+            self.log_event(f"Replay blocked: could not initialize replay for {slot.current_run_id}")
+            return
+
+        self.log_event(f"Initializing replay: {replay_metadata.run_id} (original: {slot.current_run_id})")
+
+        # Update lineage
+        slot.replay_run_ids.append(replay_metadata.run_id)
+
+        # Record replay start in ledger
+        self.ledger_service.update_run_metadata(replay_metadata)
+        self.ledger_service.record_event(
+            entity_type="run",
+            entity_id=replay_metadata.run_id,
+            event_type="replay_started",
+            new_state=DurableRunState.CREATED.value,
+            run_id=replay_metadata.run_id,
+            payload={"original_run_id": slot.current_run_id}
+        )
 
     def run_command(self) -> None:
         command = self.command_var.get().strip()
@@ -1384,6 +1546,28 @@ class AgentWorkbenchApp:
             return
         specs = self._capture_queue_specs()
         self.queue_service.load_specs(self.spec_queue, specs)
+
+        # Persist queue definition
+        q_def = QueueDefinition(
+            queue_id=self.spec_queue.queue_id,
+            created_at=datetime.now().isoformat(),
+            settings={}, # TODO: capture real settings if any
+            slots=[{"index": i, "spec": s} for i, s in enumerate(specs)],
+            runtime_defaults={},
+            recovery_policy="manual",
+            source_policy="promoted_head",
+            state=DurableQueueState.RUNNING
+        )
+        self.queue_store.save_queue_definition(q_def)
+        self.ledger_service.record_event(
+            entity_type="queue",
+            entity_id=self.spec_queue.queue_id,
+            event_type="state_transition",
+            new_state=DurableQueueState.RUNNING.value,
+            previous_state=DurableQueueState.CREATED.value,
+            queue_id=self.spec_queue.queue_id
+        )
+
         self.queue_service.start(self.spec_queue)
         self.run_state_service.set_queue_state(self.spec_queue, status="running")
         self.queue_active = True
@@ -1423,6 +1607,13 @@ class AgentWorkbenchApp:
                 slot.status = "empty"
                 continue
 
+            # SPEC 016: Durable Run Identity
+            if not slot.current_run_id:
+                run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:4]}"
+                slot.current_run_id = run_id
+            else:
+                self.ui_queue.put(("queue_log", f"Preserving run ID {slot.current_run_id} for resume"))
+
             self.queue_service.mark_slot_running(self.spec_queue, slot)
             self.ui_queue.put(("queue_slot_state", slot.slot_index))
             self.ui_queue.put(("queue_log", f"Active slot changed to {slot.slot_index + 1}"))
@@ -1446,6 +1637,13 @@ class AgentWorkbenchApp:
                 self.queue_service.update_stage_status(slot, name, status, message)
                 if status == "running":
                     current_stage_idx = stages.index(name)
+
+                # SPEC 016: Record state transition in ledger
+                if status == "running":
+                    durable_state = self._map_stage_to_durable_state(name)
+                    if durable_state:
+                         self._record_run_transition(slot, durable_state)
+
                 self.ui_queue.put(("pipeline_update", None))
 
             def check_stop():
@@ -1497,7 +1695,13 @@ class AgentWorkbenchApp:
                 check_stop()
 
                 # SPEC 014: Workspace Isolation & Snapshotting
-                run_folder = self.audit_log_service.create_run_folder(slot.slot_index + 1)
+                metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+                resuming = metadata is not None and metadata.state not in {DurableRunState.CREATED, DurableRunState.SNAPSHOT_PREPARING}
+
+                if resuming and metadata.execution_workspace:
+                     run_folder = Path(metadata.execution_workspace).parent
+                else:
+                     run_folder = self.audit_log_service.create_run_folder(slot.slot_index + 1)
 
                 execution_mode = ExecutionMode.PROMOTE_ON_SUCCESS
                 source_policy = SourcePolicy.PROMOTED_HEAD
@@ -1522,16 +1726,42 @@ class AgentWorkbenchApp:
                      source_workspace = fixed_base_root
                      self.ui_queue.put(("queue_log", "Using fixed base snapshot as source"))
 
-                self.ui_queue.put(("queue_log", f"Creating isolated workspace snapshot (Mode: {execution_mode.value})"))
-                snapshot_manifest = self.snapshot_service.create_execution_snapshot(
-                    run_id=run_folder.name,
-                    spec_id=spec_data.get("spec_id", "legacy") if spec_data else "legacy",
-                    source_workspace=source_workspace,
-                    execution_root=run_folder,
-                    mode=execution_mode
-                )
+                if resuming and metadata.source_snapshot_manifest and Path(metadata.source_snapshot_manifest).exists():
+                     self.ui_queue.put(("queue_log", "Resuming from existing workspace snapshot..."))
+                     from workspace.snapshots import SnapshotManifest
+                     with Path(metadata.source_snapshot_manifest).open("r") as f:
+                          snapshot_manifest = SnapshotManifest.from_dict(json.load(f))
+                else:
+                    self.ui_queue.put(("queue_log", f"Creating isolated workspace snapshot (Mode: {execution_mode.value})"))
+                    snapshot_manifest = self.snapshot_service.create_execution_snapshot(
+                        run_id=run_folder.name,
+                        spec_id=spec_data.get("spec_id", "legacy") if spec_data else "legacy",
+                        source_workspace=source_workspace,
+                        execution_root=run_folder,
+                        mode=execution_mode
+                    )
                 execution_workspace = Path(snapshot_manifest.execution_workspace)
                 self.ui_queue.put(("queue_log", f"Isolated workspace ready: {execution_workspace}"))
+
+                # Update run metadata with snapshot info
+                metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+                if metadata:
+                    metadata.spec_id = spec_data.get("spec_id", "legacy") if spec_data else "legacy"
+                    metadata.execution_mode = execution_mode.value
+                    metadata.source_policy = source_policy.value
+                    metadata.source_snapshot_manifest = str(snapshot_manifest.manifest_path)
+                    metadata.execution_workspace = str(execution_workspace)
+                    metadata.state = DurableRunState.SNAPSHOT_READY
+                    self.ledger_service.update_run_metadata(metadata)
+
+                    self.ledger_service.record_event(
+                        entity_type="run",
+                        entity_id=slot.current_run_id,
+                        event_type="artifact_registered",
+                        new_state=DurableRunState.SNAPSHOT_READY.value,
+                        run_id=slot.current_run_id,
+                        payload={"artifact": "snapshot_manifest", "path": str(snapshot_manifest.manifest_path)}
+                    )
 
                 # v_engine initialization moved after Runtime Environment
 
@@ -1754,6 +1984,21 @@ class AgentWorkbenchApp:
                     }
                     self.audit_log_service.log_artifact(run_folder, "run_summary.json", json.dumps(summary_dict, indent=2))
 
+                # Update run metadata with report info
+                metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+                if metadata:
+                    metadata.verification_report = str(run_folder / "verification_report.json")
+                    self.ledger_service.update_run_metadata(metadata)
+
+                    self.ledger_service.record_event(
+                        entity_type="run",
+                        entity_id=slot.current_run_id,
+                        event_type="artifact_registered",
+                        new_state=DurableRunState.COMPLETED.value,
+                        run_id=slot.current_run_id,
+                        payload={"artifact": "run_summary", "path": str(run_folder / "run_summary.json")}
+                    )
+
                 # Simplified log for audit
                 execution_log = [f"{t.type.value} {t.target}: {t.status.value}" for t in tasks]
                 self.audit_log_service.log_artifact(run_folder, "execution.log", "\n".join(execution_log))
@@ -1854,6 +2099,21 @@ class AgentWorkbenchApp:
                 self.ui_queue.put(("queue_log", f"Slot {slot.slot_index + 1} failed"))
 
         final_status = "stopped" if self.spec_queue.stop_requested else "completed"
+
+        # Persist final queue state
+        q_def = self.queue_store.get_queue_definition(self.spec_queue.queue_id)
+        if q_def:
+            q_def.state = DurableQueueState.COMPLETED if final_status == "completed" else DurableQueueState.INTERRUPTED
+            self.queue_store.save_queue_definition(q_def)
+
+            self.ledger_service.record_event(
+                entity_type="queue",
+                entity_id=self.spec_queue.queue_id,
+                event_type="state_transition",
+                new_state=q_def.state.value,
+                queue_id=self.spec_queue.queue_id
+            )
+
         self.queue_service.finalize(self.spec_queue, final_status)
         self.ui_queue.put(("queue_finished", final_status))
 
@@ -2137,6 +2397,50 @@ class AgentWorkbenchApp:
                 break
             self._handle_ui_message(message, payload)
         self.root.after(100, self._process_ui_queue)
+
+    def _map_stage_to_durable_state(self, stage_name: str) -> DurableRunState | None:
+        mapping = {
+            "Spec Intake": DurableRunState.CREATED,
+            "Spec Parsing": DurableRunState.SNAPSHOT_PREPARING,
+            "Runtime Environment": DurableRunState.RUNTIME_RESOLVING,
+            "Task Execution": DurableRunState.EXECUTING,
+            "Structural Validation": DurableRunState.STRUCTURAL_VALIDATING,
+            "Deterministic Verification": DurableRunState.VERIFYING,
+            "Outcome Synthesis": DurableRunState.COMPLETED, # Or partial failure etc
+            "Logging / Audit": DurableRunState.COMPLETED,
+        }
+        return mapping.get(stage_name)
+
+    def _record_run_transition(self, slot: Any, new_state: DurableRunState):
+        metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+        prev_state = None
+        if not metadata:
+            metadata = RunMetadata(
+                run_id=slot.current_run_id,
+                spec_id="pending",
+                queue_id=self.spec_queue.queue_id,
+                slot_id=str(slot.slot_index),
+                state=new_state,
+                execution_mode="promote_on_success",
+                runtime_profile="default",
+                source_policy="promoted_head"
+            )
+        else:
+            prev_state = metadata.state.value
+            metadata.state = new_state
+            metadata.updated_at = datetime.now().isoformat()
+
+        self.ledger_service.update_run_metadata(metadata)
+        self.ledger_service.record_event(
+            entity_type="run",
+            entity_id=slot.current_run_id,
+            event_type="state_transition",
+            new_state=new_state.value,
+            previous_state=prev_state,
+            run_id=slot.current_run_id,
+            queue_id=self.spec_queue.queue_id,
+            slot_id=str(slot.slot_index)
+        )
 
     def _handle_ui_message(self, message: str, payload: object) -> None:
         if message == "tree_loaded":
