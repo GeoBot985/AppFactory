@@ -47,6 +47,11 @@ from verification.outcome import OutcomeSynthesizer
 from verification.models import FailureStage, FinalOutcome, CheckStatus, VerificationReport
 from verification.reporting import ReportingService
 
+from services.policy.models import RiskClass, PolicyDecision, PolicyConfig, ApprovalStatus
+from services.policy.risk_classifier import RiskClassifier
+from services.policy.evaluator import PolicyEvaluator
+from services.policy.approvals import ApprovalService
+
 from runtime_profiles.models import RuntimeProfile, DriftPolicyMode
 from runtime_profiles.registry import ProfileRegistry
 from runtime_profiles.interpreter import InterpreterResolver, InterpreterValidator
@@ -122,6 +127,11 @@ class AgentWorkbenchApp:
         self.resume_service = ResumeService(Path.cwd(), self.ledger_service)
         self.replay_service = ReplayService(Path.cwd(), self.ledger_service, self.audit_log_service)
         self.consistency_checker = ConsistencyChecker(Path.cwd(), self.ledger_service)
+
+        self.policy_config = PolicyConfig()
+        self.risk_classifier = RiskClassifier(self.policy_config)
+        self.policy_evaluator = PolicyEvaluator(self.policy_config)
+        self.approval_service = ApprovalService(Path.cwd())
 
         self.profile_registry = ProfileRegistry()
         self._load_external_profiles()
@@ -311,6 +321,7 @@ class AgentWorkbenchApp:
         self._refresh_queue_view()
         self._refresh_restore_view()
         self._refresh_restore_preview()
+        self._refresh_approvals_view()
         self._refresh_pipeline_view()
 
     def _build_top_section(self, parent: ttk.Frame) -> None:
@@ -496,6 +507,7 @@ class AgentWorkbenchApp:
         candidate_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         restore_preview_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         restore_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        approvals_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         slot_detail_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         notebook.add(viewer_frame, text="File Viewer")
         notebook.add(prompt_frame, text="Prompt Preview")
@@ -506,10 +518,11 @@ class AgentWorkbenchApp:
         notebook.add(candidate_frame, text="Candidate Bundle")
         notebook.add(restore_preview_frame, text="Restore Preview")
         notebook.add(restore_frame, text="Restore Result")
+        notebook.add(approvals_frame, text="Policy & Approvals")
         notebook.add(slot_detail_frame, text="Slot Detail")
         self.notebook = notebook
 
-        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_preview_frame, restore_frame, slot_detail_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -677,6 +690,54 @@ class AgentWorkbenchApp:
         restore_y.grid(row=0, column=1, sticky="ns")
         restore_x.grid(row=1, column=0, sticky="ew")
         self.restore_view.configure(state="disabled")
+
+        # Approvals Tab
+        approvals_frame.rowconfigure(1, weight=1)
+        approvals_frame.columnconfigure(0, weight=1)
+
+        ttk.Label(approvals_frame, text="Pending Approvals", font=("Segoe UI", 11, "bold"), style="Panel.TLabel").grid(row=0, column=0, sticky="w", pady=(0, 8))
+
+        self.approvals_list = ttk.Treeview(approvals_frame, columns=("id", "gate", "entity", "risk", "status"), show="headings")
+        self.approvals_list.heading("id", text="ID")
+        self.approvals_list.heading("gate", text="Gate")
+        self.approvals_list.heading("entity", text="Entity")
+        self.approvals_list.heading("risk", text="Risk")
+        self.approvals_list.heading("status", text="Status")
+        self.approvals_list.column("id", width=150)
+        self.approvals_list.column("gate", width=100)
+        self.approvals_list.column("entity", width=150)
+        self.approvals_list.column("risk", width=80)
+        self.approvals_list.column("status", width=100)
+        self.approvals_list.grid(row=1, column=0, sticky="nsew")
+        self.approvals_list.bind("<<TreeviewSelect>>", self._on_approval_selected)
+
+        appr_scroll = ttk.Scrollbar(approvals_frame, orient="vertical", command=self.approvals_list.yview)
+        self.approvals_list.configure(yscrollcommand=appr_scroll.set)
+        appr_scroll.grid(row=1, column=1, sticky="ns")
+
+        self.appr_detail_view = tk.Text(
+            approvals_frame,
+            wrap="word",
+            height=8,
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        self.appr_detail_view.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(8, 8))
+        self.appr_detail_view.configure(state="disabled")
+
+        appr_actions = ttk.Frame(approvals_frame, style="Panel.TFrame")
+        appr_actions.grid(row=3, column=0, sticky="ew")
+
+        self.approve_btn = ttk.Button(appr_actions, text="Approve", command=self.approve_selected, state="disabled")
+        self.approve_btn.pack(side="left", padx=(0, 8))
+
+        self.deny_btn = ttk.Button(appr_actions, text="Deny", command=self.deny_selected, state="disabled")
+        self.deny_btn.pack(side="left", padx=(0, 8))
+
+        refresh_appr_btn = ttk.Button(appr_actions, text="Refresh", command=self._refresh_approvals_view)
+        refresh_appr_btn.pack(side="right")
 
         # Slot Detail Tab
         slot_detail_frame.rowconfigure(0, weight=0)
@@ -971,6 +1032,67 @@ class AgentWorkbenchApp:
             content = restore.to_preview_text()
         self._set_text_widget_content(self.restore_view, content)
 
+    def _refresh_approvals_view(self) -> None:
+        self.approvals_list.delete(*self.approvals_list.get_children())
+        pending = self.approval_service.list_pending()
+        for a in pending:
+            self.approvals_list.insert("", "end", values=(a.approval_id, a.gate_type, a.entity_id, a.risk_class, a.status))
+
+        self.appr_detail_view.configure(state="normal")
+        self.appr_detail_view.delete("1.0", "end")
+        self.appr_detail_view.configure(state="disabled")
+        self.approve_btn.state(["disabled"])
+        self.deny_btn.state(["disabled"])
+
+    def _on_approval_selected(self, _event: object) -> None:
+        selected = self.approvals_list.selection()
+        if not selected:
+            return
+        approval_id = self.approvals_list.item(selected[0])["values"][0]
+        a = self.approval_service.get_approval(approval_id)
+        if not a:
+            return
+
+        self.appr_detail_view.configure(state="normal")
+        self.appr_detail_view.delete("1.0", "end")
+
+        lines = [
+            f"Approval ID: {a.approval_id}",
+            f"Gate Type:   {a.gate_type}",
+            f"Entity ID:   {a.entity_id}",
+            f"Queue:Slot:  {a.queue_id}:{int(a.slot_id)+1}",
+            f"Required For:{a.required_for}",
+            f"Risk Class:  {a.risk_class}",
+            f"Requested At:{a.requested_at}",
+            "\nReason Codes:",
+        ]
+        for rc in a.reason_codes:
+            lines.append(f"  - {rc}")
+
+        self.appr_detail_view.insert("1.0", "\n".join(lines))
+        self.appr_detail_view.configure(state="disabled")
+
+        self.approve_btn.state(["!disabled"])
+        self.deny_btn.state(["!disabled"])
+
+    def approve_selected(self) -> None:
+        selected = self.approvals_list.selection()
+        if not selected:
+            return
+        approval_id = self.approvals_list.item(selected[0])["values"][0]
+        if self.approval_service.approve(approval_id, "local_user", "Manually approved via UI"):
+            self.log_event(f"Approved {approval_id}")
+            self._refresh_approvals_view()
+
+    def deny_selected(self) -> None:
+        selected = self.approvals_list.selection()
+        if not selected:
+            return
+        approval_id = self.approvals_list.item(selected[0])["values"][0]
+        if self.approval_service.deny(approval_id, "local_user", "Manually denied via UI"):
+            self.log_event(f"Denied {approval_id}")
+            self._refresh_approvals_view()
+
     def _refresh_restore_preview(self) -> None:
         preview = self.run_state_service.restore_state.latest_preview
         if preview is None:
@@ -1078,6 +1200,39 @@ class AgentWorkbenchApp:
                     add_field("Restart Of", metadata.restart_of_run_id, "success")
         else:
             add_field("Run ID", "None", "dim")
+
+        # 0. Policy & Risk (SPEC 017)
+        add_section("POLICY & RISK")
+        if slot.current_run_id:
+             risk_path = Path.cwd() / "runs" / slot.current_run_id / "risk_assessment.json"
+             if risk_path.exists():
+                  try:
+                       with risk_path.open("r") as f:
+                            risk_data = json.load(f)
+                       add_field("Overall Risk", risk_data.get("overall_risk", "-"))
+                       add_field("Spec Risk", risk_data.get("spec_risk", "-"))
+                       add_field("Promotion Risk (Est)", risk_data.get("promotion_risk_estimate", "-"))
+                  except: pass
+
+             pre_exec_path = Path.cwd() / "runs" / slot.current_run_id / "policy_evaluation_pre_execution.json"
+             if pre_exec_path.exists():
+                  try:
+                       with pre_exec_path.open("r") as f:
+                            pe = json.load(f)
+                       add_field("Pre-Exec Decision", pe.get("decision", "-"))
+                       if pe.get("reason_codes"):
+                            add_field("Reasons", ", ".join(pe["reason_codes"]))
+                  except: pass
+
+             pre_prom_path = Path.cwd() / "runs" / slot.current_run_id / "policy_evaluation_pre_promotion.json"
+             if pre_prom_path.exists():
+                  try:
+                       with pre_prom_path.open("r") as f:
+                            pe = json.load(f)
+                       add_field("Pre-Promote Decision", pe.get("decision", "-"))
+                       if pe.get("reason_codes"):
+                            add_field("Reasons", ", ".join(pe["reason_codes"]))
+                  except: pass
 
         # 0. Runtime Info (SPEC 015)
         add_section("RUNTIME ENVIRONMENT")
@@ -1622,12 +1777,14 @@ class AgentWorkbenchApp:
             stages = [
                 "Spec Intake",
                 "Spec Parsing",
+                "Policy Check (Pre-Exec)",
                 "Runtime Environment",
                 "Task Execution",
                 "Structural Validation",
                 "Deterministic Verification",
                 "Regression Comparison",
                 "Outcome Synthesis",
+                "Policy Check (Pre-Promote)",
                 "Logging / Audit",
             ]
             current_stage_idx = -1
@@ -1773,6 +1930,38 @@ class AgentWorkbenchApp:
                 else:
                     self.ui_queue.put(("queue_log", f"Parsed {len(tasks)} tasks"))
                 update_stage("Spec Parsing", "completed", f"tasks={len(tasks)}")
+                check_stop()
+
+                # 2.1 Policy Check (Pre-Execution) (SPEC 017)
+                update_stage("Policy Check (Pre-Exec)", "running")
+                risk_assessment = self.risk_classifier.classify(tasks, spec_data)
+                self.audit_log_service.log_artifact(run_folder, "risk_assessment.json", json.dumps(risk_assessment.to_dict(), indent=2))
+                self.ui_queue.put(("queue_log", f"Computed risk: {risk_assessment.overall_risk}"))
+
+                policy_result = self.policy_evaluator.evaluate_pre_execution(slot.current_run_id, risk_assessment)
+                self.audit_log_service.log_artifact(run_folder, "policy_evaluation_pre_execution.json", json.dumps(policy_result.to_dict(), indent=2))
+
+                if policy_result.decision == PolicyDecision.POLICY_DENIED.value:
+                     failure_stage = FailureStage.POLICY_CONTROL if hasattr(FailureStage, 'POLICY_CONTROL') else FailureStage.SPEC_FAILURE
+                     raise RuntimeError(f"POLICY_DENIED: {', '.join(policy_result.reason_codes)}")
+
+                if policy_result.decision == PolicyDecision.APPROVAL_REQUIRED.value:
+                     # Check if already approved (e.g. from resume)
+                     existing_appr = self.approval_service.find_latest_for_entity(slot.current_run_id, "execution")
+                     if existing_appr and existing_appr.status == ApprovalStatus.APPROVED.value:
+                          self.ui_queue.put(("queue_log", f"Approval found: {existing_appr.approval_id} (Approved by {existing_appr.decider})"))
+                     else:
+                          if not existing_appr:
+                               self.approval_service.create_approval_request("execution", "run", slot.current_run_id, self.spec_queue.queue_id, str(slot.slot_index), policy_result)
+
+                          self.ui_queue.put(("queue_log", "Approval required. Pausing queue."))
+                          update_stage("Policy Check (Pre-Exec)", "pending", "Waiting for approval")
+                          # Pause queue
+                          self.spec_queue.queue_status = "paused"
+                          self.ui_queue.put(("queue_slot_paused_approval", slot.slot_index))
+                          return # Exit worker, will be resumed
+
+                update_stage("Policy Check (Pre-Exec)", "completed", f"risk={risk_assessment.overall_risk}")
                 check_stop()
 
                 # 2.5 Runtime Environment (SPEC 015)
@@ -1933,6 +2122,65 @@ class AgentWorkbenchApp:
                 run_summary = v_synthesizer.synthesize(spec_id, tasks, v_report, failure_stage, regression_status)
                 slot.run_summary = run_summary
                 update_stage("Outcome Synthesis", "completed", f"outcome={run_summary.final_status.value}")
+                check_stop()
+
+                # 7.1 Policy Check (Pre-Promotion) (SPEC 017)
+                update_stage("Policy Check (Pre-Promote)", "running")
+
+                # Compute actual change set facts
+                created, modified, deleted = self.promotion_service.detect_changes(snapshot_manifest.source_fingerprint, execution_workspace)
+                facts = {
+                    "changed_file_count": len(created) + len(modified) + len(deleted),
+                    "contains_deletion": len(deleted) > 0,
+                    "touches_protected_path": False,
+                    "touches_critical_path": False,
+                    "final_status": run_summary.final_status.value
+                }
+
+                # Check for block deletions in tasks
+                for t in tasks:
+                    if t.type == TaskType.MODIFY and t.constraints:
+                        try:
+                            data = json.loads(t.constraints)
+                            if data.get("operation") == "delete_block":
+                                facts["contains_deletion"] = True
+                                break
+                        except: pass
+
+                # Check for protected paths in changes
+                for f in created + modified + deleted:
+                    p_risk, _ = self.risk_classifier._classify_by_path(f)
+                    if p_risk == RiskClass.R3_CRITICAL:
+                        facts["touches_critical_path"] = True
+                    elif p_risk == RiskClass.R2_HIGH:
+                        facts["touches_protected_path"] = True
+
+                promotion_risk, risk_reasons = self.risk_classifier.classify_actual_promotion(facts)
+                self.ui_queue.put(("queue_log", f"Actual promotion risk: {promotion_risk.value}"))
+
+                policy_result_prom = self.policy_evaluator.evaluate_pre_promotion(slot.current_run_id, promotion_risk, facts)
+                self.audit_log_service.log_artifact(run_folder, "policy_evaluation_pre_promotion.json", json.dumps(policy_result_prom.to_dict(), indent=2))
+
+                if policy_result_prom.decision == PolicyDecision.POLICY_DENIED.value:
+                     self.ui_queue.put(("queue_log", f"PROMOTION_DENIED: {', '.join(policy_result_prom.reason_codes)}"))
+                     # Block promotion by changing execution mode
+                     execution_mode = ExecutionMode.DRY_RUN
+
+                if policy_result_prom.decision == PolicyDecision.APPROVAL_REQUIRED.value:
+                     existing_appr = self.approval_service.find_latest_for_entity(slot.current_run_id, "promotion")
+                     if existing_appr and existing_appr.status == ApprovalStatus.APPROVED.value:
+                          self.ui_queue.put(("queue_log", f"Promotion approval found: {existing_appr.approval_id} (Approved by {existing_appr.decider})"))
+                     else:
+                          if not existing_appr:
+                               self.approval_service.create_approval_request("promotion", "run", slot.current_run_id, self.spec_queue.queue_id, str(slot.slot_index), policy_result_prom)
+
+                          self.ui_queue.put(("queue_log", "Promotion approval required. Pausing queue."))
+                          update_stage("Policy Check (Pre-Promote)", "pending", "Waiting for approval")
+                          self.spec_queue.queue_status = "paused"
+                          self.ui_queue.put(("queue_slot_paused_approval", slot.slot_index))
+                          return
+
+                update_stage("Policy Check (Pre-Promote)", "completed", f"risk={promotion_risk.value}")
                 check_stop()
 
                 # 8. Logging / Audit
@@ -2402,11 +2650,13 @@ class AgentWorkbenchApp:
         mapping = {
             "Spec Intake": DurableRunState.CREATED,
             "Spec Parsing": DurableRunState.SNAPSHOT_PREPARING,
+            "Policy Check (Pre-Exec)": DurableRunState.SNAPSHOT_PREPARING, # Close enough
             "Runtime Environment": DurableRunState.RUNTIME_RESOLVING,
             "Task Execution": DurableRunState.EXECUTING,
             "Structural Validation": DurableRunState.STRUCTURAL_VALIDATING,
             "Deterministic Verification": DurableRunState.VERIFYING,
             "Outcome Synthesis": DurableRunState.COMPLETED, # Or partial failure etc
+            "Policy Check (Pre-Promote)": DurableRunState.PROMOTION_PENDING,
             "Logging / Audit": DurableRunState.COMPLETED,
         }
         return mapping.get(stage_name)
@@ -2598,6 +2848,15 @@ class AgentWorkbenchApp:
             self._refresh_queue_view()
             self.log_event(f"Slot {slot_index + 1} failed")
             self.log_event(f"failure reason: {reason}")
+            return
+        if message == "queue_slot_paused_approval":
+            self.queue_active = False
+            self.start_queue_button.state(["!disabled"])
+            self.stop_queue_button.state(["disabled"])
+            self._refresh_queue_view()
+            self._refresh_pipeline_view()
+            self.log_event(f"Queue paused for approval at slot {payload + 1}")
+            self.set_status_action("paused for approval")
             return
         if message == "queue_slot_stopped":
             if not isinstance(payload, tuple) or len(payload) != 2:
