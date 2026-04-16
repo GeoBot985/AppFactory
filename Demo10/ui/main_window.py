@@ -1597,11 +1597,26 @@ class AgentWorkbenchApp:
                         total_deleted += data.get("deleted_count", 0)
                         total_failed += data.get("failed_count", 0)
                         add_field(f"Artifact {artifact.stem}", data.get("status", "-"))
+                        if data.get("files_validated", 0):
+                            self.slot_detail_view.insert(
+                                "end",
+                                f"  validation: passed={data.get('files_passed', 0)} failed={data.get('files_failed', 0)}\n",
+                                "value" if data.get("files_failed", 0) == 0 else "error",
+                            )
                         for item in data.get("results", []):
                             path = item.get("path", "-")
                             status = item.get("status", "-")
                             delta = item.get("size_delta", 0)
                             self.slot_detail_view.insert("end", f"  {path} -> {status} (size_delta={delta})\n", "value" if status != "failed" else "error")
+                            validation = item.get("validation")
+                            if validation and validation.get("status") == "invalid":
+                                line = validation.get("line_number", 0)
+                                col = validation.get("column_offset", 0)
+                                msg = validation.get("error_message", "validation failed")
+                                offending = validation.get("offending_line", "")
+                                self.slot_detail_view.insert("end", f"    validation: {msg} at {line}:{col}\n", "error")
+                                if offending:
+                                    self.slot_detail_view.insert("end", f"    line: {offending}\n", "error")
                     except Exception as exc:
                         self.slot_detail_view.insert("end", f"  Failed to read {artifact.name}: {exc}\n", "error")
                 add_field("Created", str(total_created), "success" if total_created else "value")

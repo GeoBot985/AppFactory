@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
+from services.code_validation import validate_file_content
 from services.file_ops.diff_preview import build_change_summary
 from services.file_ops.models import ExecutionMode, FileMutationResult, FileOperation, FileOperationBatchResult, MutationLedgerEntry
 from services.file_ops.patcher import apply_patch_blocks
@@ -33,6 +34,12 @@ class FileOperationExecutor:
             result, ledger = self._execute_one(idx, Path(item.normalized_path), item.operation, mode)
             batch.results.append(result)
             batch.ledger.append(ledger)
+            if result.validation and result.validation.status != "skipped":
+                batch.files_validated += 1
+                if result.validation.status == "valid":
+                    batch.files_passed += 1
+                else:
+                    batch.files_failed += 1
             if result.status == "created":
                 batch.created_count += 1
             elif result.status == "modified":
@@ -103,6 +110,23 @@ class FileOperationExecutor:
         line_delta = len(after_text.splitlines()) - len(before_text.splitlines())
         size_delta = after_size - before_size
         diff_preview = build_change_summary(op.path, before_text, "" if op.op_type == "delete_file" else after_text)
+        validation = None
+
+        if op.op_type != "delete_file":
+            validation = validate_file_content(op.path, after_text)
+            if validation.status == "invalid":
+                return self._failed(
+                    order_index,
+                    now,
+                    op,
+                    target,
+                    validation.error_message or "code_validation_failed",
+                    "code_validation_failed",
+                    before_hash,
+                    before_size,
+                    validation=validation,
+                    diff_preview=diff_preview,
+                )
 
         if mode == "apply":
             try:
@@ -130,6 +154,7 @@ class FileOperationExecutor:
             line_delta=line_delta,
             size_delta=size_delta,
             diff_preview=diff_preview,
+            validation=validation,
         )
         ledger = MutationLedgerEntry(
             order_index=order_index,
@@ -145,10 +170,12 @@ class FileOperationExecutor:
             after_hash=after_hash,
             before_size=before_size,
             after_size=after_size,
+            validation_status=validation.status if validation else "skipped",
+            validation_error=validation.error_message if validation else "",
         )
         return result, ledger
 
-    def _failed(self, order_index, timestamp, op, target, reason, code, before_hash="", before_size=0):
+    def _failed(self, order_index, timestamp, op, target, reason, code, before_hash="", before_size=0, validation=None, diff_preview=""):
         result = FileMutationResult(
             op_id=op.op_id,
             op_type=op.op_type,
@@ -159,6 +186,8 @@ class FileOperationExecutor:
             failure_code=code,
             before_hash=before_hash,
             before_size=before_size,
+            diff_preview=diff_preview,
+            validation=validation,
         )
         ledger = MutationLedgerEntry(
             order_index=order_index,
@@ -174,6 +203,8 @@ class FileOperationExecutor:
             failure_code=code,
             before_hash=before_hash,
             before_size=before_size,
+            validation_status=validation.status if validation else "",
+            validation_error=validation.error_message if validation else "",
         )
         return result, ledger
 

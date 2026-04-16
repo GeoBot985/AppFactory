@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 import json
+from dataclasses import asdict
 from pathlib import Path
 from typing import Optional
 from services.task_service import Task, TaskType, TaskStatus, TaskResult
@@ -83,9 +84,9 @@ class TaskExecutorService:
             ],
             mode=self.mutation_mode,
         )
+        self._write_mutation_artifacts(task.id, batch)
         if batch.failed_count:
             return TaskResult(success=False, message=batch.results[0].failure_reason or "create failed", details={"mutation_batch": batch})
-        self._write_mutation_artifacts(task.id, batch)
         return TaskResult(success=True, message=f"Created {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
 
     def _handle_modify(self, task: Task) -> TaskResult:
@@ -156,9 +157,9 @@ class TaskExecutorService:
             ],
             mode=self.mutation_mode,
         )
+        self._write_mutation_artifacts(task.id, batch)
         if batch.failed_count:
             return TaskResult(success=False, message=batch.results[0].failure_reason or "replace failed", error=batch.results[0].failure_code, details={"mutation_batch": batch})
-        self._write_mutation_artifacts(task.id, batch)
         return TaskResult(
             success=True,
             message=f"Applied {instr.operation.value} to {task.target}; {batch.to_summary()}",
@@ -203,9 +204,9 @@ class TaskExecutorService:
             ],
             mode=self.mutation_mode,
         )
+        self._write_mutation_artifacts(task.id, batch)
         if batch.failed_count:
             return TaskResult(success=False, message=batch.results[0].failure_reason or "replace failed", details={"mutation_batch": batch})
-        self._write_mutation_artifacts(task.id, batch)
         return TaskResult(success=True, message=f"File modified: {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
 
     def _handle_delete(self, task: Task) -> TaskResult:
@@ -220,9 +221,9 @@ class TaskExecutorService:
             ],
             mode=self.mutation_mode,
         )
+        self._write_mutation_artifacts(task.id, batch)
         if batch.failed_count:
             return TaskResult(success=False, message=batch.results[0].failure_reason or "delete failed", details={"mutation_batch": batch})
-        self._write_mutation_artifacts(task.id, batch)
         return TaskResult(success=True, message=f"Deleted {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
 
     def _handle_run(self, task: Task) -> TaskResult:
@@ -315,9 +316,12 @@ class TaskExecutorService:
             "deleted_count": batch_result.deleted_count,
             "unchanged_count": batch_result.unchanged_count,
             "failed_count": batch_result.failed_count,
+            "files_validated": batch_result.files_validated,
+            "files_passed": batch_result.files_passed,
+            "files_failed": batch_result.files_failed,
             "validation_errors": batch_result.validation_errors,
-            "results": [result.__dict__ for result in batch_result.results],
-            "ledger": [entry.__dict__ for entry in batch_result.ledger],
+            "results": [asdict(result) for result in batch_result.results],
+            "ledger": [asdict(entry) for entry in batch_result.ledger],
         }
         (mutations_dir / f"{task_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 

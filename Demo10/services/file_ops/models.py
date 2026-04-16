@@ -48,6 +48,19 @@ class PatchOutcome:
 
 
 @dataclass
+class CodeValidationResult:
+    path: str
+    language: str
+    status: str
+    error_type: str = ""
+    line_number: int = 0
+    column_offset: int = 0
+    error_message: str = ""
+    offending_line: str = ""
+    check_name: str = ""
+
+
+@dataclass
 class FileMutationResult:
     op_id: str
     op_type: OperationType
@@ -66,6 +79,7 @@ class FileMutationResult:
     failure_reason: str = ""
     failure_code: str = ""
     diff_preview: str = ""
+    validation: CodeValidationResult | None = None
 
 
 @dataclass
@@ -85,6 +99,8 @@ class MutationLedgerEntry:
     after_hash: str = ""
     before_size: int = 0
     after_size: int = 0
+    validation_status: str = ""
+    validation_error: str = ""
 
 
 @dataclass
@@ -100,9 +116,13 @@ class FileOperationBatchResult:
     deleted_count: int = 0
     unchanged_count: int = 0
     failed_count: int = 0
+    files_validated: int = 0
+    files_passed: int = 0
+    files_failed: int = 0
 
     def to_summary(self) -> str:
         return (
             f"mode={self.mode}, created={self.created_count}, modified={self.modified_count}, "
-            f"deleted={self.deleted_count}, unchanged={self.unchanged_count}, failed={self.failed_count}"
+            f"deleted={self.deleted_count}, unchanged={self.unchanged_count}, failed={self.failed_count}, "
+            f"validated={self.files_validated}, validation_failed={self.files_failed}"
         )
