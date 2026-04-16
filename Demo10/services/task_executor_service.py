@@ -8,6 +8,7 @@ from services.task_service import Task, TaskType, TaskStatus, TaskResult
 from services.file_ops_service import FileOpsService
 from services.ollama_service import OllamaService
 from services.process_service import ProcessService
+from runtime_profiles.commands import CommandExecutor
 
 from editing.models import EditInstruction, OperationType, AnchorType, EditStatus
 from editing.anchor_resolver import AnchorResolver
@@ -23,13 +24,15 @@ class TaskExecutorService:
         ollama: OllamaService,
         process: ProcessService,
         model_name: str,
-        run_folder: Optional[Path] = None
+        run_folder: Optional[Path] = None,
+        cmd_executor: Optional[CommandExecutor] = None
     ):
         self.file_ops = file_ops
         self.ollama = ollama
         self.process = process
         self.model_name = model_name
         self.run_folder = run_folder
+        self.cmd_executor = cmd_executor
         self.edit_engine = EditEngine(AnchorResolver())
 
     def execute(self, task: Task) -> TaskResult:
@@ -161,8 +164,47 @@ class TaskExecutorService:
         return TaskResult(success=True, message=msg, changes=[task.target])
 
     def _handle_run(self, task: Task) -> TaskResult:
-        # We need a synchronous way to run commands or use a callback
-        # For now, let's assume we can run it and wait
+        if self.cmd_executor:
+            timeout = None
+            if task.constraints:
+                try:
+                    data = json.loads(task.constraints)
+                    if "runtime_override" in data:
+                        timeout = data["runtime_override"].get("timeout_seconds")
+                except:
+                    pass
+
+            res = self.cmd_executor.run(task.target, timeout_seconds=timeout)
+
+            # Log command artifact if run_folder exists
+            if self.run_folder:
+                cmd_dir = self.run_folder / "commands"
+                cmd_dir.mkdir(parents=True, exist_ok=True)
+
+                cmd_id = task.id
+                (cmd_dir / f"{cmd_id}.stdout.txt").write_text(res.stdout, encoding="utf-8")
+                (cmd_dir / f"{cmd_id}.stderr.txt").write_text(res.stderr, encoding="utf-8")
+
+                import json
+                info = {
+                    "task_id": cmd_id,
+                    "command": res.command,
+                    "cwd": res.cwd,
+                    "profile_id": res.profile_id,
+                    "exit_code": res.exit_code,
+                    "duration_ms": res.duration_ms,
+                    "timeout_reached": res.timeout_reached
+                }
+                (cmd_dir / f"{cmd_id}.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
+
+            return TaskResult(
+                success=res.exit_code == 0,
+                message=f"Command finished with exit code {res.exit_code}",
+                output=res.stdout,
+                error=res.stderr
+            )
+
+        # Legacy fallback
         import subprocess
         try:
             process = subprocess.run(

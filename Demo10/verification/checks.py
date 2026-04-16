@@ -9,8 +9,9 @@ from typing import Any, Dict, List, Optional
 from .models import CheckStatus, CheckResult, Severity
 
 class VerificationExecutor:
-    def __init__(self, project_root: Path):
+    def __init__(self, project_root: Path, cmd_executor: Optional[Any] = None):
         self.project_root = project_root
+        self.cmd_executor = cmd_executor
 
     def execute_check(self, check_def: Dict[str, Any], task_results: List[Any] = None) -> CheckResult:
         check_type = check_def.get("type")
@@ -198,6 +199,19 @@ class VerificationExecutor:
         command = check_def["command"]
         expected = check_def.get("expected_exit_code", 0)
 
+        if self.cmd_executor:
+            res = self.cmd_executor.run(command)
+            actual = res.exit_code
+            success = actual == expected
+            return CheckResult(
+                check_id=self._gen_id(check_def),
+                type="command_exit_code",
+                severity=severity,
+                status=CheckStatus.PASS if success else CheckStatus.FAIL,
+                message=f"Command exit code {actual} matched expected {expected}" if success else f"Command exit code {actual} did not match expected {expected}",
+                evidence={"command": command, "exit_code": actual, "stdout": res.stdout, "stderr": res.stderr}
+            )
+
         try:
             process = subprocess.run(
                 command,
@@ -222,6 +236,18 @@ class VerificationExecutor:
     def _check_command_stdout_contains(self, check_def: Dict, severity: Severity, tasks: List) -> CheckResult:
         command = check_def["command"]
         text = check_def["text"]
+
+        if self.cmd_executor:
+            res = self.cmd_executor.run(command)
+            found = text in res.stdout
+            return CheckResult(
+                check_id=self._gen_id(check_def),
+                type="command_stdout_contains",
+                severity=severity,
+                status=CheckStatus.PASS if found else CheckStatus.FAIL,
+                message=f"Stdout contains '{text}'" if found else f"Stdout does not contain '{text}'",
+                evidence={"command": command, "stdout": res.stdout}
+            )
 
         try:
             process = subprocess.run(

@@ -11,6 +11,11 @@ from .engine import VerificationEngine
 from .outcome import OutcomeSynthesizer
 from .baselines import BaselineComparator
 from .models import FailureStage, FinalOutcome, VerificationReport
+from runtime_profiles.registry import ProfileRegistry
+from runtime_profiles.interpreter import InterpreterResolver, InterpreterValidator
+from runtime_profiles.environment import EnvironmentBuilder
+from runtime_profiles.fingerprints import RuntimeFingerprintService
+from runtime_profiles.commands import CommandExecutor
 
 from workspace.models import ExecutionMode, SourcePolicy, PromotionStatus
 from workspace.fingerprints import FingerprintService
@@ -43,6 +48,7 @@ class RegressionRunner:
         self.ollama = OllamaService()
         self.process = ProcessService()
         self.audit = AuditLogService(project_root)
+        self.profile_registry = ProfileRegistry()
 
     def run_suite(self, suite_name: str, update_baseline: bool = False) -> Dict[str, Any]:
         suite_path = self.regression_root / suite_name
@@ -107,9 +113,34 @@ class RegressionRunner:
             )
             execution_workspace = Path(snapshot_manifest.execution_workspace)
 
+            # 2.5 Resolve Runtime Profile (SPEC 015)
+            # Support suite-level profile pinning or spec override
+            # For simplicity, we check spec first then default
+            spec_data, _ = self.spec_parser.dsl_parser.parse(spec_text)
+            profile_id = "default"
+            if spec_data and "runtime" in spec_data:
+                profile_id = spec_data["runtime"].get("profile", "default")
+
+            profile = self.profile_registry.get_profile(profile_id)
+            if not profile:
+                 raise ValueError(f"Runtime profile not found: {profile_id}")
+
+            int_resolver = InterpreterResolver(self.project_root)
+            interpreter_path = int_resolver.resolve(profile)
+
+            int_validator = InterpreterValidator()
+            ok, err_type, version_info = int_validator.validate(interpreter_path)
+            if not ok:
+                 raise RuntimeError(f"Interpreter validation failed: {version_info}")
+
+            env_builder = EnvironmentBuilder()
+            runtime_env = env_builder.build(profile)
+
+            cmd_executor = CommandExecutor(profile, interpreter_path, runtime_env, execution_workspace)
+
             # 3. Execute in isolated workspace
             file_ops = FileOpsService(execution_workspace)
-            executor = TaskExecutorService(file_ops, self.ollama, self.process, self.model_name, run_folder=run_folder)
+            executor = TaskExecutorService(file_ops, self.ollama, self.process, self.model_name, run_folder=run_folder, cmd_executor=cmd_executor)
 
             failure_stage = None
             for task in tasks:
@@ -119,7 +150,7 @@ class RegressionRunner:
                     break
 
             # 4. Verify (must use isolated path)
-            v_engine = VerificationEngine(execution_workspace)
+            v_engine = VerificationEngine(execution_workspace, cmd_executor=cmd_executor)
             v_report = v_engine.run(verification_data, tasks)
 
             # 5. Outcome Synthesis
@@ -129,7 +160,12 @@ class RegressionRunner:
                 "spec_id": summary.spec_id,
                 "final_status": summary.final_status.value,
                 "verification": summary.verification,
-                "regression": summary.regression
+                "regression": summary.regression,
+                "runtime": {
+                    "profile_id": profile.profile_id,
+                    "python_version": version_info,
+                    "interpreter": interpreter_path
+                }
             }
 
             if update_baseline:

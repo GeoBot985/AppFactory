@@ -38,6 +38,14 @@ from verification.outcome import OutcomeSynthesizer
 from verification.models import FailureStage, FinalOutcome, CheckStatus, VerificationReport
 from verification.reporting import ReportingService
 
+from runtime_profiles.models import RuntimeProfile, DriftPolicyMode
+from runtime_profiles.registry import ProfileRegistry
+from runtime_profiles.interpreter import InterpreterResolver, InterpreterValidator
+from runtime_profiles.environment import EnvironmentBuilder, EnvironmentMasker
+from runtime_profiles.fingerprints import RuntimeFingerprintService
+from runtime_profiles.commands import CommandExecutor, CommandResult
+from runtime_profiles.drift import DriftDetector
+
 
 class Tooltip:
     def __init__(self, widget: tk.Widget, text: str):
@@ -99,6 +107,26 @@ class AgentWorkbenchApp:
         self.spec_parser = SpecParserService()
         self.validation_service = ValidationService()
         self.audit_log_service = AuditLogService(Path.cwd())
+
+        self.profile_registry = ProfileRegistry()
+        self._load_external_profiles()
+        self.env_masker = EnvironmentMasker()
+
+    def _load_external_profiles(self):
+        profile_file = Path.cwd() / "profiles.yaml"
+        if profile_file.exists():
+            try:
+                import yaml
+                with profile_file.open("r") as f:
+                    data = yaml.safe_load(f)
+                    if isinstance(data, dict) and "profiles" in data:
+                        for p_id, p_data in data["profiles"].items():
+                            p_data["profile_id"] = p_id
+                            profile = self.profile_registry.from_dict(p_data)
+                            self.profile_registry.register(profile)
+                self.log_event(f"Loaded external profiles from {profile_file}")
+            except Exception as e:
+                self.log_event(f"Failed to load external profiles: {e}")
 
         self.fingerprint_service = FingerprintService()
         self.snapshot_service = SnapshotService(self.fingerprint_service)
@@ -937,6 +965,25 @@ class AgentWorkbenchApp:
             self.slot_detail_view.configure(state="disabled")
             return
 
+        # 0. Runtime Info (SPEC 015)
+        add_section("RUNTIME ENVIRONMENT")
+
+        runtime_data = None
+        if slot.run_summary:
+            if hasattr(slot.run_summary, 'runtime'):
+                 runtime_data = getattr(slot.run_summary, 'runtime', None)
+            elif isinstance(slot.run_summary, dict):
+                 runtime_data = slot.run_summary.get("runtime")
+
+        if runtime_data:
+            r = runtime_data
+            add_field("Profile ID", r.get("profile_id", "-"))
+            add_field("Interpreter", r.get("interpreter", "-"))
+            add_field("Python Version", r.get("python_version", "-"))
+            add_field("Env Inherit", r.get("env_inherit_mode", "-"))
+        else:
+            add_field("Profile", "Not yet executed", "dim")
+
         # 0. Isolation Info (SPEC 014)
         add_section("EXECUTION & ISOLATION")
         # Since slot object doesn't have these, we'd need to extend it,
@@ -1055,9 +1102,15 @@ class AgentWorkbenchApp:
         if slot.run_summary:
             add_section("RUN SUMMARY")
             s = slot.run_summary
-            add_field("Final Status", s.final_status.value, "success" if s.final_status == FinalOutcome.COMPLETED else "error" if s.final_status in {FinalOutcome.FAILED, FinalOutcome.PARTIAL_FAILURE} else "dim")
-            add_field("Failure Stage", s.failure_stage.value if s.failure_stage else "None", "error" if s.failure_stage else "success")
-            add_field("Summary", s.summary)
+
+            # If s is a dict (from artifact) or dataclass (from run)
+            if hasattr(s, 'final_status'):
+                add_field("Final Status", s.final_status.value, "success" if s.final_status == FinalOutcome.COMPLETED else "error" if s.final_status in {FinalOutcome.FAILED, FinalOutcome.PARTIAL_FAILURE} else "dim")
+                add_field("Failure Stage", s.failure_stage.value if s.failure_stage else "None", "error" if s.failure_stage else "success")
+                add_field("Summary", s.summary)
+            else:
+                add_field("Final Status", s.get("final_status", "-"))
+                add_field("Failure Stage", s.get("failure_stage", "None"))
 
         # 8. Failure Info
         if slot.status == "failed" or slot.failure_reason:
@@ -1378,6 +1431,7 @@ class AgentWorkbenchApp:
             stages = [
                 "Spec Intake",
                 "Spec Parsing",
+                "Runtime Environment",
                 "Task Execution",
                 "Structural Validation",
                 "Deterministic Verification",
@@ -1479,7 +1533,7 @@ class AgentWorkbenchApp:
                 execution_workspace = Path(snapshot_manifest.execution_workspace)
                 self.ui_queue.put(("queue_log", f"Isolated workspace ready: {execution_workspace}"))
 
-                v_engine = VerificationEngine(execution_workspace)
+                # v_engine initialization moved after Runtime Environment
 
                 # 2. Spec Parsing
                 update_stage("Spec Parsing", "running")
@@ -1491,6 +1545,94 @@ class AgentWorkbenchApp:
                 update_stage("Spec Parsing", "completed", f"tasks={len(tasks)}")
                 check_stop()
 
+                # 2.5 Runtime Environment (SPEC 015)
+                update_stage("Runtime Environment", "running")
+
+                # Resolve profile ID with precedence: Spec > Queue > Default
+                profile_id = "default"
+
+                # Check queue settings
+                if spec_data and "queue_settings" in spec_data:
+                     # This might come from a queue-level config in the future,
+                     # but for now we look for it in the spec if it's there.
+                     # Actually, SPEC 015 says queue might define it.
+                     pass
+
+                # We can check if the queue itself has a default profile (e.g. from UI or queue state)
+                # For now, let's look for 'runtime' block in spec
+                if spec_data and "runtime" in spec_data:
+                    if isinstance(spec_data["runtime"], dict) and "profile" in spec_data["runtime"]:
+                        profile_id = spec_data["runtime"]["profile"]
+
+                profile = self.profile_registry.get_profile(profile_id)
+                if not profile:
+                    failure_stage = FailureStage.RUNTIME_PROFILE_INVALID
+                    raise ValueError(f"Runtime profile not found: {profile_id}")
+
+                int_resolver = InterpreterResolver(self.current_folder)
+                interpreter_path = int_resolver.resolve(profile)
+
+                int_validator = InterpreterValidator()
+                ok, err_type, version_info = int_validator.validate(interpreter_path)
+                if not ok:
+                    failure_stage = FailureStage.RUNTIME_ENVIRONMENT_FAILURE
+                    raise RuntimeError(f"Interpreter validation failed ({err_type}): {version_info}")
+
+                if spec_data and "runtime" in spec_data and "python_version" in spec_data["runtime"]:
+                    ok, err_type, msg = int_validator.check_version_constraints(version_info, spec_data["runtime"]["python_version"])
+                    if not ok:
+                        failure_stage = FailureStage.RUNTIME_ENVIRONMENT_FAILURE
+                        raise RuntimeError(f"Python version constraint mismatch ({err_type}): {msg}")
+
+                env_builder = EnvironmentBuilder()
+                runtime_env = env_builder.build(profile)
+
+                fp_service = RuntimeFingerprintService()
+                fingerprint = fp_service.capture(profile, interpreter_path)
+
+                pip_ok, pip_freeze = fp_service.capture_pip_freeze(interpreter_path)
+
+                if profile.dependency_fingerprint.required and not pip_ok:
+                    failure_stage = FailureStage.RUNTIME_ENVIRONMENT_FAILURE
+                    raise RuntimeError(f"DEPENDENCY_FINGERPRINT_CAPTURE_FAILED: {pip_freeze}")
+
+                # Drift Detection (SPEC 015 Requirement 14)
+                drift_status = "none"
+                baseline_path = self.current_folder / ".agent_workbench" / "runtime_baseline.json"
+                if baseline_path.exists():
+                    try:
+                        with baseline_path.open("r") as f:
+                            baseline = json.load(f)
+                        detector = DriftDetector()
+                        drifts = detector.detect(fingerprint, baseline)
+                        if drifts:
+                            drift_status = "detected"
+                            for drift in drifts:
+                                self.ui_queue.put(("queue_log", f"DRIFT DETECTED: {drift['type']} - Expected: {drift['expected']}, Actual: {drift['actual']}"))
+
+                            if profile.drift_policy.on_python_version_mismatch == DriftPolicyMode.FAIL:
+                                failure_stage = FailureStage.RUNTIME_ENVIRONMENT_FAILURE
+                                raise RuntimeError(f"ENVIRONMENT_DRIFT_DETECTED: {drifts[0]['type']}")
+                    except Exception as e:
+                        self.ui_queue.put(("queue_log", f"Drift detection failed: {e}"))
+
+                # Log artifacts
+                self.audit_log_service.log_artifact(run_folder, "runtime_profile_resolved.json", {
+                    "profile_id": profile.profile_id,
+                    "interpreter": interpreter_path,
+                    "python_version": version_info,
+                    "env_inherit_mode": profile.env.inherit_mode.value
+                })
+                self.audit_log_service.log_artifact(run_folder, "runtime_environment_masked.json", self.env_masker.mask_env(runtime_env))
+                self.audit_log_service.log_artifact(run_folder, "dependency_fingerprint.json", fingerprint)
+                if pip_ok:
+                    self.audit_log_service.log_artifact(run_folder, "pip_freeze.txt", pip_freeze)
+
+                update_stage("Runtime Environment", "completed", f"profile={profile_id}")
+                check_stop()
+
+                v_engine = VerificationEngine(execution_workspace, cmd_executor=CommandExecutor(profile, interpreter_path, runtime_env, execution_workspace))
+
                 # 3. Task Execution
                 update_stage("Task Execution", "running")
                 if not execution_workspace:
@@ -1498,7 +1640,11 @@ class AgentWorkbenchApp:
                     raise RuntimeError("no execution workspace")
 
                 file_ops = FileOpsService(execution_workspace)
-                executor = TaskExecutorService(file_ops, self.ollama_service, self.process_service, model_name, run_folder=run_folder)
+
+                # Setup CommandExecutor for this run
+                cmd_executor = CommandExecutor(profile, interpreter_path, runtime_env, execution_workspace)
+
+                executor = TaskExecutorService(file_ops, self.ollama_service, self.process_service, model_name, run_folder=run_folder, cmd_executor=cmd_executor)
 
                 # Settings
                 fail_fast = True
@@ -1596,7 +1742,15 @@ class AgentWorkbenchApp:
                         "final_status": slot.run_summary.final_status.value,
                         "failure_stage": slot.run_summary.failure_stage.value if slot.run_summary.failure_stage else None,
                         "verification": slot.run_summary.verification,
-                        "regression": slot.run_summary.regression
+                        "regression": slot.run_summary.regression,
+                        "runtime": {
+                            "profile_id": profile.profile_id,
+                            "interpreter": interpreter_path,
+                            "python_version": version_info,
+                            "env_inherit_mode": profile.env.inherit_mode.value,
+                            "dependency_fingerprint_status": "captured",
+                            "environment_drift_status": drift_status
+                        }
                     }
                     self.audit_log_service.log_artifact(run_folder, "run_summary.json", json.dumps(summary_dict, indent=2))
 
