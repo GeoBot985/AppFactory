@@ -36,11 +36,12 @@ from services.run_ledger.recovery import RecoveryService, InterruptionCategory, 
 from services.run_ledger.executor import ResumeService, ReplayService
 from services.run_ledger.consistency import ConsistencyChecker
 
-from workspace.models import ExecutionMode, SourcePolicy, PromotionStatus
+from workspace.models import ExecutionMode, SourcePolicy, PromotionStatus, RestoreRequest
 from workspace.fingerprints import FingerprintService
 from workspace.snapshots import SnapshotService
 from workspace.promotion import PromotionService
 from workspace.conflicts import ConflictService
+from workspace.restore_controller import RestoreController
 
 from verification.engine import VerificationEngine
 from verification.outcome import OutcomeSynthesizer
@@ -180,6 +181,7 @@ class AgentWorkbenchApp:
         self.snapshot_service = SnapshotService(self.fingerprint_service)
         self.promotion_service = PromotionService(self.fingerprint_service)
         self.conflict_service = ConflictService(self.fingerprint_service)
+        self.restore_controller = RestoreController(self.snapshot_service, self.ledger_service)
 
         self.run_state_service = RunStateService()
         self.ui_queue: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -202,7 +204,8 @@ class AgentWorkbenchApp:
         self.queue_active = False
         self.restore_active = False
         self.translation_active = False
-        self.pending_restore_type: str = "none"  # "none", "bundle", "candidate"
+        self.pending_restore_type: str = "none"  # "none", "bundle", "candidate", "snapshot"
+        self.pending_snapshot_id: str = ""
         self.llm_run_started_at = 0.0
         self.llm_chunk_count = 0
         self.llm_output_chars = 0
@@ -526,8 +529,12 @@ class AgentWorkbenchApp:
         Tooltip(load_to_editor_btn, "Load the spec and state from the selected queue slot back into the editor.")
 
         clear_slot_btn = ttk.Button(action_row, text="Clear Slot", command=self.clear_slot)
-        clear_slot_btn.pack(side="left")
+        clear_slot_btn.pack(side="left", padx=(0, 8))
         Tooltip(clear_slot_btn, "Remove the spec and all associated results from the selected queue slot.")
+
+        undo_last_btn = ttk.Button(action_row, text="Undo Last Run", command=self.undo_last_run)
+        undo_last_btn.pack(side="left")
+        Tooltip(undo_last_btn, "Roll back the most recent successful file changes to their baseline snapshot.")
 
     def _build_main_section(self, parent: ttk.Frame) -> None:
         main = ttk.PanedWindow(parent, orient="horizontal")
@@ -1000,6 +1007,7 @@ class AgentWorkbenchApp:
         self.ops_approvals_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
         self.ops_regression_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
         self.ops_recovery_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
+        self.ops_snapshots_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
 
         self.ops_notebook.add(self.ops_dashboard_frame, text="Dashboard")
         self.ops_notebook.add(self.ops_queues_frame, text="Queues")
@@ -1007,6 +1015,7 @@ class AgentWorkbenchApp:
         self.ops_notebook.add(self.ops_approvals_frame, text="Approvals")
         self.ops_notebook.add(self.ops_regression_frame, text="Regression")
         self.ops_notebook.add(self.ops_recovery_frame, text="Recovery & Ledger")
+        self.ops_notebook.add(self.ops_snapshots_frame, text="Snapshots & Undo")
 
         self._build_ops_dashboard(self.ops_dashboard_frame)
         self._build_ops_queues(self.ops_queues_frame)
@@ -1014,6 +1023,49 @@ class AgentWorkbenchApp:
         self._build_ops_approvals(self.ops_approvals_frame)
         self._build_ops_regression(self.ops_regression_frame)
         self._build_ops_recovery(self.ops_recovery_frame)
+        self._build_ops_snapshots(self.ops_snapshots_frame)
+
+    def _build_ops_snapshots(self, parent: ttk.Frame) -> None:
+        parent.rowconfigure(1, weight=1)
+        parent.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(parent, style="Panel.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Button(header, text="Undo Last Run", command=self.undo_last_run).pack(side="left", padx=5)
+        ttk.Button(header, text="Refresh Snapshots", command=self._refresh_ops_snapshots).pack(side="left")
+
+        self.ops_snapshots_list = ttk.Treeview(parent, columns=("id", "run_id", "created", "files"), show="headings")
+        self.ops_snapshots_list.heading("id", text="Snapshot ID")
+        self.ops_snapshots_list.heading("run_id", text="Source Run")
+        self.ops_snapshots_list.heading("created", text="Created At")
+        self.ops_snapshots_list.heading("files", text="Files")
+        self.ops_snapshots_list.grid(row=1, column=0, sticky="nsew")
+        self.ops_snapshots_list.bind("<Double-1>", self._on_ops_snapshot_double_click)
+
+    def _on_ops_snapshot_double_click(self, _event):
+        selected = self.ops_snapshots_list.selection()
+        if not selected: return
+        snap_id = self.ops_snapshots_list.item(selected[0])["values"][0]
+        self.preview_snapshot_restore(snap_id)
+
+    def _refresh_ops_snapshots(self) -> None:
+        self.ops_snapshots_list.delete(*self.ops_snapshots_list.get_children())
+        if not self.snapshot_service.storage_root.exists():
+            return
+
+        for snap_dir in sorted(self.snapshot_service.storage_root.iterdir(), reverse=True):
+            if snap_dir.is_dir() and (snap_dir / "snapshot.json").exists():
+                try:
+                    with (snap_dir / "snapshot.json").open("r") as f:
+                        data = json.load(f)
+                    self.ops_snapshots_list.insert("", "end", values=(
+                        data.get("snapshot_id"),
+                        data.get("source_run_id"),
+                        data.get("created_at"),
+                        data.get("file_count")
+                    ))
+                except: pass
 
     def _build_ops_dashboard(self, parent: ttk.Frame) -> None:
         parent.columnconfigure(0, weight=1)
@@ -1113,6 +1165,7 @@ class AgentWorkbenchApp:
         self._refresh_ops_approvals()
         self._refresh_ops_regression()
         self._refresh_ops_recovery()
+        self._refresh_ops_snapshots()
 
     def _rebuild_ops_indices(self) -> None:
         self.log_event("Rebuilding Operations Indices...")
@@ -2841,6 +2894,25 @@ class AgentWorkbenchApp:
 
                 # 3. Task Execution
                 update_stage("Task Execution", "running")
+
+                # SPEC 030: Capture baseline snapshot of CANONICAL workspace before execution
+                # Only if this run could potentially mutate canonical (promote_on_success)
+                if execution_mode == ExecutionMode.PROMOTE_ON_SUCCESS:
+                    self.ui_queue.put(("queue_log", "Capturing baseline workspace snapshot..."))
+                    baseline_snapshot = self.snapshot_service.capture_baseline_snapshot(
+                        workspace_root=self.current_folder,
+                        run_id=slot.current_run_id,
+                        compiled_plan_id=plan.plan_id if is_compiled else "legacy"
+                    )
+                    self.ui_queue.put(("queue_log", f"Baseline snapshot captured: {baseline_snapshot.snapshot_id}"))
+
+                    # Update metadata with baseline_snapshot_id
+                    metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+                    if metadata:
+                        metadata.payload = metadata.payload or {}
+                        metadata.payload["baseline_snapshot_id"] = baseline_snapshot.snapshot_id
+                        self.ledger_service.update_run_metadata(metadata)
+
                 if not execution_workspace:
                     failure_stage = FailureStage.HARNESS_FAILURE
                     raise RuntimeError("no execution workspace")
@@ -3251,6 +3323,74 @@ class AgentWorkbenchApp:
         except Exception as exc:
             self.ui_queue.put(("restore_failed", str(exc)))
 
+    def undo_last_run(self) -> None:
+        if self.restore_active:
+            return
+
+        # 1. Find last successful run with a baseline snapshot
+        all_runs = self.ledger_service.load_current_runs()
+        # Sort by updated_at descending
+        sorted_runs = sorted(all_runs.values(), key=lambda x: x.get("updated_at", ""), reverse=True)
+
+        target_run_id = None
+        snapshot_id = None
+
+        for run_data in sorted_runs:
+            if run_data.get("state") in {DurableRunState.COMPLETED.value, DurableRunState.COMPLETED_WITH_WARNINGS.value}:
+                payload = run_data.get("payload", {})
+                if "baseline_snapshot_id" in payload:
+                    target_run_id = run_data.get("run_id")
+                    snapshot_id = payload["baseline_snapshot_id"]
+                    break
+
+        if not snapshot_id:
+            self.log_event("Undo failed: No recently applied run with a baseline snapshot found.")
+            return
+
+        self.log_event(f"Requesting undo for run {target_run_id} using snapshot {snapshot_id}")
+        self.preview_snapshot_restore(snapshot_id)
+
+    def preview_snapshot_restore(self, snapshot_id: str) -> None:
+        snapshot = self.snapshot_service.get_snapshot(snapshot_id)
+        if not snapshot:
+            self.log_event(f"Restore preview failed: Snapshot {snapshot_id} not found.")
+            return
+
+        self.log_event(f"Computing restore preview for snapshot {snapshot_id}")
+        preview_data = self.restore_controller.validator.build_restore_preview(snapshot, self.current_folder)
+
+        self.restore_preview_view.configure(state="normal")
+        self.restore_preview_view.delete("1.0", "end")
+
+        self.restore_preview_view.insert("end", f"ROLLBACK PREVIEW (Snapshot: {snapshot_id})\n", "header")
+        self.restore_preview_view.insert("end", f"Source Run: {snapshot.source_run_id}\n", "header")
+        self.restore_preview_view.insert("end", f"Files to Restore: {len(preview_data['files_to_restore'])}\n", "header")
+        self.restore_preview_view.insert("end", f"Files to Remove:  {len(preview_data['files_to_remove'])}\n\n", "header")
+
+        if preview_data["files_to_restore"]:
+            self.restore_preview_view.insert("end", "FILES TO RESTORE/REVERT:\n", "header")
+            for f in preview_data["files_to_restore"]:
+                tag = "modified" if f in preview_data["files_drifted"] else "new"
+                self.restore_preview_view.insert("end", f"  [+] {f}\n", tag)
+            self.restore_preview_view.insert("end", "\n")
+
+        if preview_data["files_to_remove"]:
+            self.restore_preview_view.insert("end", "FILES TO REMOVE (Introduced after snapshot):\n", "header")
+            for f in preview_data["files_to_remove"]:
+                self.restore_preview_view.insert("end", f"  [-] {f}\n", "skipped")
+
+        self.restore_preview_view.configure(state="disabled")
+
+        self.pending_restore_type = "snapshot"
+        self.pending_snapshot_id = snapshot_id
+        self.confirm_restore_button.state(["!disabled"])
+
+        # Switch to preview tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Restore Preview" in self.notebook.tab(tabid, "text"):
+                self.notebook.select(i)
+                break
+
     def restore_candidate(self) -> None:
         if self.restore_active:
             self.log_event("Restore Candidate blocked: restore already in progress.")
@@ -3318,8 +3458,35 @@ class AgentWorkbenchApp:
             thread = threading.Thread(target=self._restore_candidate_worker, args=(Path(self.current_folder), run, self.selected_slot_index), daemon=True)
             self.restore_thread = thread
             thread.start()
+        elif self.pending_restore_type == "snapshot":
+            snapshot_id = self.pending_snapshot_id
+            if not snapshot_id:
+                return
+            self.restore_active = True
+            self.confirm_restore_button.state(["disabled"])
+            self.run_state_service.begin_restore()
+            self._refresh_restore_view()
+            self.log_event(f"restore confirmed (snapshot: {snapshot_id})")
+            self.set_status_action("restoring snapshot")
+
+            def worker():
+                try:
+                    request = RestoreRequest(
+                        request_id=f"req_{uuid.uuid4().hex[:8]}",
+                        snapshot_id=snapshot_id,
+                        target_workspace=str(self.current_folder),
+                        requested_by="local_user",
+                        reason="Undo via UI"
+                    )
+                    restore_run = self.restore_controller.execute_restore(request)
+                    self.ui_queue.put(("snapshot_restore_done", restore_run))
+                except Exception as e:
+                    self.ui_queue.put(("restore_failed", str(e)))
+
+            threading.Thread(target=worker, daemon=True).start()
 
         self.pending_restore_type = "none"
+        self.pending_snapshot_id = ""
 
     def _restore_candidate_worker(self, project_root: Path, edit_run: BundleEditRun, slot_index: int) -> None:
         try:
@@ -3746,6 +3913,59 @@ class AgentWorkbenchApp:
             self.set_status_action(f"restore {restore_result.status}")
             self.refresh_tree()
             return
+
+    def invalidate_stale_runs(self, snapshot_id: str) -> None:
+        snapshot = self.snapshot_service.get_snapshot(snapshot_id)
+        if not snapshot: return
+
+        all_runs = self.ledger_service.load_current_runs()
+        restored_at = snapshot.created_at
+
+        invalidated_count = 0
+        for run_id, run_data in all_runs.items():
+            if run_data.get("updated_at", "") > restored_at:
+                if run_data.get("state") not in {DurableRunState.FAILED.value, DurableRunState.INTERRUPTED.value, "STALE"}:
+                    # Mark as STALE in ledger
+                    metadata = self.ledger_service.get_run_metadata(run_id)
+                    if metadata:
+                        # We don't have a STALE state in RunState enum yet, let's use FAILED or just record event
+                        self.ledger_service.record_event(
+                            entity_type="run",
+                            entity_id=run_id,
+                            event_type="invalidation",
+                            new_state="STALE",
+                            payload={"reason": f"Post-restore invalidation (restored to {snapshot_id})"}
+                        )
+                        invalidated_count += 1
+
+        if invalidated_count > 0:
+            self.log_event(f"Post-restore: {invalidated_count} downstream run(s) marked as STALE.")
+        if message == "snapshot_restore_done":
+            restore_run = payload
+            if not isinstance(restore_run, RestoreRun):
+                return
+            self.restore_active = False
+            self.run_state_service.complete_restore(None) # Use None or a dummy result for now
+            self.log_event(f"Snapshot restore {restore_run.status}: {restore_run.files_restored_count} restored, {restore_run.files_removed_count} removed.")
+            self.log_event(f"Verification: {restore_run.verification_status}")
+            self.set_status_action(f"restore {restore_run.status}")
+
+            # Show result in restore view
+            self.restore_view.configure(state="normal")
+            self.restore_view.delete("1.0", "end")
+            self.restore_view.insert("1.0", json.dumps(restore_run.to_dict(), indent=2))
+            self.restore_view.configure(state="disabled")
+
+            # Switch to restore tab
+            for i, tabid in enumerate(self.notebook.tabs()):
+                if "Restore Result" in self.notebook.tab(tabid, "text"):
+                    self.notebook.select(i)
+                    break
+
+            self.refresh_tree()
+            self.invalidate_stale_runs(restore_run.snapshot_id)
+            return
+
         if message == "restore_failed":
             self.restore_active = False
             self.restore_bundle_button.state(["!disabled"])
