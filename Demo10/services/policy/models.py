@@ -39,15 +39,22 @@ class RiskClass(Enum):
         return NotImplemented
 
 class PolicyDecision(Enum):
-    POLICY_ALLOWED = "POLICY_ALLOWED"
-    POLICY_DENIED = "POLICY_DENIED"
-    APPROVAL_REQUIRED = "APPROVAL_REQUIRED"
+    ALLOW = "allow"
+    WARN = "warn"
+    BLOCK = "block"
+    # Legacy support
+    POLICY_ALLOWED = "allow"
+    POLICY_DENIED = "block"
+    APPROVAL_REQUIRED = "warn"
 
 class PolicyDomain(Enum):
-    SPEC_INTAKE = "SPEC_INTAKE"
+    COMPILE = "COMPILE"
+    PREVIEW = "PREVIEW"
     EXECUTION = "EXECUTION"
+    TASK = "TASK"
+    RERUN = "RERUN"
+    RESTORE = "RESTORE"
     PROMOTION = "PROMOTION"
-    QUEUE = "QUEUE"
 
 class ApprovalStatus(Enum):
     PENDING = "pending"
@@ -101,11 +108,12 @@ class ApprovalRecord:
 class PolicyEvaluationResult:
     policy_domain: str
     entity_id: str
-    risk_class: str
     decision: str
-    reason_codes: List[str] = field(default_factory=list)
-    matched_rules: List[str] = field(default_factory=list)
+    risk_class: Optional[str] = None
+    reasons: List[str] = field(default_factory=list)
+    policy_rules_triggered: List[str] = field(default_factory=list)
     facts: Dict[str, Any] = field(default_factory=dict)
+    timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
     def to_dict(self) -> dict:
         return {
@@ -113,9 +121,10 @@ class PolicyEvaluationResult:
             "entity_id": self.entity_id,
             "risk_class": self.risk_class,
             "decision": self.decision,
-            "reason_codes": self.reason_codes,
-            "matched_rules": self.matched_rules,
-            "facts": self.facts
+            "reasons": self.reasons,
+            "policy_rules_triggered": self.policy_rules_triggered,
+            "facts": self.facts,
+            "timestamp": self.timestamp
         }
 
 @dataclass
@@ -134,45 +143,82 @@ class RiskAssessment:
         }
 
 @dataclass
+class ScopePolicy:
+    max_edit_files: int = 5
+    max_new_files: int = 3
+    allowed_directories: List[str] = field(default_factory=lambda: ["*"])
+    cross_module_limits: Optional[int] = None
+
+@dataclass
+class RiskPolicy:
+    allow_high_risk: bool = True
+    require_approval_above: str = RiskClass.R1_MODERATE.value
+    denied_executables: List[str] = field(default_factory=lambda: ["rm", "del", "format"])
+    protected_paths: Dict[str, List[str]] = field(default_factory=lambda: {
+        "high_risk": ["Demo10/services/policy/**", "Demo10/services/run_ledger/**"],
+        "critical": ["Demo10/workspace/**", "Demo10/services/compiled_runtime/**"]
+    })
+
+@dataclass
+class ExecutionPolicy:
+    require_tests_pass: bool = True
+    max_attempts_per_task: int = 3
+    allow_auto_run: bool = True
+    fail_fast: bool = True
+
+@dataclass
+class RestorePolicy:
+    allow_restore_on_drift: bool = True
+    allow_restore_with_mismatch: bool = False
+
+@dataclass
+class RerunPolicy:
+    max_rerun_depth: int = 5
+    allowed_rerun_range: str = "all" # all | task_only
+
+@dataclass
 class PolicyConfig:
     version: int = 1
-    defaults: Dict[str, Any] = field(default_factory=lambda: {
-        "unattended_max_risk": RiskClass.R1_MODERATE.value,
-        "autopromote_max_risk": RiskClass.R0_LOW.value,
-        "allow_promotion_on_status": ["COMPLETED"]
-    })
-    protected_paths: Dict[str, List[str]] = field(default_factory=lambda: {
-        "high_risk": [
-            "src/runtime_profiles/**",
-            "src/workspace/**",
-            "src/run_ledger/**",
-            "src/policy/**"
-        ],
-        "critical": [
-            "src/promotion/**",
-            "src/recovery/**",
-            "config/**"
-        ]
-    })
-    command_rules: Dict[str, Any] = field(default_factory=lambda: {
-        "denied_executables": ["rm", "del", "format"],
-        "shell_string_commands_require_approval": True,
-        "runtime_override_timeout_above_seconds_requires_approval": 300
-    })
-    execution_rules: Dict[str, Any] = field(default_factory=lambda: {
-        "delete_block_requires_approval": True,
-        "delete_file_requires_approval": True,
-        "max_auto_changed_files": 5,
-        "bulk_replace_above_lines_requires_approval": 100
-    })
-    promotion_rules: Dict[str, Any] = field(default_factory=lambda: {
-        "allow_auto_promotion_statuses": ["COMPLETED"],
-        "warnings_require_approval": True,
-        "deletion_requires_approval": True,
-        "protected_paths_require_approval": True
-    })
-    queue_rules: Dict[str, Any] = field(default_factory=lambda: {
-        "on_approval_required": "pause",
-        "on_policy_denied": "fail_slot",
-        "allow_low_risk_slots_to_continue_after_denial": False
-    })
+    scope: ScopePolicy = field(default_factory=ScopePolicy)
+    risk: RiskPolicy = field(default_factory=RiskPolicy)
+    execution: ExecutionPolicy = field(default_factory=ExecutionPolicy)
+    restore: RestorePolicy = field(default_factory=RestorePolicy)
+    rerun: RerunPolicy = field(default_factory=RerunPolicy)
+
+    # Legacy mappings for backward compatibility during transition
+    @property
+    def defaults(self):
+        return {
+            "unattended_max_risk": self.risk.require_approval_above,
+            "autopromote_max_risk": RiskClass.R0_LOW.value,
+        }
+
+    @property
+    def command_rules(self):
+        return {
+            "denied_executables": self.risk.denied_executables,
+            "shell_string_commands_require_approval": True,
+            "runtime_override_timeout_above_seconds_requires_approval": 300
+        }
+
+    @property
+    def execution_rules(self):
+        return {
+            "delete_block_requires_approval": True,
+            "delete_file_requires_approval": True,
+            "max_auto_changed_files": self.scope.max_edit_files,
+            "bulk_replace_above_lines_requires_approval": 100
+        }
+
+    @property
+    def promotion_rules(self):
+        return {
+            "allow_auto_promotion_statuses": ["COMPLETED"],
+            "warnings_require_approval": True,
+            "deletion_requires_approval": True,
+            "protected_paths_require_approval": True
+        }
+
+    @property
+    def protected_paths(self):
+        return self.risk.protected_paths

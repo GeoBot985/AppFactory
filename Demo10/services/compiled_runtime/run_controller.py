@@ -12,13 +12,16 @@ from .rerun_models import ReRunRequest, ReRunPlan
 from .rerun_planner import plan_rerun
 from .rerun_controller import ReRunController
 from metrics.metrics_service import MetricsService
+from services.policy.engine import PolicyEngine
+from services.policy.models import PolicyConfig, PolicyDomain, PolicyDecision
 
 class CompiledPlanRunController:
-    def __init__(self, executor: TaskExecutorService):
+    def __init__(self, executor: TaskExecutorService, policy_config: Optional[PolicyConfig] = None):
         self.executor = executor
         self.metrics = getattr(executor, "metrics", None) or MetricsService(getattr(executor, "run_folder", None))
         self.dispatcher = CompiledTaskDispatcher(executor, self.metrics)
         self.rerun_controller = ReRunController(executor)
+        self.policy_engine = PolicyEngine(policy_config or PolicyConfig())
 
     def execute_compiled_plan(self, plan: CompiledPlan, run_id: str, context: Optional[SharedRunContext] = None) -> CompiledPlanRun:
         self.metrics.start_run(run_id)
@@ -48,7 +51,19 @@ class CompiledPlanRunController:
             self.metrics.end_run()
             return run
 
-        # 3. Start Execution
+        # 3. Policy Check Before Execution
+        policy_context = {
+            "task_count": len(plan.tasks),
+            "allowed_targets": plan.allowed_targets
+        }
+        policy_result = self.policy_engine.evaluate(PolicyDomain.EXECUTION, run_id, policy_context)
+        if policy_result.decision == PolicyDecision.BLOCK.value:
+             run.overall_status = CompiledRunStatus.FAILED
+             run.completed_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+             self.metrics.end_run()
+             return run
+
+        # 4. Start Execution
         self.metrics.start_high_level_stage("execution")
         run.overall_status = CompiledRunStatus.RUNNING
         if context is None:
@@ -70,6 +85,23 @@ class CompiledPlanRunController:
                 run.tasks_skipped += 1
                 if run.fail_fast:
                     run.overall_status = CompiledRunStatus.FAILED
+                    break
+                continue
+
+            # Policy Check Per-Task
+            task_policy_context = {
+                "attempts": task_state.attempt_count,
+                "task_type": task.type.value,
+                "commands": [task.target] if task.type.value == "RUN" else []
+            }
+            task_policy_result = self.policy_engine.evaluate(PolicyDomain.TASK, f"{run_id}_{task_id}", task_policy_context)
+            if task_policy_result.decision == PolicyDecision.BLOCK.value:
+                task_state.status = CompiledTaskStatus.FAILED
+                task_state.result_summary = f"Blocked by task policy: {', '.join(task_policy_result.reasons)}"
+                run.tasks_failed += 1
+                if run.fail_fast:
+                    run.overall_status = CompiledRunStatus.FAILED
+                    self._mark_remaining_blocked(plan, run)
                     break
                 continue
 
@@ -137,8 +169,23 @@ class CompiledPlanRunController:
                     run.tasks_skipped += 1
 
     def request_rerun(self, plan: CompiledPlan, base_run: CompiledPlanRun, request: ReRunRequest) -> CompiledPlanRun:
-        self.metrics.start_run(f"{base_run.run_id}_rerun_{int(time.time())}")
+        run_id = f"{base_run.run_id}_rerun_{int(time.time())}"
+        self.metrics.start_run(run_id)
         self.metrics.start_high_level_stage("rerun")
+
+        # Policy Check for RERUN
+        policy_context = {
+            "rerun_depth": getattr(request, "rerun_depth", 0), # Assuming ReRunRequest might have this, or we track it
+            "task_id": request.task_id
+        }
+        policy_result = self.policy_engine.evaluate(PolicyDomain.RERUN, run_id, policy_context)
+        if policy_result.decision == PolicyDecision.BLOCK.value:
+            # We need to handle this gracefully. For now, let's raise or return base_run with failure
+            # Ideally we'd have a way to return a failed RerunRun
+            self.metrics.end_high_level_stage("rerun", success=False)
+            self.metrics.end_run()
+            return base_run # Or raise error
+
         try:
             rerun_plan = plan_rerun(plan, base_run, request)
             return self.rerun_controller.execute_rerun(plan, base_run, rerun_plan)
