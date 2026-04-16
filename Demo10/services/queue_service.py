@@ -78,6 +78,8 @@ class QueueService:
             PipelineStage(name="Spec Parsing"),
             PipelineStage(name="Policy Check (Pre-Exec)"),
             PipelineStage(name="Runtime Environment"),
+            PipelineStage(name="Impact Preview"),
+            PipelineStage(name="Approval Gate"),
             PipelineStage(name="Task Execution"),
             PipelineStage(name="Structural Validation"),
             PipelineStage(name="Deterministic Verification"),

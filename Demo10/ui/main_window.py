@@ -63,6 +63,10 @@ from services.compiled_runtime.run_controller import CompiledPlanRunController
 from services.compiled_runtime.run_models import CompiledPlanRun, CompiledRunStatus, CompiledTaskStatus
 from services.compiled_runtime.rerun_models import ReRunRequest, ReRunType
 
+from services.preview.simulator import PlanSimulator
+from services.preview.approval_controller import ApprovalController
+from services.preview.impact_model import ImpactPreview, ApprovalState, ApprovalStatus, RiskLevel
+
 from runtime_profiles.models import RuntimeProfile, DriftPolicyMode
 from runtime_profiles.registry import ProfileRegistry
 from runtime_profiles.interpreter import InterpreterResolver, InterpreterValidator
@@ -156,6 +160,7 @@ class AgentWorkbenchApp:
         self.draft_validator = DraftSpecValidator()
         self.draft_session = DraftSpecSessionState()
         self.compiler = DraftSpecCompiler()
+        self.approval_controller = ApprovalController(auto_approve_low_risk=True)
 
         self.profile_registry = ProfileRegistry()
         self._load_external_profiles()
@@ -581,6 +586,7 @@ class AgentWorkbenchApp:
         selection_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         bundle_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         candidate_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        impact_preview_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         restore_preview_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         restore_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         approvals_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
@@ -595,6 +601,7 @@ class AgentWorkbenchApp:
         notebook.add(selection_frame, text="File Selection")
         notebook.add(bundle_frame, text="Bundle Preview")
         notebook.add(candidate_frame, text="Candidate Bundle")
+        notebook.add(impact_preview_frame, text="Impact Preview")
         notebook.add(restore_preview_frame, text="Restore Preview")
         notebook.add(restore_frame, text="Restore Result")
         notebook.add(approvals_frame, text="Policy & Approvals")
@@ -602,7 +609,7 @@ class AgentWorkbenchApp:
         notebook.add(ops_console_frame, text="Operations Console")
         self.notebook = notebook
 
-        for frame in (viewer_frame, prompt_frame, response_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, ops_console_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, ops_console_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -751,6 +758,40 @@ class AgentWorkbenchApp:
         candidate_y.grid(row=0, column=1, sticky="ns")
         candidate_x.grid(row=1, column=0, sticky="ew")
         self.candidate_view.configure(state="disabled")
+
+        # Impact Preview Tab
+        impact_preview_frame.rowconfigure(0, weight=1)
+        impact_preview_frame.rowconfigure(1, weight=0)
+
+        self.impact_view = tk.Text(
+            impact_preview_frame,
+            wrap="none",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        impact_y = ttk.Scrollbar(impact_preview_frame, orient="vertical", command=self.impact_view.yview)
+        impact_x = ttk.Scrollbar(impact_preview_frame, orient="horizontal", command=self.impact_view.xview)
+        self.impact_view.configure(yscrollcommand=impact_y.set, xscrollcommand=impact_x.set)
+        self.impact_view.grid(row=0, column=0, sticky="nsew")
+        impact_y.grid(row=0, column=1, sticky="ns")
+        impact_x.grid(row=2, column=0, sticky="ew")
+        self.impact_view.configure(state="disabled")
+
+        self.impact_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 10, "bold"))
+        self.impact_view.tag_configure("low", foreground="#6a9955")
+        self.impact_view.tag_configure("medium", foreground="#d7ba7d")
+        self.impact_view.tag_configure("high", foreground="#f44747")
+        self.impact_view.tag_configure("reason", foreground="#ce9178")
+
+        impact_actions = ttk.Frame(impact_preview_frame, style="Panel.TFrame")
+        impact_actions.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        self.approve_impact_btn = ttk.Button(impact_actions, text="Approve Execution", command=self.approve_impact, state="disabled")
+        self.approve_impact_btn.pack(side="left", padx=(0, 8))
+        self.reject_impact_btn = ttk.Button(impact_actions, text="Reject Execution", command=self.reject_impact, state="disabled")
+        self.reject_impact_btn.pack(side="left")
 
         # Restore Preview Tab
         restore_preview_frame.rowconfigure(0, weight=1)
@@ -1292,12 +1333,25 @@ class AgentWorkbenchApp:
         self._refresh_prompt_preview()
         self._check_run_invariants()
 
+        # Invalidate preview for selected slot if spec changed
+        idx = self.selected_slot_index
+        slot = self.spec_queue.queue_slots[idx]
+        if hasattr(slot, "impact_preview"):
+            slot.impact_preview = None
+            slot.approval_state = None
+
     def _on_draft_changed(self, _event: object) -> None:
         # If draft changes, existing compiled plan in spec_text is stale
         self.draft_session.draft_status = "edited"
         self.spec_text.delete("1.0", "end")
         self.spec_text.insert("1.0", "# Draft changed. Re-compile to run.")
         self._check_run_invariants()
+
+        # Invalidate preview for all slots if draft changes
+        for slot in self.spec_queue.queue_slots:
+            if hasattr(slot, "impact_preview"):
+                slot.impact_preview = None
+                slot.approval_state = None
 
     def _current_project_folder_text(self) -> str:
         return str(self.current_folder) if self.current_folder else "not selected"
@@ -2572,6 +2626,8 @@ class AgentWorkbenchApp:
                 "Spec Parsing",
                 "Policy Check (Pre-Exec)",
                 "Runtime Environment",
+                "Impact Preview",
+                "Approval Gate",
                 "Task Execution",
                 "Structural Validation",
                 "Deterministic Verification",
@@ -2892,6 +2948,60 @@ class AgentWorkbenchApp:
 
                 v_engine = VerificationEngine(execution_workspace, cmd_executor=CommandExecutor(profile, interpreter_path, runtime_env, execution_workspace))
 
+                file_ops = FileOpsService(execution_workspace)
+
+                # Setup CommandExecutor for this run
+                cmd_executor = CommandExecutor(profile, interpreter_path, runtime_env, execution_workspace)
+
+                executor = TaskExecutorService(
+                    file_ops,
+                    self.ollama_service,
+                    self.process_service,
+                    model_name,
+                    run_folder=run_folder,
+                    cmd_executor=cmd_executor,
+                    mutation_mode=self.write_mode_var.get(),
+                )
+
+                # 4. Impact Preview
+                update_stage("Impact Preview", "running")
+                if is_compiled:
+                    if not hasattr(slot, "impact_preview") or slot.impact_preview is None:
+                        self.ui_queue.put(("queue_log", "Generating impact preview..."))
+                        simulator = PlanSimulator(executor)
+                        preview = simulator.simulate(plan)
+                        slot.impact_preview = preview
+                        self.audit_log_service.log_artifact(run_folder, "impact_preview.json", preview)
+
+                        approval_state = self.approval_controller.evaluate(preview)
+                        slot.approval_state = approval_state
+                        self.audit_log_service.log_artifact(run_folder, "approval_state_initial.json", approval_state)
+
+                        self.ui_queue.put(("impact_preview_ready", (preview, approval_state)))
+                    else:
+                        preview = slot.impact_preview
+                        approval_state = slot.approval_state
+
+                    update_stage("Impact Preview", "completed", f"risk={preview.risk_level.value}")
+                    check_stop()
+
+                    # 5. Approval Gate
+                    update_stage("Approval Gate", "running")
+                    if approval_state.status == ApprovalStatus.PENDING:
+                        self.ui_queue.put(("queue_log", f"Approval required for {preview.risk_level.value} risk plan. Pausing."))
+                        update_stage("Approval Gate", "pending", "Waiting for user approval")
+                        self.spec_queue.queue_status = "paused"
+                        return # Exit worker, will resume
+
+                    if approval_state.status == ApprovalStatus.REJECTED:
+                        failure_stage = FailureStage.EDIT_FAILURE # Or new APPROVAL_REJECTED stage
+                        raise RuntimeError(f"Plan rejected: {approval_state.reason}")
+
+                    update_stage("Approval Gate", "completed", f"status={approval_state.status.value}")
+                else:
+                    update_stage("Impact Preview", "skipped", "Legacy spec")
+                    update_stage("Approval Gate", "skipped", "Legacy spec")
+
                 # 3. Task Execution
                 update_stage("Task Execution", "running")
 
@@ -2916,21 +3026,6 @@ class AgentWorkbenchApp:
                 if not execution_workspace:
                     failure_stage = FailureStage.HARNESS_FAILURE
                     raise RuntimeError("no execution workspace")
-
-                file_ops = FileOpsService(execution_workspace)
-
-                # Setup CommandExecutor for this run
-                cmd_executor = CommandExecutor(profile, interpreter_path, runtime_env, execution_workspace)
-
-                executor = TaskExecutorService(
-                    file_ops,
-                    self.ollama_service,
-                    self.process_service,
-                    model_name,
-                    run_folder=run_folder,
-                    cmd_executor=cmd_executor,
-                    mutation_mode=self.write_mode_var.get(),
-                )
 
                 # Settings
                 fail_fast = True
@@ -3706,7 +3801,68 @@ class AgentWorkbenchApp:
             slot_id=str(slot.slot_index)
         )
 
+    def approve_impact(self) -> None:
+        if hasattr(self, "pending_approval_state") and self.pending_approval_state:
+            self.approval_controller.approve(self.pending_approval_state, "local_user", "Manually approved via UI")
+            self.log_event("Impact preview approved.")
+            self.approve_impact_btn.state(["disabled"])
+            self.reject_impact_btn.state(["disabled"])
+            self.start_queue() # Resume queue
+
+    def reject_impact(self) -> None:
+        if hasattr(self, "pending_approval_state") and self.pending_approval_state:
+            self.approval_controller.reject(self.pending_approval_state, "local_user", "Manually rejected via UI")
+            self.log_event("Impact preview rejected.")
+            self.approve_impact_btn.state(["disabled"])
+            self.reject_impact_btn.state(["disabled"])
+            # Queue remains paused or marks slot failed
+            self.ui_queue.put(("impact_rejected", None))
+
+    def _refresh_impact_view(self, preview: ImpactPreview, approval_state: ApprovalState) -> None:
+        self.impact_view.configure(state="normal")
+        self.impact_view.delete("1.0", "end")
+
+        def add_field(label: str, value: str, tag: str = "value"):
+            self.impact_view.insert("end", f"{label}: ", "header")
+            self.impact_view.insert("end", f"{value}\n", tag)
+
+        add_field("Impact Preview", preview.preview_id)
+        add_field("Risk Level", preview.risk_level.value.upper(), preview.risk_level.value)
+        add_field("Approval Status", approval_state.status.value.upper())
+
+        self.impact_view.insert("end", "\n[ RISK REASONS ]\n", "header")
+        for reason in preview.risk_reasons:
+            self.impact_view.insert("end", f"- {reason}\n", "reason")
+
+        s = preview.summary
+        self.impact_view.insert("end", "\n[ SUMMARY ]\n", "header")
+        self.impact_view.insert("end", f"Files: {s.total_files} ({s.files_created} created, {s.files_modified} modified, {s.files_deleted} deleted)\n")
+        self.impact_view.insert("end", f"Estimated LOC change: {s.estimated_loc_change}\n")
+
+        self.impact_view.insert("end", "\n[ FILE DIFFS ]\n", "header")
+        for diff in preview.file_diffs:
+            self.impact_view.insert("end", f"\n--- {diff.path} ({diff.change_type}) ---\n", "header")
+            self.impact_view.insert("end", diff.diff_preview + "\n")
+
+        self.impact_view.configure(state="disabled")
+        # Switch to tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Impact Preview" in self.notebook.tab(tabid, "text"):
+                self.notebook.select(i)
+                break
+
     def _handle_ui_message(self, message: str, payload: object) -> None:
+        if message == "impact_preview_ready":
+            preview, approval_state = payload
+            self.pending_approval_state = approval_state
+            self._refresh_impact_view(preview, approval_state)
+            if approval_state.approval_required:
+                self.approve_impact_btn.state(["!disabled"])
+                self.reject_impact_btn.state(["!disabled"])
+            return
+        if message == "impact_rejected":
+             # Handle rejection if needed
+             return
         if message == "tree_loaded":
             self._render_tree(payload)  # type: ignore[arg-type]
             self.log_event("Project tree refreshed.")
