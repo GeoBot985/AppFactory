@@ -922,7 +922,18 @@ class AgentWorkbenchApp:
         # 1. Spec
         add_section("SPEC")
         if slot.spec_text.strip():
-            self.slot_detail_view.insert("end", slot.spec_text + "\n")
+            is_dsl = self.spec_parser.dsl_parser.is_dsl_spec(slot.spec_text)
+            mode_tag = "success" if is_dsl else "dim"
+            add_field("Mode", "DSL" if is_dsl else "Legacy", mode_tag)
+
+            if is_dsl:
+                _, validation = self.spec_parser.dsl_parser.parse(slot.spec_text)
+                if not validation.is_valid:
+                    self.slot_detail_view.insert("end", "\n[ DSL VALIDATION ERRORS ]\n", "error")
+                    for err in validation.errors:
+                        self.slot_detail_view.insert("end", f"- {err['field']}: {err['error']}\n", "error")
+
+            self.slot_detail_view.insert("end", "\n" + slot.spec_text + "\n")
         else:
             self.slot_detail_view.insert("end", "(no spec text)\n", "dim")
 
@@ -1318,7 +1329,35 @@ class AgentWorkbenchApp:
                 update_stage("Spec Intake", "running")
                 if not slot.spec_text.strip():
                     raise RuntimeError("no spec")
-                update_stage("Spec Intake", "completed")
+
+                is_dsl = self.spec_parser.dsl_parser.is_dsl_spec(slot.spec_text)
+
+                spec_data = None
+                if is_dsl:
+                    spec_data, validation = self.spec_parser.dsl_parser.parse(slot.spec_text)
+                    if not validation.is_valid:
+                         raise ValueError(f"DSL Validation Failed: {validation.errors[0]['error']}")
+                else:
+                    # Check if it looks like YAML but failed is_dsl_spec
+                    try:
+                        import yaml
+                        potential_yaml = yaml.safe_load(slot.spec_text)
+                        if isinstance(potential_yaml, dict) and ("spec_version" in potential_yaml or "tasks" in potential_yaml):
+                             # User intended DSL but it's malformed
+                             _, validation = self.spec_parser.dsl_parser.parse(slot.spec_text)
+                             if not validation.is_valid:
+                                  raise ValueError(f"Malformed DSL: {validation.errors[0]['error']}")
+                    except:
+                        pass
+
+                    # NLP spec. By default, SPEC 012 says no fallback unless explicitly allowed.
+                    # But where would that allowance be? Only in a DSL spec.
+                    # If it's a PURE NLP spec, we have no settings block.
+                    # So we assume Legacy is ALLOWED for pure NLP unless a global rule exists.
+                    pass
+
+                self.ui_queue.put(("queue_log", f"Mode detected: {'DSL' if is_dsl else 'Legacy'}"))
+                update_stage("Spec Intake", "completed", f"mode={'dsl' if is_dsl else 'legacy'}")
                 check_stop()
 
                 # 2. Spec Parsing
@@ -1342,12 +1381,20 @@ class AgentWorkbenchApp:
                 file_ops = FileOpsService(self.current_folder)
                 executor = TaskExecutorService(file_ops, self.ollama_service, self.process_service, model_name, run_folder=run_folder)
 
+                # Settings
+                fail_fast = True
+                if spec_data and "settings" in spec_data:
+                    fail_fast = spec_data["settings"].get("fail_fast", True)
+
                 all_changes = []
                 for task in tasks:
-                    self.ui_queue.put(("queue_log", f"Executing task: {task.type.value} {task.target}"))
+                    self.ui_queue.put(("queue_log", f"Executing task: {task.id} ({task.type.value} {task.target})"))
                     result = executor.execute(task)
                     if not result.success:
-                        raise RuntimeError(f"Task failed: {result.message}")
+                        if fail_fast:
+                            raise RuntimeError(f"Task {task.id} failed: {result.message}")
+                        else:
+                            self.ui_queue.put(("queue_log", f"Task {task.id} failed (continuing): {result.message}"))
                     all_changes.extend(result.changes)
 
                 update_stage("Task Execution", "completed", f"changes={len(all_changes)}")
@@ -1370,7 +1417,27 @@ class AgentWorkbenchApp:
 
                 # 5. Logging / Audit
                 update_stage("Logging / Audit", "running")
-                self.audit_log_service.log_artifact(run_folder, "spec.txt", slot.spec_text)
+                # SPEC 012 Requirement 10: Store original and normalized spec
+                if is_dsl:
+                    self.audit_log_service.log_artifact(run_folder, "spec.yaml", slot.spec_text)
+                    normalized_tasks = []
+                    for t in tasks:
+                        normalized_tasks.append({
+                            "id": t.id,
+                            "type": t.type.value,
+                            "target": t.target,
+                            "depends_on": t.depends_on,
+                            "constraints": json.loads(t.constraints) if t.constraints else None
+                        })
+                    normalized_spec = {
+                        "spec_id": data.get("spec_id"),
+                        "spec_version": data.get("spec_version"),
+                        "tasks": normalized_tasks
+                    }
+                    self.audit_log_service.log_artifact(run_folder, "spec_normalized.json", json.dumps(normalized_spec, indent=2))
+                else:
+                    self.audit_log_service.log_artifact(run_folder, "spec.txt", slot.spec_text)
+
                 self.audit_log_service.log_artifact(run_folder, "tasks.json", [{"id": t.id, "type": t.type.value, "target": t.target, "status": t.status.value} for t in tasks])
 
                 # Simplified log for audit

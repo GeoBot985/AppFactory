@@ -28,6 +28,7 @@ class Task:
     target: str  # file_path or command
     content: Optional[str] = None
     constraints: Optional[str] = None
+    depends_on: list[str] = field(default_factory=list)
     status: TaskStatus = TaskStatus.PENDING
     started_at: str = ""
     completed_at: str = ""

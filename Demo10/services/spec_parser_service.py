@@ -1,12 +1,121 @@
 from __future__ import annotations
 
 import re
+import json
 from services.task_service import Task, TaskType
 from editing.models import OperationType, AnchorType, MatchMode
+from services.dsl_parser import DSLParser
+from services.planner import Planner
 
 
 class SpecParserService:
+    def __init__(self):
+        self.dsl_parser = DSLParser()
+        self.planner = Planner()
+
     def parse(self, spec_text: str) -> list[Task]:
+        if self.dsl_parser.is_dsl_spec(spec_text):
+            return self._parse_dsl(spec_text)
+
+        # Mode switch: if input is NOT valid YAML, we might allow legacy fallback
+        # But wait, how do we know if legacy is allowed if we haven't parsed settings?
+        # The spec says: If input is NOT valid YAML: route to old parser if settings: allow_legacy_fallback: true
+        # This implies we look for YAML-like structure first.
+
+        # If it looks like it's trying to be DSL but failed validation, we SHOULD NOT fallback.
+        # If it's pure NLP, we only fallback if it doesn't violate a "global" strictness or if explicitly allowed.
+        # For v1, we'll follow the "route to old parser if NOT valid YAML" logic,
+        # but we need to check if the user intended DSL.
+
+        return self._parse_legacy(spec_text)
+
+    def _parse_dsl(self, spec_text: str) -> list[Task]:
+        data, validation = self.dsl_parser.parse(spec_text)
+        if not validation.is_valid:
+            error_msgs = [f"{e['field']}: {e['error']}" for e in validation.errors]
+            raise ValueError(f"DSL Validation Failed:\n" + "\n".join(error_msgs))
+
+        settings = data.get("settings", {})
+        # If it's valid DSL but settings: allow_legacy_fallback: false (default), then we are good.
+        # Actually the spec says "NO fallback to legacy parsing unless explicitly enabled"
+
+        ordered_tasks_data = self.planner.build_task_graph(data)
+
+        tasks: list[Task] = []
+        for t_data in ordered_tasks_data:
+            t_type_str = t_data["type"]
+            t_id = t_data["id"]
+            depends_on = t_data.get("depends_on", [])
+
+            # Map DSL type to TaskType
+            if t_type_str == "run_command":
+                tasks.append(Task(id=t_id, type=TaskType.RUN, target=t_data["command"], depends_on=depends_on))
+            elif t_type_str == "validate":
+                tasks.append(Task(id=t_id, type=TaskType.VALIDATE, target=t_data.get("mode", "python"), depends_on=depends_on))
+            elif t_type_str == "create_file":
+                 tasks.append(Task(id=t_id, type=TaskType.CREATE, target=t_data["file"], content=t_data.get("content"), depends_on=depends_on))
+            elif t_type_str == "delete_file":
+                 tasks.append(Task(id=t_id, type=TaskType.DELETE, target=t_data["file"], depends_on=depends_on))
+            else:
+                # Precision Edit tasks
+                instr_data = self._map_dsl_to_instr(t_data)
+                tasks.append(Task(
+                    id=t_id,
+                    type=TaskType.MODIFY,
+                    target=t_data["file"],
+                    content=t_data.get("content"),
+                    constraints=json.dumps(instr_data),
+                    depends_on=depends_on
+                ))
+        return tasks
+
+    def _map_dsl_to_instr(self, t_data: dict) -> dict:
+        t_type = t_data["type"]
+        op_map = {
+            "ensure_import": OperationType.ENSURE_IMPORT,
+            "ensure_function": OperationType.ENSURE_FUNCTION,
+            "ensure_class": OperationType.ENSURE_CLASS,
+            "replace_block": OperationType.REPLACE_BLOCK,
+            "insert_before": OperationType.INSERT_BEFORE,
+            "insert_after": OperationType.INSERT_AFTER,
+            "append_if_missing": OperationType.APPEND_IF_MISSING,
+            "delete_block": OperationType.DELETE_BLOCK
+        }
+
+        anchor_map = {
+            "function": AnchorType.FUNCTION,
+            "class": AnchorType.CLASS,
+            "import": AnchorType.IMPORT,
+            "line_match": AnchorType.LINE_MATCH,
+            "region_marker": AnchorType.REGION_MARKER
+        }
+
+        op = op_map.get(t_type, OperationType.REPLACE_BLOCK)
+
+        anchor_type = AnchorType.FILE_END
+        anchor_value = ""
+
+        if t_type == "ensure_import":
+            anchor_type = AnchorType.IMPORT
+            anchor_value = t_data["import"]
+        elif t_type == "ensure_function":
+            anchor_type = AnchorType.FUNCTION
+            anchor_value = t_data["function_name"]
+        elif t_type == "ensure_class":
+            anchor_type = AnchorType.CLASS
+            anchor_value = t_data["class_name"]
+        elif "target" in t_data:
+            target = t_data["target"]
+            anchor_type = anchor_map.get(target["type"], AnchorType.LINE_MATCH)
+            anchor_value = target["value"]
+
+        return {
+            "operation": op.value,
+            "anchor_type": anchor_type.value,
+            "anchor_value": anchor_value
+        }
+
+    def _parse_legacy(self, spec_text: str) -> list[Task]:
         tasks: list[Task] = []
         lines = spec_text.splitlines()
 
@@ -89,12 +198,6 @@ class SpecParserService:
         return tasks
 
     def _create_modify_task(self, tasks, target, op, anchor_type, anchor_value):
-        # We store precision info in metadata or constraints for now,
-        # but Task object might need expansion.
-        # For simplicity, let's use a structured string in 'constraints' or a new field.
-        # SPEC 011 says Task Executor must use EditInstruction.
-        # Let's use a JSON-like string in constraints for internal passing.
-        import json
         instr_data = {
             "operation": op.value,
             "anchor_type": anchor_type.value,
