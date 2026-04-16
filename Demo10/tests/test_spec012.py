@@ -83,7 +83,7 @@ tasks:
     type: run_command
     command: "echo a"
 """
-        tasks = self.spec_service.parse(spec)
+        tasks, _ = self.spec_service.parse(spec)
         self.assertEqual(len(tasks), 2)
         self.assertEqual(tasks[0].id, "a")
         self.assertEqual(tasks[1].id, "b")
