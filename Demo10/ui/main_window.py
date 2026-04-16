@@ -60,6 +60,10 @@ from runtime_profiles.fingerprints import RuntimeFingerprintService
 from runtime_profiles.commands import CommandExecutor, CommandResult
 from runtime_profiles.drift import DriftDetector
 
+from ops.ops_service import OpsService
+from ops.health import HealthEvaluator
+from ops.rebuild import RebuildService
+
 
 class Tooltip:
     def __init__(self, widget: tk.Widget, text: str):
@@ -127,6 +131,10 @@ class AgentWorkbenchApp:
         self.resume_service = ResumeService(Path.cwd(), self.ledger_service)
         self.replay_service = ReplayService(Path.cwd(), self.ledger_service, self.audit_log_service)
         self.consistency_checker = ConsistencyChecker(Path.cwd(), self.ledger_service)
+
+        self.ops_service = OpsService(Path.cwd())
+        self.health_evaluator = HealthEvaluator(Path.cwd())
+        self.rebuild_service = RebuildService(Path.cwd())
 
         self.policy_config = PolicyConfig()
         self.risk_classifier = RiskClassifier(self.policy_config)
@@ -509,6 +517,7 @@ class AgentWorkbenchApp:
         restore_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         approvals_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         slot_detail_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        ops_console_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         notebook.add(viewer_frame, text="File Viewer")
         notebook.add(prompt_frame, text="Prompt Preview")
         notebook.add(response_frame, text="Latest Response")
@@ -520,9 +529,10 @@ class AgentWorkbenchApp:
         notebook.add(restore_frame, text="Restore Result")
         notebook.add(approvals_frame, text="Policy & Approvals")
         notebook.add(slot_detail_frame, text="Slot Detail")
+        notebook.add(ops_console_frame, text="Operations Console")
         self.notebook = notebook
 
-        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, ops_console_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -772,6 +782,9 @@ class AgentWorkbenchApp:
         self.slot_detail_view.configure(state="disabled")
 
         self.slot_detail_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 11, "bold"))
+
+        # Operations Console Tab
+        self._build_ops_console(ops_console_frame)
         self.slot_detail_view.tag_configure("label", foreground="#9cdcfe")
         self.slot_detail_view.tag_configure("value", foreground="#d4d4d4")
         self.slot_detail_view.tag_configure("error", foreground="#f44747")
@@ -857,6 +870,228 @@ class AgentWorkbenchApp:
         self.output_text.configure(yscrollcommand=output_scroll.set, state="disabled")
         self.output_text.grid(row=0, column=0, sticky="nsew")
         output_scroll.grid(row=0, column=1, sticky="ns")
+
+    def _build_ops_console(self, parent: ttk.Frame) -> None:
+        parent.rowconfigure(0, weight=0)
+        parent.rowconfigure(1, weight=1)
+        parent.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(parent, style="Panel.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(header, text="Operations Console", font=("Segoe UI", 12, "bold"), style="Panel.TLabel").pack(side="left")
+
+        refresh_btn = ttk.Button(header, text="Refresh All", command=self._refresh_ops_console)
+        refresh_btn.pack(side="right", padx=5)
+
+        rebuild_btn = ttk.Button(header, text="Rebuild Indices", command=self._rebuild_ops_indices)
+        rebuild_btn.pack(side="right")
+
+        self.ops_notebook = ttk.Notebook(parent)
+        self.ops_notebook.grid(row=1, column=0, sticky="nsew")
+
+        self.ops_dashboard_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
+        self.ops_queues_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
+        self.ops_runs_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
+        self.ops_approvals_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
+        self.ops_regression_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
+        self.ops_recovery_frame = ttk.Frame(self.ops_notebook, style="Panel.TFrame", padding=4)
+
+        self.ops_notebook.add(self.ops_dashboard_frame, text="Dashboard")
+        self.ops_notebook.add(self.ops_queues_frame, text="Queues")
+        self.ops_notebook.add(self.ops_runs_frame, text="Runs")
+        self.ops_notebook.add(self.ops_approvals_frame, text="Approvals")
+        self.ops_notebook.add(self.ops_regression_frame, text="Regression")
+        self.ops_notebook.add(self.ops_recovery_frame, text="Recovery & Ledger")
+
+        self._build_ops_dashboard(self.ops_dashboard_frame)
+        self._build_ops_queues(self.ops_queues_frame)
+        self._build_ops_runs(self.ops_runs_frame)
+        self._build_ops_approvals(self.ops_approvals_frame)
+        self._build_ops_regression(self.ops_regression_frame)
+        self._build_ops_recovery(self.ops_recovery_frame)
+
+    def _build_ops_dashboard(self, parent: ttk.Frame) -> None:
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(1, weight=1)
+
+        self.dashboard_view = tk.Text(
+            parent,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            font=("Consolas", 11),
+            relief="flat",
+        )
+        self.dashboard_view.grid(row=0, column=0, sticky="nsew")
+        self.dashboard_view.configure(state="disabled")
+
+        self.dashboard_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 12, "bold"))
+        self.dashboard_view.tag_configure("banner", background="#4b1f1f", foreground="#f44747", font=("Consolas", 11, "bold"))
+        self.dashboard_view.tag_configure("label", foreground="#9cdcfe")
+        self.dashboard_view.tag_configure("value", foreground="#d4d4d4")
+        self.dashboard_view.tag_configure("ok", foreground="#6a9955")
+        self.dashboard_view.tag_configure("warn", foreground="#d7ba7d")
+        self.dashboard_view.tag_configure("fail", foreground="#f44747")
+
+    def _build_ops_queues(self, parent: ttk.Frame) -> None:
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        self.ops_queues_list = ttk.Treeview(parent, columns=("id", "status", "slots", "created", "age"), show="headings")
+        self.ops_queues_list.heading("id", text="Queue ID")
+        self.ops_queues_list.heading("status", text="Status")
+        self.ops_queues_list.heading("slots", text="Slots (C/F/T)")
+        self.ops_queues_list.heading("created", text="Created At")
+        self.ops_queues_list.heading("age", text="Age (min)")
+        self.ops_queues_list.grid(row=0, column=0, sticky="nsew")
+
+    def _build_ops_runs(self, parent: ttk.Frame) -> None:
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        self.ops_runs_list = ttk.Treeview(parent, columns=("id", "spec", "state", "risk", "duration", "slot"), show="headings")
+        self.ops_runs_list.heading("id", text="Run ID")
+        self.ops_runs_list.heading("spec", text="Spec ID")
+        self.ops_runs_list.heading("state", text="State")
+        self.ops_runs_list.heading("risk", text="Risk")
+        self.ops_runs_list.heading("duration", text="Dur (s)")
+        self.ops_runs_list.heading("slot", text="Slot")
+        self.ops_runs_list.grid(row=0, column=0, sticky="nsew")
+        self.ops_runs_list.bind("<Double-1>", self._on_ops_run_double_click)
+
+    def _on_ops_run_double_click(self, _event):
+        selected = self.ops_runs_list.selection()
+        if not selected: return
+        values = self.ops_runs_list.item(selected[0])["values"]
+        slot_idx_str = values[5]
+        try:
+            idx = int(slot_idx_str)
+            self.select_slot(idx)
+            # Switch to Slot Detail tab
+            for i, tabid in enumerate(self.notebook.tabs()):
+                if "Slot Detail" in self.notebook.tab(tabid, "text"):
+                    self.notebook.select(i)
+                    break
+        except: pass
+
+    def _build_ops_approvals(self, parent: ttk.Frame) -> None:
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        self.ops_appr_list = ttk.Treeview(parent, columns=("id", "entity", "risk", "status", "age"), show="headings")
+        self.ops_appr_list.heading("id", text="ID")
+        self.ops_appr_list.heading("entity", text="Entity")
+        self.ops_appr_list.heading("risk", text="Risk")
+        self.ops_appr_list.heading("status", text="Status")
+        self.ops_appr_list.heading("age", text="Age (min)")
+        self.ops_appr_list.grid(row=0, column=0, sticky="nsew")
+
+    def _build_ops_regression(self, parent: ttk.Frame) -> None:
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        self.ops_reg_list = ttk.Treeview(parent, columns=("suite", "status", "pass", "fail", "last_run"), show="headings")
+        self.ops_reg_list.heading("suite", text="Suite")
+        self.ops_reg_list.heading("status", text="Status")
+        self.ops_reg_list.heading("pass", text="Pass")
+        self.ops_reg_list.heading("fail", text="Fail")
+        self.ops_reg_list.heading("last_run", text="Last Run")
+        self.ops_reg_list.grid(row=0, column=0, sticky="nsew")
+
+    def _build_ops_recovery(self, parent: ttk.Frame) -> None:
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+        self.ops_recovery_view = tk.Text(parent, bg="#1b1b1c", fg="#d4d4d4", font=("Consolas", 10))
+        self.ops_recovery_view.grid(row=0, column=0, sticky="nsew")
+
+    def _refresh_ops_console(self) -> None:
+        self.log_event("Refreshing Operations Console...")
+        self._refresh_ops_dashboard()
+        self._refresh_ops_queues()
+        self._refresh_ops_runs()
+        self._refresh_ops_approvals()
+        self._refresh_ops_regression()
+        self._refresh_ops_recovery()
+
+    def _rebuild_ops_indices(self) -> None:
+        self.log_event("Rebuilding Operations Indices...")
+        self.rebuild_service.rebuild_all()
+        self._refresh_ops_console()
+
+    def _refresh_ops_dashboard(self) -> None:
+        summary = self.ops_service._load_json("dashboard_summary.json", {})
+        health = self.ops_service._load_json("health_status.json", {})
+
+        self.dashboard_view.configure(state="normal")
+        self.dashboard_view.delete("1.0", "end")
+
+        self.dashboard_view.insert("end", "SYSTEM HEALTH\n", "header")
+        overall = health.get("status", "UNKNOWN")
+        tag = "ok" if overall == "OK" else "warn" if overall == "WARN" else "fail"
+        self.dashboard_view.insert("end", f"OVERALL STATUS: {overall}\n\n", tag)
+
+        banners = summary.get("banners", [])
+        if banners:
+            self.dashboard_view.insert("end", "ACTIVE ALERTS:\n", "header")
+            for b in banners:
+                self.dashboard_view.insert("end", f" [! {b} ] ", "banner")
+            self.dashboard_view.insert("end", "\n\n")
+
+        self.dashboard_view.insert("end", "METRICS SUMMARY\n", "header")
+        metrics = [
+            ("Active Queues", summary.get("active_queues", 0)),
+            ("Running Runs", summary.get("running_runs", 0)),
+            ("Approval Pending", summary.get("approval_pending_runs", 0)),
+            ("Interrupted Runs", summary.get("interrupted_runs", 0)),
+            ("Failing Regressions", summary.get("failing_regression_suites", 0)),
+            ("Ledger Issues", summary.get("ledger_issues", 0)),
+        ]
+        for label, val in metrics:
+            self.dashboard_view.insert("end", f"{label:20}: ", "label")
+            self.dashboard_view.insert("end", f"{val}\n", "value")
+
+        self.dashboard_view.configure(state="disabled")
+
+    def _refresh_ops_queues(self) -> None:
+        self.ops_queues_list.delete(*self.ops_queues_list.get_children())
+        data = self.ops_service._load_json("queue_index.json", [])
+        for q in data:
+            slots_str = f"{q.get('slots_completed')}/{q.get('slots_failed')}/{q.get('slots_total')}"
+            self.ops_queues_list.insert("", "end", values=(q.get("queue_id"), q.get("status"), slots_str, q.get("created_at"), q.get("age_minutes")))
+
+    def _refresh_ops_runs(self) -> None:
+        self.ops_runs_list.delete(*self.ops_runs_list.get_children())
+        data = self.ops_service._load_json("run_index.json", [])
+        for r in data:
+            self.ops_runs_list.insert("", "end", values=(r.get("run_id"), r.get("spec_id"), r.get("state"), r.get("risk_class", "-"), r.get("duration_seconds", "-"), r.get("slot_id", "-")))
+
+    def _refresh_ops_approvals(self) -> None:
+        self.ops_appr_list.delete(*self.ops_appr_list.get_children())
+        data = self.ops_service._load_json("approval_index.json", [])
+        for a in data:
+            self.ops_appr_list.insert("", "end", values=(a.get("approval_id"), a.get("entity_id"), a.get("risk_class"), a.get("status"), a.get("age_minutes")))
+
+    def _refresh_ops_regression(self) -> None:
+        self.ops_reg_list.delete(*self.ops_reg_list.get_children())
+        data = self.ops_service._load_json("regression_index.json", [])
+        for reg in data:
+            self.ops_reg_list.insert("", "end", values=(reg.get("suite_id"), reg.get("last_status"), reg.get("passing_cases"), reg.get("failing_cases"), reg.get("last_run_at")))
+
+    def _refresh_ops_recovery(self) -> None:
+        data = self.ops_service._load_json("recovery_index.json", [])
+        health = self.ops_service._load_json("health_status.json", {})
+        self.ops_recovery_view.configure(state="normal")
+        self.ops_recovery_view.delete("1.0", "end")
+        self.ops_recovery_view.insert("end", "INTERRUPTED / RECOVERABLE RUNS\n", "header")
+        if not data:
+            self.ops_recovery_view.insert("end", " No interrupted runs detected.\n\n", "ok")
+        else:
+            for item in data:
+                self.ops_recovery_view.insert("end", f" - Run: {item.get('run_id')}\n", "label")
+                self.ops_recovery_view.insert("end", f"   Class: {item.get('classification')}\n", "value")
+                self.ops_recovery_view.insert("end", f"   State: {item.get('last_durable_state')}\n", "value")
+                self.ops_recovery_view.insert("end", f"   Action: {item.get('action_options')}\n\n", "warn")
+
+        self.ops_recovery_view.insert("end", "\nHEALTH & DURABILITY STATUS\n", "header")
+        self.ops_recovery_view.insert("end", json.dumps(health, indent=2))
+        self.ops_recovery_view.configure(state="disabled")
 
     def _build_status_bar(self, parent: ttk.Frame) -> None:
         status = ttk.Frame(parent, style="Panel.TFrame", padding=(8, 6))
