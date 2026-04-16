@@ -14,6 +14,8 @@ class ReRunRequest:
     rerun_type: ReRunType
     start_task_id: Optional[str] = None
     reason: str = ""
+    rerun_depth: int = 0
+    task_id: Optional[str] = None # Added for Policy Engine compatibility
 
 @dataclass
 class ReRunPlan:

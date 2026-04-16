@@ -3,18 +3,21 @@ import uuid
 import time
 import hashlib
 import json
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from services.draft_spec.models import DraftSpec
 from .models import CompiledPlan, CompileReport, CompileStatus, CompileDiagnostic, DiagnosticSeverity
 from .validator import CompilerValidator
 from .lowering import TaskLowerer
 from .dependency_graph import DependencyGraphNormalizer
+from services.policy.engine import PolicyEngine
+from services.policy.models import PolicyConfig, PolicyDomain, PolicyDecision
 
 class DraftSpecCompiler:
-    def __init__(self):
+    def __init__(self, policy_config: Optional[PolicyConfig] = None):
         self.validator = CompilerValidator()
         self.lowerer = TaskLowerer()
         self.graph_normalizer = DependencyGraphNormalizer()
+        self.policy_engine = PolicyEngine(policy_config or PolicyConfig())
 
     def compile(self, draft: DraftSpec) -> Tuple[CompiledPlan, CompileReport]:
         diagnostics = self.validator.validate(draft)
@@ -48,13 +51,48 @@ class DraftSpecCompiler:
             )
             return self._empty_plan(draft, report), report
 
+        # Integrate Policy Engine for COMPILE domain
+        policy_context = {
+            "files_touched": len({t.target for t in compiled_tasks if t.type != "RUN"}),
+            "new_files": len([t for t in compiled_tasks if t.type == "CREATE"]),
+            "uncertainties_count": len(draft.uncertainties)
+        }
+        policy_result = self.policy_engine.evaluate(PolicyDomain.COMPILE, f"draft_{draft.title}", policy_context)
+
+        if policy_result.decision == PolicyDecision.BLOCK.value:
+            for reason in policy_result.reasons:
+                errors.append(CompileDiagnostic(
+                    severity=DiagnosticSeverity.ERROR,
+                    code="policy_block",
+                    message=f"Policy Block: {reason}",
+                    field_path="policies"
+                ))
+        elif policy_result.decision == PolicyDecision.WARN.value:
+            for reason in policy_result.reasons:
+                warnings.append(CompileDiagnostic(
+                    severity=DiagnosticSeverity.WARNING,
+                    code="policy_warn",
+                    message=f"Policy Warning: {reason}",
+                    field_path="policies"
+                ))
+
+        if errors:
+            report = CompileReport(
+                status=CompileStatus.FAILED,
+                errors=errors,
+                warnings=warnings,
+                blocking_status=True
+            )
+            return self._empty_plan(draft, report), report
+
         report = CompileReport(
             status=CompileStatus.SUCCESS,
             errors=[],
             warnings=warnings,
             normalized_metadata={
                 "task_count": len(compiled_tasks),
-                "execution_steps": len(execution_order)
+                "execution_steps": len(execution_order),
+                "policy_decision": policy_result.decision
             }
         )
 

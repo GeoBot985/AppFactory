@@ -6,6 +6,9 @@ from pathlib import Path
 
 from services.bundle_service import BundleFile, WorkingSetBundle
 from services.bundle_edit_service import CandidateBundle, CandidateFile
+from services.policy.engine import PolicyEngine
+from services.policy.models import PolicyConfig, PolicyDomain, PolicyDecision
+from typing import Optional
 
 
 @dataclass
@@ -80,6 +83,9 @@ class RestoreResult:
 
 
 class RestoreService:
+    def __init__(self, policy_config: Optional[PolicyConfig] = None):
+        self.policy_engine = PolicyEngine(policy_config or PolicyConfig())
+
     def compute_bundle_preview(self, project_root: str | Path, bundle: WorkingSetBundle) -> RestorePreview:
         root = Path(project_root).expanduser().resolve()
         files_preview: list[FilePreview] = []
@@ -168,6 +174,26 @@ class RestoreService:
     def restore_bundle(self, project_root: str | Path, bundle: WorkingSetBundle) -> RestoreResult:
         root = Path(project_root).expanduser().resolve()
         started = self._now()
+
+        # Policy Check for RESTORE
+        policy_context = {
+            "has_drift": False, # TODO: determine drift
+            "project_root": str(root)
+        }
+        policy_result = self.policy_engine.evaluate(PolicyDomain.RESTORE, "restore_op", policy_context)
+        if policy_result.decision == PolicyDecision.BLOCK.value:
+            return RestoreResult(
+                project_root=str(root),
+                started_at=started,
+                completed_at=self._now(),
+                status="blocked_by_policy",
+                attempted_file_count=0,
+                written_file_count=0,
+                failed_file_count=0,
+                skipped_file_count=0,
+                failure_reasons=policy_result.reasons
+            )
+
         written_files: list[str] = []
         failed_files: list[str] = []
         failure_reasons: list[str] = []

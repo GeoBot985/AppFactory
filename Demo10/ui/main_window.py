@@ -1831,25 +1831,47 @@ class AgentWorkbenchApp:
                        add_field("Promotion Risk (Est)", risk_data.get("promotion_risk_estimate", "-"))
                   except: pass
 
-             pre_exec_path = Path.cwd() / "runs" / slot.current_run_id / "policy_evaluation_pre_execution.json"
-             if pre_exec_path.exists():
+             # New Policy Engine logs
+             policy_log_path = Path.cwd() / "runtime_data" / "policy" / "logs" / slot.current_run_id / "policy_decisions.jsonl"
+             if policy_log_path.exists():
                   try:
-                       with pre_exec_path.open("r") as f:
-                            pe = json.load(f)
-                       add_field("Pre-Exec Decision", pe.get("decision", "-"))
-                       if pe.get("reason_codes"):
-                            add_field("Reasons", ", ".join(pe["reason_codes"]))
+                       with policy_log_path.open("r") as f:
+                            for line in f:
+                                 pe = json.loads(line)
+                                 domain = pe.get("policy_domain", "UNKNOWN")
+                                 decision = pe.get("decision", "-")
+                                 tag = "success" if decision == "allow" else "warn" if decision == "warn" else "error"
+                                 add_field(f"Policy [{domain}]", decision, tag)
+                                 if pe.get("reasons"):
+                                      add_field("  Reasons", ", ".join(pe["reasons"]), "dim")
+                                 if pe.get("policy_rules_triggered"):
+                                      add_field("  Rules", ", ".join(pe["policy_rules_triggered"]), "dim")
                   except: pass
+             else:
+                  # Fallback to legacy artifact names if logs don't exist yet
+                  pre_exec_path = Path.cwd() / "runs" / slot.current_run_id / "policy_evaluation_pre_execution.json"
+                  if pre_exec_path.exists():
+                       try:
+                            with pre_exec_path.open("r") as f:
+                                 pe = json.load(f)
+                            add_field("Pre-Exec Decision", pe.get("decision", "-"))
+                            if pe.get("reasons"):
+                                 add_field("Reasons", ", ".join(pe["reasons"]))
+                            elif pe.get("reason_codes"):
+                                 add_field("Reasons", ", ".join(pe["reason_codes"]))
+                       except: pass
 
-             pre_prom_path = Path.cwd() / "runs" / slot.current_run_id / "policy_evaluation_pre_promotion.json"
-             if pre_prom_path.exists():
-                  try:
-                       with pre_prom_path.open("r") as f:
-                            pe = json.load(f)
-                       add_field("Pre-Promote Decision", pe.get("decision", "-"))
-                       if pe.get("reason_codes"):
-                            add_field("Reasons", ", ".join(pe["reason_codes"]))
-                  except: pass
+                  pre_prom_path = Path.cwd() / "runs" / slot.current_run_id / "policy_evaluation_pre_promotion.json"
+                  if pre_prom_path.exists():
+                       try:
+                            with pre_prom_path.open("r") as f:
+                                 pe = json.load(f)
+                            add_field("Pre-Promote Decision", pe.get("decision", "-"))
+                            if pe.get("reasons"):
+                                 add_field("Reasons", ", ".join(pe["reasons"]))
+                            elif pe.get("reason_codes"):
+                                 add_field("Reasons", ", ".join(pe["reason_codes"]))
+                       except: pass
 
         # 0. Runtime Info (SPEC 015)
         add_section("RUNTIME ENVIRONMENT")
