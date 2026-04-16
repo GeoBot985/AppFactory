@@ -13,7 +13,7 @@ def select_next_strategy(config: AttemptConfig, history: list[AttemptRecord], fa
         return "abort_exhausted", "max attempts reached"
 
     if attempt_count == 1:
-        if failure_class in {"python_syntax_error", "python_indentation_error", "empty_file_after_patch", "patch_target_not_found", "patch_match_count_mismatch", "operation_schema_invalid", "batch_invalid_broken_import", "batch_invalid_removed_symbol_still_referenced", "batch_invalid_duplicate_symbol", "batch_invalid_missing_symbol"}:
+        if failure_class in {"python_syntax_error", "python_indentation_error", "empty_file_after_patch", "patch_target_not_found", "patch_match_count_mismatch", "operation_schema_invalid", "batch_invalid_broken_import", "batch_invalid_removed_symbol_still_referenced", "batch_invalid_duplicate_symbol", "batch_invalid_missing_symbol", "test_failure_assertion", "test_failure_exception", "import_error", "module_not_found", "runtime_error", "test_timeout", "test_execution_error"}:
             if failure_class.startswith("python") or failure_class == "empty_file_after_patch":
                 if config.allow_repair_after_validation_failure:
                     return "repair_generate", "targeted repair after validation failure"

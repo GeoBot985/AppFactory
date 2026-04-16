@@ -586,6 +586,7 @@ class TaskExecutorService:
             "files_failed": batch_result.files_failed,
             "validation_errors": batch_result.validation_errors,
             "batch_summary": asdict(batch_result.batch_summary) if batch_result.batch_summary else None,
+            "test_summary": asdict(batch_result.test_summary) if batch_result.test_summary else None,
             "results": [asdict(result) for result in batch_result.results],
             "ledger": [asdict(entry) for entry in batch_result.ledger],
         }

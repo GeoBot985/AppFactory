@@ -22,6 +22,11 @@ def classify_batch_failure(batch: FileOperationBatchResult) -> tuple[str, str]:
             return "policy_blocked_complex_batch", detail
         return status, detail
 
+    if batch.test_summary and batch.test_summary.status == "failed":
+        return batch.test_summary.failure_class or "test_execution_error", batch.test_summary.failure_detail or "tests failed"
+    if batch.test_summary and batch.test_summary.no_tests_found:
+        return "no_tests_found", batch.test_summary.failure_detail or "no tests detected"
+
     if not batch.results:
         return "unknown_validation_failure", "no mutation results"
 

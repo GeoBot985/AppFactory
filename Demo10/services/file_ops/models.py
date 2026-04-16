@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from services.batch.models import BatchValidationSummary
+from services.testing.runner import TestRunResult
 
 
 OperationType = Literal["create_file", "replace_file", "patch_file", "delete_file"]
@@ -122,11 +123,13 @@ class FileOperationBatchResult:
     files_passed: int = 0
     files_failed: int = 0
     batch_summary: BatchValidationSummary | None = None
+    test_summary: TestRunResult | None = None
 
     def to_summary(self) -> str:
         batch_status = self.batch_summary.batch_validation_status if self.batch_summary else "batch_unknown"
+        test_status = self.test_summary.status if self.test_summary else "tests_skipped"
         return (
             f"mode={self.mode}, created={self.created_count}, modified={self.modified_count}, "
             f"deleted={self.deleted_count}, unchanged={self.unchanged_count}, failed={self.failed_count}, "
-            f"validated={self.files_validated}, validation_failed={self.files_failed}, batch={batch_status}"
+            f"validated={self.files_validated}, validation_failed={self.files_failed}, batch={batch_status}, tests={test_status}"
         )

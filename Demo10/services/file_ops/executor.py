@@ -10,6 +10,7 @@ from services.file_ops.diff_preview import build_change_summary
 from services.file_ops.models import ExecutionMode, FileMutationResult, FileOperation, FileOperationBatchResult, MutationLedgerEntry
 from services.file_ops.patcher import apply_patch_blocks
 from services.file_ops.validator import validate_operation_plan
+from services.testing.runner import TestGateRunner
 
 
 class OperationError(Exception):
@@ -19,6 +20,9 @@ class OperationError(Exception):
 
 
 class FileOperationExecutor:
+    def __init__(self):
+        self.test_runner = TestGateRunner()
+
     def execute(self, project_root: str | Path, operations: list[FileOperation], mode: ExecutionMode = "apply") -> FileOperationBatchResult:
         root = Path(project_root).expanduser().resolve()
         validated, validation_errors = validate_operation_plan(root, operations)
@@ -60,6 +64,11 @@ class FileOperationExecutor:
         if batch.failed_count == 0:
             batch.batch_summary = validate_batch_coherence(root, [item.operation for item in validated], simulated_payloads)
             if batch.batch_summary.batch_validation_status.startswith("batch_invalid"):
+                batch.status = "failed"
+                batch.failed_count = max(batch.failed_count, 1)
+                return batch
+            batch.test_summary = self.test_runner.run(root, simulated_payloads)
+            if batch.test_summary.status == "failed":
                 batch.status = "failed"
                 batch.failed_count = max(batch.failed_count, 1)
                 return batch

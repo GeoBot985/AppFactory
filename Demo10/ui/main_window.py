@@ -1612,6 +1612,20 @@ class AgentWorkbenchApp:
                                 path = summary.get("path", "-")
                                 purpose = summary.get("purpose", "-")
                                 self.slot_detail_view.insert("end", f"    file: {path} [{purpose}]\n", "value")
+                        test_summary = data.get("test_summary")
+                        if test_summary:
+                            status = test_summary.get("status", "-")
+                            self.slot_detail_view.insert(
+                                "end",
+                                f"  tests: {status} total={test_summary.get('total_tests', 0)} passed={test_summary.get('tests_passed', 0)} failed={test_summary.get('tests_failed', 0)} skipped={test_summary.get('tests_skipped', 0)}\n",
+                                "value" if status.startswith("passed") else "error",
+                            )
+                            if test_summary.get("failure_class"):
+                                self.slot_detail_view.insert("end", f"    test failure: {test_summary.get('failure_class')} - {test_summary.get('failure_detail', '')}\n", "error")
+                            for failing_test in test_summary.get("failing_tests", [])[:8]:
+                                self.slot_detail_view.insert("end", f"    failing test: {failing_test}\n", "error")
+                            if test_summary.get("no_tests_found"):
+                                self.slot_detail_view.insert("end", "    no tests detected\n", "dim")
                         if data.get("files_validated", 0):
                             self.slot_detail_view.insert(
                                 "end",
