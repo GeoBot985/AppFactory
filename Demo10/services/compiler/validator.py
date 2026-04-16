@@ -47,11 +47,12 @@ class CompilerValidator:
             else:
                 task_ids.add(task.id)
 
-            if task.type == "unknown":
+            valid_types = ["RUN", "CREATE", "MODIFY", "DELETE", "generate_file"]
+            if task.type not in valid_types:
                 diagnostics.append(CompileDiagnostic(
                     severity=DiagnosticSeverity.ERROR,
                     code="unknown_task_type",
-                    message=f"Task {task.id} has an unknown type.",
+                    message=f"Task {task.id} has an unknown type: {task.type}",
                     field_path=f"{t_prefix}.type",
                     task_id=task.id
                 ))
