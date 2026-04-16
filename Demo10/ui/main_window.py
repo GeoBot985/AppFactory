@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import shutil
 import threading
 import time
 import tkinter as tk
@@ -25,6 +26,12 @@ from services.spec_parser_service import SpecParserService
 from services.task_executor_service import TaskExecutorService
 from services.validation_service import ValidationService
 from services.audit_log_service import AuditLogService
+
+from workspace.models import ExecutionMode, SourcePolicy, PromotionStatus
+from workspace.fingerprints import FingerprintService
+from workspace.snapshots import SnapshotService
+from workspace.promotion import PromotionService
+from workspace.conflicts import ConflictService
 
 from verification.engine import VerificationEngine
 from verification.outcome import OutcomeSynthesizer
@@ -92,6 +99,12 @@ class AgentWorkbenchApp:
         self.spec_parser = SpecParserService()
         self.validation_service = ValidationService()
         self.audit_log_service = AuditLogService(Path.cwd())
+
+        self.fingerprint_service = FingerprintService()
+        self.snapshot_service = SnapshotService(self.fingerprint_service)
+        self.promotion_service = PromotionService(self.fingerprint_service)
+        self.conflict_service = ConflictService(self.fingerprint_service)
+
         self.run_state_service = RunStateService()
         self.ui_queue: queue.Queue[tuple[str, object]] = queue.Queue()
 
@@ -924,6 +937,22 @@ class AgentWorkbenchApp:
             self.slot_detail_view.configure(state="disabled")
             return
 
+        # 0. Isolation Info (SPEC 014)
+        add_section("EXECUTION & ISOLATION")
+        # Since slot object doesn't have these, we'd need to extend it,
+        # but for now we can try to infer or just show what's in run_folder if we had it.
+        # Actually, let's just add minimal info.
+        is_dsl = self.spec_parser.dsl_parser.is_dsl_spec(slot.spec_text)
+        if is_dsl:
+            data, _ = self.spec_parser.dsl_parser.parse(slot.spec_text)
+            if data:
+                exec_data = data.get("execution", {})
+                add_field("Mode", exec_data.get("mode", "promote_on_success"))
+                add_field("Source Policy", exec_data.get("source_policy", "promoted_head"))
+
+                prom_data = data.get("promotion", {})
+                add_field("Promotion Enabled", str(prom_data.get("enabled", True)))
+
         # 1. Spec
         add_section("SPEC")
         if slot.spec_text.strip():
@@ -1323,6 +1352,14 @@ class AgentWorkbenchApp:
         self.ui_queue.put(("queue_log", "Queue started"))
         model_name = self.model_var.get().strip()
 
+        # SPEC 014: Capture initial canonical state for fixed_base policy
+        initial_canonical_path = self.current_folder
+        fixed_base_root = None
+        if any(slot.spec_text.strip() for slot in self.spec_queue.queue_slots):
+             # Create a hidden fixed base snapshot if any slot might need it
+             # For simplicity, we create it in the first run's folder or a dedicated one
+             pass
+
         for slot in self.spec_queue.queue_slots:
             if self.spec_queue.stop_requested:
                 if slot.status == "ready":
@@ -1367,8 +1404,9 @@ class AgentWorkbenchApp:
                 spec_data = None
                 all_changes = []
                 run_folder = None
+                execution_workspace = None
+                snapshot_manifest = None
 
-                v_engine = VerificationEngine(self.current_folder)
                 v_synthesizer = OutcomeSynthesizer()
                 v_report = None
                 failure_stage = None
@@ -1404,6 +1442,45 @@ class AgentWorkbenchApp:
                 update_stage("Spec Intake", "completed", f"mode={'dsl' if is_dsl else 'legacy'}")
                 check_stop()
 
+                # SPEC 014: Workspace Isolation & Snapshotting
+                run_folder = self.audit_log_service.create_run_folder(slot.slot_index + 1)
+
+                execution_mode = ExecutionMode.PROMOTE_ON_SUCCESS
+                source_policy = SourcePolicy.PROMOTED_HEAD
+
+                if spec_data:
+                    if "execution" in spec_data:
+                        if "mode" in spec_data["execution"]:
+                            execution_mode = ExecutionMode(spec_data["execution"]["mode"])
+                        if "source_policy" in spec_data["execution"]:
+                            source_policy = SourcePolicy(spec_data["execution"]["source_policy"])
+
+                source_workspace = self.current_folder
+                if source_policy == SourcePolicy.FIXED_BASE:
+                     if fixed_base_root is None:
+                          # Initialize fixed base snapshot on first need
+                          fixed_base_root = run_folder / "fixed_base_source"
+                          fixed_base_root.mkdir(parents=True, exist_ok=True)
+                          self.ui_queue.put(("queue_log", "Initializing fixed base snapshot..."))
+                          # Copy current canonical to fixed base root
+                          self.snapshot_service._copy_workspace(self.current_folder, fixed_base_root, [".git", "__pycache__", "runs", "regression_runs"])
+
+                     source_workspace = fixed_base_root
+                     self.ui_queue.put(("queue_log", "Using fixed base snapshot as source"))
+
+                self.ui_queue.put(("queue_log", f"Creating isolated workspace snapshot (Mode: {execution_mode.value})"))
+                snapshot_manifest = self.snapshot_service.create_execution_snapshot(
+                    run_id=run_folder.name,
+                    spec_id=spec_data.get("spec_id", "legacy") if spec_data else "legacy",
+                    source_workspace=source_workspace,
+                    execution_root=run_folder,
+                    mode=execution_mode
+                )
+                execution_workspace = Path(snapshot_manifest.execution_workspace)
+                self.ui_queue.put(("queue_log", f"Isolated workspace ready: {execution_workspace}"))
+
+                v_engine = VerificationEngine(execution_workspace)
+
                 # 2. Spec Parsing
                 update_stage("Spec Parsing", "running")
                 tasks, verification_data = self.spec_parser.parse(slot.spec_text)
@@ -1414,16 +1491,13 @@ class AgentWorkbenchApp:
                 update_stage("Spec Parsing", "completed", f"tasks={len(tasks)}")
                 check_stop()
 
-                # Pre-Execution: Create run folder for backups and artifacts
-                run_folder = self.audit_log_service.create_run_folder(slot.slot_index + 1)
-
                 # 3. Task Execution
                 update_stage("Task Execution", "running")
-                if not self.current_folder:
+                if not execution_workspace:
                     failure_stage = FailureStage.HARNESS_FAILURE
-                    raise RuntimeError("no project folder")
+                    raise RuntimeError("no execution workspace")
 
-                file_ops = FileOpsService(self.current_folder)
+                file_ops = FileOpsService(execution_workspace)
                 executor = TaskExecutorService(file_ops, self.ollama_service, self.process_service, model_name, run_folder=run_folder)
 
                 # Settings
@@ -1449,7 +1523,7 @@ class AgentWorkbenchApp:
                 update_stage("Structural Validation", "running")
                 for change in all_changes:
                     # Skip validation for files that were deleted
-                    target_path = self.current_folder / change
+                    target_path = execution_workspace / change
                     if not target_path.exists():
                         continue
 
@@ -1532,7 +1606,66 @@ class AgentWorkbenchApp:
 
                 for change in all_changes:
                     # This captures the FINAL state of the file
-                    self.audit_log_service.capture_file_change(run_folder, self.current_folder, change)
+                    self.audit_log_service.capture_file_change(run_folder, execution_workspace, change)
+
+                # SPEC 014: Promotion Gate
+                if execution_mode == ExecutionMode.PROMOTE_ON_SUCCESS:
+                    # Check status
+                    allowed_statuses = {"COMPLETED"}
+                    if spec_data and "promotion" in spec_data and "allow_on_status" in spec_data["promotion"]:
+                        allowed_statuses = set(spec_data["promotion"]["allow_on_status"])
+
+                    if run_summary.final_status.value in allowed_statuses:
+                        self.ui_queue.put(("queue_log", "Evaluating promotion gate..."))
+
+                        created, modified, deleted = self.promotion_service.detect_changes(snapshot_manifest.source_fingerprint, execution_workspace)
+                        files_to_promote = created + modified + deleted
+
+                        if files_to_promote:
+                            # Drift check
+                            self.ui_queue.put(("queue_log", "Checking for canonical drift..."))
+                            conflict_report = self.conflict_service.check_drift(snapshot_manifest, self.current_folder, files_to_promote)
+
+                            if conflict_report.promotion_status == PromotionStatus.BLOCKED:
+                                self.ui_queue.put(("queue_log", f"Promotion BLOCKED: {conflict_report.reason}"))
+                                # Update summary to reflect promotion failure
+                                run_summary.final_status = FinalOutcome.PARTIAL_FAILURE
+                                run_summary.failure_stage = FailureStage.PROMOTION_CONFLICT
+                                run_summary.summary += f"\nPromotion blocked by drift: {', '.join([c.path for c in conflict_report.conflicts])}"
+                                self.audit_log_service.log_artifact(run_folder, "promotion_conflict.json", {
+                                    "status": "blocked",
+                                    "conflicts": [{"path": c.path} for c in conflict_report.conflicts]
+                                })
+                            else:
+                                self.ui_queue.put(("queue_log", f"Promoting {len(files_to_promote)} changes to canonical workspace..."))
+                                promotion_report = self.promotion_service.promote(snapshot_manifest, execution_workspace, self.current_folder)
+                                self.audit_log_service.log_artifact(run_folder, "promotion_report.json", {
+                                    "status": promotion_report.promotion_status.value,
+                                    "files_created": promotion_report.files_created,
+                                    "files_modified": promotion_report.files_modified,
+                                    "files_deleted": promotion_report.files_deleted
+                                })
+                                self.ui_queue.put(("queue_log", "Promotion successful"))
+                        else:
+                            self.ui_queue.put(("queue_log", "No changes to promote"))
+                    else:
+                        self.ui_queue.put(("queue_log", f"Promotion skipped: status {run_summary.final_status.value} not in allowed set"))
+                elif execution_mode == ExecutionMode.DRY_RUN:
+                    self.ui_queue.put(("queue_log", "Dry run: promotion skipped"))
+
+                # SPEC 014: Retention Policy
+                keep_on_failure = True
+                keep_on_success = False
+                if spec_data and "retention" in spec_data:
+                    keep_on_failure = spec_data["retention"].get("keep_execution_workspace_on_failure", keep_on_failure)
+                    keep_on_success = spec_data["retention"].get("keep_execution_workspace_on_success", keep_on_success)
+
+                is_success = run_summary.final_status in {FinalOutcome.COMPLETED, FinalOutcome.COMPLETED_WITH_WARNINGS}
+                should_keep = keep_on_success if is_success else keep_on_failure
+
+                if not should_keep and execution_workspace and execution_workspace.exists():
+                    self.ui_queue.put(("queue_log", "Discarding isolated workspace..."))
+                    shutil.rmtree(execution_workspace)
 
                 self.ui_queue.put(("queue_log", f"Audit logs saved to: {run_folder}"))
                 update_stage("Logging / Audit", "completed")

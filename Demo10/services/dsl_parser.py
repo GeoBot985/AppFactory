@@ -16,8 +16,11 @@ class DSLParser:
             "insert_before", "insert_after", "append_if_missing", "delete_block",
             "run_command", "validate", "create_file", "update_file", "delete_file"
         }
-        self.root_allowed_keys = {"spec_version", "spec_id", "metadata", "settings", "tasks", "verification"}
+        self.root_allowed_keys = {"spec_version", "spec_id", "metadata", "settings", "tasks", "verification", "execution", "promotion", "retention"}
         self.settings_allowed_keys = {"fail_fast", "stop_on_error", "allow_legacy_fallback"}
+        self.execution_allowed_keys = {"mode", "source_policy"}
+        self.promotion_allowed_keys = {"enabled", "allow_on_status"}
+        self.retention_allowed_keys = {"keep_execution_workspace_on_failure", "keep_execution_workspace_on_success"}
         self.task_base_allowed_keys = {"id", "type", "depends_on", "file", "content", "mode", "import", "function_name", "class_name", "target", "command"}
         self.supported_check_types = {
             "file_exists", "file_not_exists", "contains_text", "not_contains_text",
@@ -78,6 +81,45 @@ class DSLParser:
                 for key in data["settings"]:
                     if key not in self.settings_allowed_keys:
                         errors.append({"field": f"settings.{key}", "error": f"Unknown setting: {key}"})
+
+        # Execution validation
+        if "execution" in data:
+            if not isinstance(data["execution"], dict):
+                errors.append({"field": "execution", "error": "Must be a dictionary"})
+            else:
+                for key in data["execution"]:
+                    if key not in self.execution_allowed_keys:
+                        errors.append({"field": f"execution.{key}", "error": f"Unknown execution field: {key}"})
+                if "mode" in data["execution"] and data["execution"]["mode"] not in {"promote_on_success", "dry_run", "verify_only", "regression_case"}:
+                    errors.append({"field": "execution.mode", "error": "Invalid execution mode"})
+                if "source_policy" in data["execution"] and data["execution"]["source_policy"] not in {"promoted_head", "fixed_base"}:
+                    errors.append({"field": "execution.source_policy", "error": "Invalid source policy"})
+
+        # Promotion validation
+        if "promotion" in data:
+            if not isinstance(data["promotion"], dict):
+                errors.append({"field": "promotion", "error": "Must be a dictionary"})
+            else:
+                for key in data["promotion"]:
+                    if key not in self.promotion_allowed_keys:
+                        errors.append({"field": f"promotion.{key}", "error": f"Unknown promotion field: {key}"})
+                if "allow_on_status" in data["promotion"]:
+                    if not isinstance(data["promotion"]["allow_on_status"], list):
+                         errors.append({"field": "promotion.allow_on_status", "error": "Must be a list"})
+                    else:
+                        valid_statuses = {"COMPLETED", "COMPLETED_WITH_WARNINGS"}
+                        for s in data["promotion"]["allow_on_status"]:
+                            if s not in valid_statuses:
+                                 errors.append({"field": "promotion.allow_on_status", "error": f"Invalid status for promotion: {s}"})
+
+        # Retention validation
+        if "retention" in data:
+            if not isinstance(data["retention"], dict):
+                errors.append({"field": "retention", "error": "Must be a dictionary"})
+            else:
+                for key in data["retention"]:
+                    if key not in self.retention_allowed_keys:
+                        errors.append({"field": f"retention.{key}", "error": f"Unknown retention field: {key}"})
 
         # Verification validation
         if "verification" in data:

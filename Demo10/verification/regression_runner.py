@@ -12,6 +12,12 @@ from .outcome import OutcomeSynthesizer
 from .baselines import BaselineComparator
 from .models import FailureStage, FinalOutcome, VerificationReport
 
+from workspace.models import ExecutionMode, SourcePolicy, PromotionStatus
+from workspace.fingerprints import FingerprintService
+from workspace.snapshots import SnapshotService
+from workspace.promotion import PromotionService
+from workspace.conflicts import ConflictService
+
 from services.spec_parser_service import SpecParserService
 from services.task_executor_service import TaskExecutorService
 from services.file_ops_service import FileOpsService
@@ -27,6 +33,11 @@ class RegressionRunner:
         self.v_engine = VerificationEngine(project_root)
         self.v_synthesizer = OutcomeSynthesizer()
         self.comparator = BaselineComparator()
+
+        self.fingerprint_service = FingerprintService()
+        self.snapshot_service = SnapshotService(self.fingerprint_service)
+        self.promotion_service = PromotionService(self.fingerprint_service)
+        self.conflict_service = ConflictService(self.fingerprint_service)
 
         self.spec_parser = SpecParserService()
         self.ollama = OllamaService()
@@ -69,6 +80,7 @@ class RegressionRunner:
     def run_case(self, case_dir: Path, update_baseline: bool = False) -> Dict[str, Any]:
         spec_path = case_dir / "spec.yaml"
         expected_path = case_dir / "expected_outcome.json"
+        fixture_workspace = case_dir / "fixture_workspace"
 
         if not spec_path.exists():
             return {"case": case_dir.name, "status": "fail", "error": "spec.yaml missing"}
@@ -80,11 +92,23 @@ class RegressionRunner:
             # 1. Parse
             tasks, verification_data = self.spec_parser.parse(spec_text)
 
-            # 2. Setup Run Folder
+            # 2. Setup Run Folder & Isolation (SPEC 014)
             run_folder = self.audit.create_run_folder(999) # 999 for regression
 
-            # 3. Execute
-            file_ops = FileOpsService(self.project_root)
+            # Use fixture if exists, else project_root
+            source_ws = fixture_workspace if fixture_workspace.exists() else self.project_root
+
+            snapshot_manifest = self.snapshot_service.create_execution_snapshot(
+                run_id=run_folder.name,
+                spec_id=case_dir.name,
+                source_workspace=source_ws,
+                execution_root=run_folder,
+                mode=ExecutionMode.REGRESSION_CASE
+            )
+            execution_workspace = Path(snapshot_manifest.execution_workspace)
+
+            # 3. Execute in isolated workspace
+            file_ops = FileOpsService(execution_workspace)
             executor = TaskExecutorService(file_ops, self.ollama, self.process, self.model_name, run_folder=run_folder)
 
             failure_stage = None
@@ -94,8 +118,9 @@ class RegressionRunner:
                     failure_stage = FailureStage.EDIT_FAILURE
                     break
 
-            # 4. Verify
-            v_report = self.v_engine.run(verification_data, tasks)
+            # 4. Verify (must use isolated path)
+            v_engine = VerificationEngine(execution_workspace)
+            v_report = v_engine.run(verification_data, tasks)
 
             # 5. Outcome Synthesis
             summary = self.v_synthesizer.synthesize(case_dir.name, tasks, v_report, failure_stage, None)
@@ -110,7 +135,16 @@ class RegressionRunner:
             if update_baseline:
                 with open(expected_path, "w") as f:
                     json.dump(actual_outcome, f, indent=2)
+
+                # Cleanup if success
+                if execution_workspace.exists():
+                    shutil.rmtree(execution_workspace)
+
                 return {"case": case_dir.name, "status": "pass", "message": "baseline updated"}
+
+            # Cleanup execution workspace after run (Regression cases are always hermetic/discarded)
+            if execution_workspace.exists():
+                shutil.rmtree(execution_workspace)
 
             if not expected_path.exists():
                  return {"case": case_dir.name, "status": "fail", "error": "expected_outcome.json missing"}
