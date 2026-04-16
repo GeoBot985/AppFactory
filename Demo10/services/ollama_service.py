@@ -41,6 +41,8 @@ class OllamaService:
         return OllamaRunSnapshot(model=model, prompt=prompt)
 
     def run_prompt_stream(self, snapshot: OllamaRunSnapshot):
+        import time
+        start_time = time.time()
         endpoint = f"{self.base_url}/api/generate"
         payload = json.dumps(
             {
@@ -78,10 +80,12 @@ class OllamaService:
                         yield {"type": "chunk", "text": chunk}
 
                     if data.get("done"):
+                        latency_ms = (time.time() - start_time) * 1000.0
                         yield {
                             "type": "done",
                             "done_reason": data.get("done_reason", "stop"),
                             "eval_count": data.get("eval_count"),
+                            "latency_ms": latency_ms
                         }
                         return
         except error.URLError as exc:

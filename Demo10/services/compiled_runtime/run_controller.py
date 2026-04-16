@@ -11,14 +11,17 @@ from .task_adapters import ADAPTER_MAP
 from .rerun_models import ReRunRequest, ReRunPlan
 from .rerun_planner import plan_rerun
 from .rerun_controller import ReRunController
+from metrics.metrics_service import MetricsService
 
 class CompiledPlanRunController:
     def __init__(self, executor: TaskExecutorService):
         self.executor = executor
-        self.dispatcher = CompiledTaskDispatcher(executor)
+        self.metrics = getattr(executor, "metrics", None) or MetricsService(getattr(executor, "run_folder", None))
+        self.dispatcher = CompiledTaskDispatcher(executor, self.metrics)
         self.rerun_controller = ReRunController(executor)
 
     def execute_compiled_plan(self, plan: CompiledPlan, run_id: str, context: Optional[SharedRunContext] = None) -> CompiledPlanRun:
+        self.metrics.start_run(run_id)
         # 1. Initialize Run State
         run = CompiledPlanRun(
             compiled_plan_id=plan.plan_id,
@@ -36,12 +39,17 @@ class CompiledPlanRunController:
             )
 
         # 2. Validate Adapter Coverage
-        if not self._validate_adapter_coverage(plan, run):
+        self.metrics.start_high_level_stage("compile") # Or intake stage?
+        valid = self._validate_adapter_coverage(plan, run)
+        self.metrics.end_high_level_stage("compile", success=valid)
+        if not valid:
             run.overall_status = CompiledRunStatus.FAILED
             run.completed_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+            self.metrics.end_run()
             return run
 
         # 3. Start Execution
+        self.metrics.start_high_level_stage("execution")
         run.overall_status = CompiledRunStatus.RUNNING
         if context is None:
             context = SharedRunContext()
@@ -83,7 +91,9 @@ class CompiledPlanRunController:
             else:
                  run.overall_status = CompiledRunStatus.SUCCESS
 
+        self.metrics.end_high_level_stage("execution", success=(run.overall_status == CompiledRunStatus.SUCCESS))
         run.completed_at = time.strftime("%Y-%m-%dT%H:%M:%S")
+        self.metrics.end_run()
         return run
 
     def _validate_adapter_coverage(self, plan: CompiledPlan, run: CompiledPlanRun) -> bool:
@@ -127,5 +137,11 @@ class CompiledPlanRunController:
                     run.tasks_skipped += 1
 
     def request_rerun(self, plan: CompiledPlan, base_run: CompiledPlanRun, request: ReRunRequest) -> CompiledPlanRun:
-        rerun_plan = plan_rerun(plan, base_run, request)
-        return self.rerun_controller.execute_rerun(plan, base_run, rerun_plan)
+        self.metrics.start_run(f"{base_run.run_id}_rerun_{int(time.time())}")
+        self.metrics.start_high_level_stage("rerun")
+        try:
+            rerun_plan = plan_rerun(plan, base_run, request)
+            return self.rerun_controller.execute_rerun(plan, base_run, rerun_plan)
+        finally:
+            self.metrics.end_high_level_stage("rerun")
+            self.metrics.end_run()

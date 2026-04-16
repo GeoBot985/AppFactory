@@ -223,6 +223,7 @@ class AgentWorkbenchApp:
         self.status_file_var = tk.StringVar(value="File: none")
         self.status_model_var = tk.StringVar(value="Model: unavailable")
         self.status_action_var = tk.StringVar(value="LLM: idle")
+        self.status_summary_var = tk.StringVar(value="Summary: -")
         self.command_var = tk.StringVar()
         self.write_mode_var = tk.StringVar(value="dry-run")
         self.active_slot_var = tk.StringVar(value="Active Slot: none")
@@ -937,6 +938,7 @@ class AgentWorkbenchApp:
         self.slot_detail_view.tag_configure("label", foreground="#9cdcfe")
         self.slot_detail_view.tag_configure("value", foreground="#d4d4d4")
         self.slot_detail_view.tag_configure("error", foreground="#f44747")
+        self.slot_detail_view.tag_configure("warn", foreground="#d7ba7d")
         self.slot_detail_view.tag_configure("success", foreground="#6a9955")
         self.slot_detail_view.tag_configure("dim", foreground="#808080")
 
@@ -1294,7 +1296,7 @@ class AgentWorkbenchApp:
     def _build_status_bar(self, parent: ttk.Frame) -> None:
         status = ttk.Frame(parent, style="Panel.TFrame", padding=(8, 6))
         status.grid(row=3, column=0, sticky="ew")
-        for idx in range(6):
+        for idx in range(7):
             status.columnconfigure(idx, weight=1)
 
         ttk.Label(status, textvariable=self.status_folder_var, style="Panel.TLabel").grid(row=0, column=0, sticky="w")
@@ -1302,7 +1304,8 @@ class AgentWorkbenchApp:
         ttk.Label(status, textvariable=self.status_model_var, style="Panel.TLabel").grid(row=0, column=2, sticky="w")
         ttk.Label(status, textvariable=self.status_selected_slot_var, style="Panel.TLabel").grid(row=0, column=3, sticky="w")
         ttk.Label(status, textvariable=self.active_slot_var, style="Panel.TLabel").grid(row=0, column=4, sticky="w")
-        ttk.Label(status, textvariable=self.status_action_var, style="Panel.TLabel").grid(row=0, column=5, sticky="w")
+        ttk.Label(status, textvariable=self.status_summary_var, style="Panel.TLabel").grid(row=0, column=5, sticky="w")
+        ttk.Label(status, textvariable=self.status_action_var, style="Panel.TLabel").grid(row=0, column=6, sticky="w")
 
     def log_event(self, message: str) -> None:
         entry = self.log_service.create_entry(message)
@@ -1536,11 +1539,21 @@ class AgentWorkbenchApp:
         self.translate_button.state(["disabled"])
         self.log_event("Draft translation started...")
 
+        # Spec 032: Translation metrics (standalone)
+        from metrics.metrics_service import MetricsService
+        m = MetricsService()
+        m.start_run("translation_task")
+        m.start_high_level_stage("translation")
+
         def worker():
             try:
                 draft = self.draft_translator.translate_request_to_draft_spec(model, request)
+                m.end_high_level_stage("translation")
+                m.end_run()
                 self.ui_queue.put(("translation_done", draft))
             except Exception as e:
+                m.end_high_level_stage("translation", success=False, error=str(e))
+                m.end_run()
                 self.ui_queue.put(("translation_failed", str(e)))
 
         threading.Thread(target=worker, daemon=True).start()
@@ -1761,6 +1774,35 @@ class AgentWorkbenchApp:
             self.slot_detail_view.configure(state="disabled")
             return
 
+        # 0. Metrics & Performance (SPEC 032)
+        add_section("METRICS & PERFORMANCE")
+        if slot.current_run_id:
+             metrics_path = Path.cwd() / "runs" / slot.current_run_id / "metrics" / "run_metrics.json"
+             if metrics_path.exists():
+                  try:
+                       with metrics_path.open("r") as f:
+                            rm = json.load(f)
+                       add_field("Total Duration", f"{rm.get('total_duration_ms', 0):.2f} ms")
+                       add_field("Total Attempts", str(rm.get("total_attempts", 0)))
+                       add_field("Model Calls", str(rm.get("total_model_calls", 0)))
+                       add_field("Avg Gen Latency", f"{rm.get('avg_generation_latency_ms', 0):.2f} ms")
+                       add_field("Files Changed", str(rm.get("total_files_changed", 0)))
+                       add_field("Lines Added", str(rm.get("total_lines_added", 0)))
+
+                       # High level stages
+                       self.slot_detail_view.insert("end", "\nHigh-Level Stages:\n", "label")
+                       for s_name, s_data in rm.get("high_level_stages", {}).items():
+                            self.slot_detail_view.insert("end", f"  {s_name:20}: {s_data.get('duration_ms', 0):.2f} ms\n", "value")
+
+                       # Set top-level summary
+                       self.status_summary_var.set(f"Dur: {rm.get('total_duration_ms', 0)/1000:.1f}s | Calls: {rm.get('total_model_calls', 0)} | Retry: {rm.get('total_attempts', 0) - (len(rm.get('tasks', {})))}")
+                  except: pass
+             else:
+                  add_field("Metrics", "Not available", "dim")
+                  self.status_summary_var.set("Summary: -")
+        else:
+             self.status_summary_var.set("Summary: -")
+
         # 0. Durability & Lineage (SPEC 016)
         add_section("DURABILITY & LINEAGE")
         if slot.current_run_id:
@@ -1887,6 +1929,15 @@ class AgentWorkbenchApp:
                                       self.slot_detail_view.insert("end", f"                 [IN]  {bundle.get('input_summary')[:80]}\n", "dim")
                                  if bundle.get("output_summary"):
                                       self.slot_detail_view.insert("end", f"                 [OUT] {bundle.get('output_summary')[:80]}\n", "dim")
+
+                                 # Task Metrics (SPEC 032)
+                                 tm = bundle.get("metrics")
+                                 if tm:
+                                      m_str = f"Dur: {tm.get('duration_ms', 0):.0f}ms, Att: {tm.get('attempts', 0)}"
+                                      if tm.get("slow_step"):
+                                           m_str += f" [SLOW: {tm.get('slow_reason')}]"
+                                      self.slot_detail_view.insert("end", f"                 [MET] {m_str}\n", "warn" if tm.get("slow_step") else "dim")
+
                                  artifacts = bundle.get("artifacts", {})
                                  if artifacts:
                                       self.slot_detail_view.insert("end", f"                 [ART] {', '.join(artifacts.keys())}\n", "dim")
