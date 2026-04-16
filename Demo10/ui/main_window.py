@@ -200,6 +200,7 @@ class AgentWorkbenchApp:
         self.status_model_var = tk.StringVar(value="Model: unavailable")
         self.status_action_var = tk.StringVar(value="LLM: idle")
         self.command_var = tk.StringVar()
+        self.write_mode_var = tk.StringVar(value="dry-run")
         self.active_slot_var = tk.StringVar(value="Active Slot: none")
         self.status_selected_slot_var = tk.StringVar(value="Selected Slot: 1")
         self.selected_slot_index = 0
@@ -358,6 +359,10 @@ class AgentWorkbenchApp:
         refresh_models_btn = ttk.Button(top, text="Refresh Models", command=self.refresh_models)
         refresh_models_btn.grid(row=0, column=7)
         Tooltip(refresh_models_btn, "Query the local Ollama instance for available models.")
+        ttk.Label(top, text="Write Mode", style="Panel.TLabel").grid(row=0, column=8, sticky="w", padx=(12, 0))
+        self.write_mode_combo = ttk.Combobox(top, textvariable=self.write_mode_var, state="readonly", values=["dry-run", "apply"], width=10)
+        self.write_mode_combo.grid(row=0, column=9, sticky="w", padx=(8, 0))
+        Tooltip(self.write_mode_combo, "Choose whether file operations are simulated or written to disk.")
 
         ttk.Label(top, text="Spec Editor", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
         spec_frame = ttk.Frame(top, style="Panel.TFrame")
@@ -1569,6 +1574,45 @@ class AgentWorkbenchApp:
         else:
             self.slot_detail_view.insert("end", "No restore result available.\n", "dim")
 
+        # 4.1 Mutation Ledger
+        add_section("WORKSPACE MUTATIONS")
+        mutation_dir = None
+        if slot.current_run_id:
+            metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+            if metadata and metadata.execution_workspace:
+                mutation_dir = Path(metadata.execution_workspace).parent / "mutations"
+        if mutation_dir and mutation_dir.exists():
+            mutation_files = sorted(mutation_dir.glob("*.json"))
+            if mutation_files:
+                total_created = 0
+                total_modified = 0
+                total_deleted = 0
+                total_failed = 0
+                for artifact in mutation_files:
+                    try:
+                        with artifact.open("r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        total_created += data.get("created_count", 0)
+                        total_modified += data.get("modified_count", 0)
+                        total_deleted += data.get("deleted_count", 0)
+                        total_failed += data.get("failed_count", 0)
+                        add_field(f"Artifact {artifact.stem}", data.get("status", "-"))
+                        for item in data.get("results", []):
+                            path = item.get("path", "-")
+                            status = item.get("status", "-")
+                            delta = item.get("size_delta", 0)
+                            self.slot_detail_view.insert("end", f"  {path} -> {status} (size_delta={delta})\n", "value" if status != "failed" else "error")
+                    except Exception as exc:
+                        self.slot_detail_view.insert("end", f"  Failed to read {artifact.name}: {exc}\n", "error")
+                add_field("Created", str(total_created), "success" if total_created else "value")
+                add_field("Modified", str(total_modified), "success" if total_modified else "value")
+                add_field("Deleted", str(total_deleted), "value")
+                add_field("Failed", str(total_failed), "error" if total_failed else "value")
+            else:
+                self.slot_detail_view.insert("end", "No mutation artifacts available.\n", "dim")
+        else:
+            self.slot_detail_view.insert("end", "No mutation artifacts available.\n", "dim")
+
         # 5. LLM / Edit Result
         add_section("LLM EDIT RESULT")
         if slot.llm_edit_run:
@@ -2298,7 +2342,15 @@ class AgentWorkbenchApp:
                 # Setup CommandExecutor for this run
                 cmd_executor = CommandExecutor(profile, interpreter_path, runtime_env, execution_workspace)
 
-                executor = TaskExecutorService(file_ops, self.ollama_service, self.process_service, model_name, run_folder=run_folder, cmd_executor=cmd_executor)
+                executor = TaskExecutorService(
+                    file_ops,
+                    self.ollama_service,
+                    self.process_service,
+                    model_name,
+                    run_folder=run_folder,
+                    cmd_executor=cmd_executor,
+                    mutation_mode=self.write_mode_var.get(),
+                )
 
                 # Settings
                 fail_fast = True
@@ -2308,6 +2360,7 @@ class AgentWorkbenchApp:
                 for task in tasks:
                     self.ui_queue.put(("queue_log", f"Executing task: {task.id} ({task.type.value} {task.target})"))
                     result = executor.execute(task)
+                    self.ui_queue.put(("queue_log", f"Task result: {result.message}"))
                     if not result.success:
                         if fail_fast:
                             failure_stage = FailureStage.EDIT_FAILURE

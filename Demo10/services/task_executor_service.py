@@ -15,6 +15,7 @@ from editing.anchor_resolver import AnchorResolver
 from editing.operations import EditEngine
 from editing.safe_write import SafeWriteService
 from editing.diffing import generate_unified_diff, save_diff
+from services.file_ops.models import FileOperation
 
 
 class TaskExecutorService:
@@ -25,7 +26,8 @@ class TaskExecutorService:
         process: ProcessService,
         model_name: str,
         run_folder: Optional[Path] = None,
-        cmd_executor: Optional[CommandExecutor] = None
+        cmd_executor: Optional[CommandExecutor] = None,
+        mutation_mode: str = "apply",
     ):
         self.file_ops = file_ops
         self.ollama = ollama
@@ -33,6 +35,7 @@ class TaskExecutorService:
         self.model_name = model_name
         self.run_folder = run_folder
         self.cmd_executor = cmd_executor
+        self.mutation_mode = mutation_mode
         self.edit_engine = EditEngine(AnchorResolver())
 
     def execute(self, task: Task) -> TaskResult:
@@ -67,8 +70,23 @@ class TaskExecutorService:
             prompt = f"Generate code for the file '{task.target}' based on these constraints: {task.constraints or 'none'}. Output ONLY the code, no markdown markers."
             content = self._call_llm(prompt)
 
-        msg = self.file_ops.create(task.target, content)
-        return TaskResult(success=True, message=msg, changes=[task.target])
+        batch = self.file_ops.execute_plan(
+            [
+                FileOperation(
+                    op_id=task.id,
+                    op_type="create_file",
+                    path=task.target,
+                    content=content,
+                    reason=task.constraints or "",
+                    source_stage="task_executor.create",
+                )
+            ],
+            mode=self.mutation_mode,
+        )
+        if batch.failed_count:
+            return TaskResult(success=False, message=batch.results[0].failure_reason or "create failed", details={"mutation_batch": batch})
+        self._write_mutation_artifacts(task.id, batch)
+        return TaskResult(success=True, message=f"Created {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
 
     def _handle_modify(self, task: Task) -> TaskResult:
         # SPEC 011 New modify flow
@@ -124,13 +142,29 @@ class TaskExecutorService:
             diff_text = generate_unified_diff(old_content, new_content, task.target)
             edit_result.diff_path = str(save_diff(self.run_folder, task.target, diff_text))
 
-            # Commit
-            sw.commit(task.target, new_content)
-        else:
-            # Fallback if no run_folder (shouldn't happen in queue)
-            self.file_ops.modify(task.target, new_content)
-
-        return TaskResult(success=True, message=f"Applied {instr.operation.value} to {task.target}", changes=[task.target])
+            # Commit is now routed through the mutation engine after validation/diff generation.
+        batch = self.file_ops.execute_plan(
+            [
+                FileOperation(
+                    op_id=task.id,
+                    op_type="replace_file",
+                    path=task.target,
+                    content=new_content,
+                    reason=edit_result.reason,
+                    source_stage="task_executor.modify",
+                )
+            ],
+            mode=self.mutation_mode,
+        )
+        if batch.failed_count:
+            return TaskResult(success=False, message=batch.results[0].failure_reason or "replace failed", error=batch.results[0].failure_code, details={"mutation_batch": batch})
+        self._write_mutation_artifacts(task.id, batch)
+        return TaskResult(
+            success=True,
+            message=f"Applied {instr.operation.value} to {task.target}; {batch.to_summary()}",
+            changes=[task.target],
+            details={"mutation_batch": batch, "edit_result": edit_result},
+        )
 
     def _get_edit_instruction(self, task: Task) -> Optional[EditInstruction]:
         if not task.constraints:
@@ -156,12 +190,40 @@ class TaskExecutorService:
             prompt = f"Modify the file '{task.target}' based on these constraints: {task.constraints or 'none'}. Output ONLY the new content for the file, no markdown markers."
             content = self._call_llm(prompt)
 
-        msg = self.file_ops.modify(task.target, content)
-        return TaskResult(success=True, message=msg, changes=[task.target])
+        batch = self.file_ops.execute_plan(
+            [
+                FileOperation(
+                    op_id=task.id,
+                    op_type="replace_file",
+                    path=task.target,
+                    content=content,
+                    reason=task.constraints or "",
+                    source_stage="task_executor.modify_legacy",
+                )
+            ],
+            mode=self.mutation_mode,
+        )
+        if batch.failed_count:
+            return TaskResult(success=False, message=batch.results[0].failure_reason or "replace failed", details={"mutation_batch": batch})
+        self._write_mutation_artifacts(task.id, batch)
+        return TaskResult(success=True, message=f"File modified: {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
 
     def _handle_delete(self, task: Task) -> TaskResult:
-        msg = self.file_ops.delete(task.target)
-        return TaskResult(success=True, message=msg, changes=[task.target])
+        batch = self.file_ops.execute_plan(
+            [
+                FileOperation(
+                    op_id=task.id,
+                    op_type="delete_file",
+                    path=task.target,
+                    source_stage="task_executor.delete",
+                )
+            ],
+            mode=self.mutation_mode,
+        )
+        if batch.failed_count:
+            return TaskResult(success=False, message=batch.results[0].failure_reason or "delete failed", details={"mutation_batch": batch})
+        self._write_mutation_artifacts(task.id, batch)
+        return TaskResult(success=True, message=f"Deleted {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
 
     def _handle_run(self, task: Task) -> TaskResult:
         if self.cmd_executor:
@@ -238,6 +300,26 @@ class TaskExecutorService:
             elif event["type"] == "done":
                 break
         return "".join(accumulator).strip()
+
+    def _write_mutation_artifacts(self, task_id: str, batch_result) -> None:
+        if not self.run_folder:
+            return
+        mutations_dir = self.run_folder / "mutations"
+        mutations_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "project_root": batch_result.project_root,
+            "mode": batch_result.mode,
+            "status": batch_result.status,
+            "created_count": batch_result.created_count,
+            "modified_count": batch_result.modified_count,
+            "deleted_count": batch_result.deleted_count,
+            "unchanged_count": batch_result.unchanged_count,
+            "failed_count": batch_result.failed_count,
+            "validation_errors": batch_result.validation_errors,
+            "results": [result.__dict__ for result in batch_result.results],
+            "ledger": [entry.__dict__ for entry in batch_result.ledger],
+        }
+        (mutations_dir / f"{task_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def _now(self) -> str:
         return time.strftime("%Y-%m-%dT%H:%M:%S")

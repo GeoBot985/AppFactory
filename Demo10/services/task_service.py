@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 
 class TaskType(Enum):
@@ -42,3 +42,4 @@ class TaskResult:
     output: str = ""
     error: str = ""
     changes: list[str] = field(default_factory=list)
+    details: dict[str, Any] = field(default_factory=dict)
