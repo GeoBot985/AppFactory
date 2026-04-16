@@ -58,7 +58,12 @@ class LedgerService:
             f.flush()
             os.fsync(f.fileno())
 
-        # 2. Trigger incremental ops update (SPEC 018 Mode A)
+        # 2. Add metrics logic for completed runs
+        if entity_type == "run" and new_state in ["COMPLETED", "FAILED", "PARTIAL_FAILURE"]:
+            # Optionally trigger final metrics aggregation if not already done by controller
+            pass
+
+        # 3. Trigger incremental ops update (SPEC 018 Mode A)
         if trigger_ops_update:
             try:
                 from ops.ops_service import OpsService

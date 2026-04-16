@@ -24,6 +24,7 @@ from editing.operations import EditEngine
 from editing.safe_write import SafeWriteService
 from editing.diffing import generate_unified_diff, save_diff
 from services.file_ops.models import FileOperation
+from metrics.metrics_service import MetricsService
 
 
 class TaskExecutorService:
@@ -36,6 +37,7 @@ class TaskExecutorService:
         run_folder: Optional[Path] = None,
         cmd_executor: Optional[CommandExecutor] = None,
         mutation_mode: str = "apply",
+        metrics: Optional[MetricsService] = None,
     ):
         self.file_ops = file_ops
         self.ollama = ollama
@@ -44,6 +46,7 @@ class TaskExecutorService:
         self.run_folder = run_folder
         self.cmd_executor = cmd_executor
         self.mutation_mode = mutation_mode
+        self.metrics = metrics or MetricsService(run_folder)
         self.edit_engine = EditEngine(AnchorResolver())
         self.attempt_config = AttemptConfig()
         self.context_builder = ContextPackageBuilder(ContextConfig())
@@ -306,6 +309,7 @@ class TaskExecutorService:
         supplied_content: str | None,
         build_batch: Callable[[str, str], object],
     ):
+        tm = self.metrics.get_task_metrics(task.id, task.type.value)
         history: list[AttemptRecord] = []
         last_batch = None
         last_extra = None
@@ -366,6 +370,10 @@ class TaskExecutorService:
             return TaskResult(success=False, message=message, details={"mutation_batch": batch, "attempt_ledger": ledger, "context_package": None}), None, ledger, {"edit_result": extra} if extra else None
 
         for attempt_index in range(1, self.attempt_config.max_total_attempts + 1):
+            tm.attempts = attempt_index
+            if attempt_index > 1:
+                tm.repair_cycles += 1
+
             attempt_type = next_strategy
             scope_contract = self.scope_builder.build(
                 project_root=str(self.file_ops.project_root),
@@ -394,6 +402,7 @@ class TaskExecutorService:
                 history.append(record)
                 stop_reason = "policy_blocked"
                 break
+            self.metrics.start_internal_stage(task.id, "context_selection")
             context_package = self.context_builder.build(
                 project_root=self.file_ops.project_root,
                 spec_text=base_prompt,
@@ -402,7 +411,11 @@ class TaskExecutorService:
                 task_target=task.target,
                 scope_contract=scope_contract,
             )
+            self.metrics.end_internal_stage(task.id, "context_selection")
             last_context_package = context_package
+            tm.context_files_count = len(context_package.selected_files)
+            tm.context_size_chars = sum(len(f.content) for f in context_package.selected_files if f.content)
+
             prompt = f"{base_prompt}\n\n{self.context_builder.to_prompt_text(context_package)}"
             if attempt_index > 1:
                 prior = history[-1]
@@ -411,8 +424,12 @@ class TaskExecutorService:
                     + "\n\n"
                     + self.context_builder.to_prompt_text(context_package)
                 )
-            generated_content = self._call_llm(prompt)
+            self.metrics.start_internal_stage(task.id, "generation_attempt")
+            generated_content = self._call_llm(prompt, task.id)
+            self.metrics.end_internal_stage(task.id, "generation_attempt")
+            self.metrics.start_internal_stage(task.id, "syntax_validation")
             batch, extra, prebuilt_attempt = self._normalize_attempt_output(build_batch(generated_content, "dry-run"))
+            self.metrics.end_internal_stage(task.id, "syntax_validation", success=self._is_batch_success(batch))
             last_batch = batch
             last_extra = extra
             if batch and batch.results:
@@ -437,6 +454,8 @@ class TaskExecutorService:
                 success = self._is_batch_success(batch)
                 if not success:
                     failure_class, error_detail = classify_batch_failure(batch)
+                    if "syntax" in failure_class: tm.syntax_failures += 1
+                    if "coherence" in failure_class: tm.coherence_failures += 1
                 validation = self._summarize_validation(batch) if batch else "failed"
                 fingerprint = ""
                 if not success:
@@ -468,6 +487,14 @@ class TaskExecutorService:
 
             if record.success and batch:
                 accepted_batch = batch
+                tm.files_changed = len(batch.results)
+                for res in batch.results:
+                    if res.diff_preview:
+                         tm.diff_size_bytes += len(res.diff_preview)
+                         # Simple LOC estimation
+                         tm.lines_added += res.diff_preview.count("\n+")
+                         tm.lines_removed += res.diff_preview.count("\n-")
+
                 if self.mutation_mode == "apply":
                     accepted_batch, extra, _ = self._normalize_attempt_output(build_batch(generated_content, "apply"))
                 history[-1].disk_write_performed = self.mutation_mode == "apply"
@@ -489,6 +516,7 @@ class TaskExecutorService:
             next_strategy = strategy
 
         final_outcome = classify_final_outcome(history, False, stop_reason or "exhausted")
+        tm.failure_class = final_outcome
         ledger = AttemptLedger(attempts=history, final_outcome=final_outcome, applied_attempt_index=0, stopped_reason=stop_reason or "exhausted")
         details = {"mutation_batch": last_batch, "attempt_ledger": ledger, "context_package": last_context_package, "scope_contract": last_scope_contract}
         message = history[-1].error_summary if history else "generation failed"
@@ -559,6 +587,15 @@ class TaskExecutorService:
 
             res = self.cmd_executor.run(task.target, timeout_seconds=timeout)
 
+            # Record metrics
+            tm = self.metrics.get_task_metrics(task.id, task.type.value)
+            if task.type == TaskType.RUN_TESTS:
+                # Basic test success/failure tracking
+                if res.exit_code != 0:
+                    tm.test_failures = 1
+                else:
+                    tm.test_failures = 0
+
             # Log command artifact if run_folder exists
             if self.run_folder:
                 cmd_dir = self.run_folder / "commands"
@@ -612,14 +649,25 @@ class TaskExecutorService:
         # In Phase 1, we might use a dedicated ValidationService
         return TaskResult(success=True, message=f"Validation '{task.target}' passed (placeholder)")
 
-    def _call_llm(self, prompt: str) -> str:
+    def _call_llm(self, prompt: str, task_id: Optional[str] = None) -> str:
         snapshot = self.ollama.create_snapshot(self.model_name, prompt)
         accumulator = []
-        for event in self.ollama.run_prompt_stream(snapshot):
-            if event["type"] == "chunk":
-                accumulator.append(event["text"])
-            elif event["type"] == "done":
-                break
+        latency_ms = 0.0
+        success = False
+        tokens = None
+        try:
+            for event in self.ollama.run_prompt_stream(snapshot):
+                if event["type"] == "chunk":
+                    accumulator.append(event["text"])
+                elif event["type"] == "done":
+                    latency_ms = event.get("latency_ms", 0.0)
+                    tokens = event.get("eval_count")
+                    success = True
+                    break
+        finally:
+            if task_id and self.metrics:
+                self.metrics.record_model_usage(task_id, self.model_name, latency_ms, success, tokens=tokens)
+
         return "".join(accumulator).strip()
 
     def _write_mutation_artifacts(self, task_id: str, batch_result) -> None:

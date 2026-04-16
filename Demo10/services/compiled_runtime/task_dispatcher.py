@@ -7,10 +7,12 @@ from .run_context import SharedRunContext
 from .run_models import CompiledTaskState, CompiledTaskStatus
 from .task_adapters import ADAPTER_MAP
 from .step_artifacts import StepArtifactBundle
+from metrics.metrics_service import MetricsService
 
 class CompiledTaskDispatcher:
-    def __init__(self, executor: TaskExecutorService):
+    def __init__(self, executor: TaskExecutorService, metrics: Optional[MetricsService] = None):
         self.executor = executor
+        self.metrics = metrics or getattr(executor, "metrics", None)
 
     def dispatch(self, task: Task, state: CompiledTaskState, context: SharedRunContext) -> TaskResult:
         adapter = ADAPTER_MAP.get(task.type)
@@ -25,12 +27,21 @@ class CompiledTaskDispatcher:
         state.started_at = time.strftime("%Y-%m-%dT%H:%M:%S")
         state.attempt_count += 1
 
+        if self.metrics:
+            self.metrics.start_task(task.id, task.type.value)
+
         try:
             result = adapter.execute(task, context, self.executor)
             state.status = CompiledTaskStatus.SUCCEEDED if result.success else CompiledTaskStatus.FAILED
             state.result_summary = result.message
             state.failure_class = result.error if not result.success else None
             state.artifacts.update(result.details)
+
+            if self.metrics:
+                 self.metrics.end_task(task.id)
+                 tm = self.metrics.get_task_metrics(task.id)
+            else:
+                 tm = None
 
             # Build artifact bundle
             bundle = StepArtifactBundle(
@@ -42,7 +53,8 @@ class CompiledTaskDispatcher:
                 output_summary=result.message,
                 artifacts=result.details.copy(),
                 started_at=state.started_at,
-                completed_at=time.strftime("%Y-%m-%dT%H:%M:%S")
+                completed_at=time.strftime("%Y-%m-%dT%H:%M:%S"),
+                metrics=tm.to_dict() if tm else None
             )
 
             # Add specific refs

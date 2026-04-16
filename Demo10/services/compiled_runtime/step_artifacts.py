@@ -17,6 +17,7 @@ class StepArtifactBundle:
     mutation_refs: List[str] = field(default_factory=list)
     test_refs: List[str] = field(default_factory=list)
     validation_refs: List[str] = field(default_factory=list)
+    metrics: Optional[Dict[str, Any]] = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
 
@@ -35,6 +36,7 @@ class StepArtifactBundle:
             "mutation_refs": self.mutation_refs,
             "test_refs": self.test_refs,
             "validation_refs": self.validation_refs,
+            "metrics": self.metrics,
             "started_at": self.started_at,
             "completed_at": self.completed_at
         }
