@@ -19,7 +19,7 @@ class DraftSpecTranslator:
         self.template_filler = TemplateFiller()
         self.template_validator = TemplateValidator()
 
-    def translate_request_to_draft_spec(self, model_name: str, request_text: str) -> DraftSpec:
+    def translate_request_to_draft_spec(self, model_name: str, request_text: str, session_context: Optional[Dict[str, Any]] = None) -> DraftSpec:
         # Step 0: Try template matching
         selection = self.template_selector.select_template(request_text)
         if selection.strength in [MatchStrength.EXACT, MatchStrength.STRONG]:
@@ -59,7 +59,7 @@ class DraftSpecTranslator:
                         ))
                 return draft
 
-        prompt = self._build_translation_prompt(request_text)
+        prompt = self._build_translation_prompt(request_text, session_context)
         snapshot = self.ollama_service.create_snapshot(model_name, prompt)
 
         # In a real scenario, we would use streaming or wait for completion.
@@ -71,12 +71,23 @@ class DraftSpecTranslator:
 
         return self._parse_translator_response(full_response)
 
-    def _build_translation_prompt(self, request_text: str) -> str:
+    def _build_translation_prompt(self, request_text: str, session_context: Optional[Dict[str, Any]] = None) -> str:
+        session_block = ""
+        if session_context:
+            session_block = f"""
+### SESSION CONTEXT (ASSISTIVE ONLY)
+Current Focus: {session_context.get('current_focus_summary', 'Unknown')}
+Recent Files: {", ".join(session_context.get('recent_primary_files', []))}
+Recent Failures: {", ".join(session_context.get('recent_failure_files', []))}
+Last Template: {session_context.get('last_template_id', 'None')}
+"""
+
         return f"""
 Translate the following natural language request into a structured Draft Spec YAML.
 
 ### REQUEST
 {request_text}
+{session_block}
 
 ### OUTPUT FORMAT
 You MUST output ONLY valid YAML matching this structure:

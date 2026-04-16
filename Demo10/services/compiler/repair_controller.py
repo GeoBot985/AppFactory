@@ -15,7 +15,7 @@ class RepairController:
         self.strategies = strategies
         self.policy_engine = policy_engine
 
-    def run_repair_loop(self, draft: DraftSpec, compile_func: Any, max_attempts: int = 3) -> Tuple[DraftSpec, CompileRepairSession]:
+    def run_repair_loop(self, draft: DraftSpec, compile_func: Any, max_attempts: int = 3, session_context: Optional[Dict[str, Any]] = None) -> Tuple[DraftSpec, CompileRepairSession]:
         session = CompileRepairSession(
             session_id=f"repair_{uuid.uuid4().hex[:8]}",
             draft_id=draft.draft_id,
@@ -50,7 +50,7 @@ class RepairController:
             # 2. LLM repairs (if deterministic didn't fix everything or as second stage)
             remaining_errors = [e for e in report.errors if e.code not in attempt.errors_fixed]
             if remaining_errors:
-                llm_changes, llm_fixed = self.strategies.apply_llm_repairs(current_draft, remaining_errors, None)
+                llm_changes, llm_fixed = self.strategies.apply_llm_repairs(current_draft, remaining_errors, session_context)
                 if llm_changes:
                     attempt.changes.extend(llm_changes)
                     attempt.errors_fixed.extend(llm_fixed)

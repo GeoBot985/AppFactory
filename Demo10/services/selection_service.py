@@ -99,13 +99,25 @@ class SelectionResult:
 
 
 class FileSelector:
-    def select(self, spec_text: str, architecture_index: ArchitectureIndex) -> SelectionResult:
+    def select(self, spec_text: str, architecture_index: ArchitectureIndex, session_context: dict | None = None) -> SelectionResult:
         started = self._now()
         terms = self._tokenize(spec_text)
         scored: list[tuple[int, list[str], IndexedFile]] = []
 
+        failure_files = session_context.get("failure_files", []) if session_context else []
+        primary_files = session_context.get("primary_files", []) if session_context else []
+
         for entry in architecture_index.files:
             score, reasons = self._score_file(entry, terms, architecture_index.files)
+
+            # Session boost
+            if entry.relative_path in failure_files:
+                score += 5
+                reasons.append("recent session failure boost")
+            if entry.relative_path in primary_files:
+                score += 2
+                reasons.append("session working set boost")
+
             if score > 0:
                 scored.append((score, reasons, entry))
 
