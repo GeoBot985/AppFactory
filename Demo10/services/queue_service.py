@@ -28,6 +28,7 @@ class QueueSlot:
     slot_index: int
     spec_text: str = ""
     status: str = "empty"
+    compiled_plan: Optional[Any] = None
     started_at: str = ""
     completed_at: str = ""
     failure_reason: str = ""

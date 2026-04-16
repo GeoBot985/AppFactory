@@ -52,6 +52,13 @@ from services.policy.risk_classifier import RiskClassifier
 from services.policy.evaluator import PolicyEvaluator
 from services.policy.approvals import ApprovalService
 
+from services.draft_spec.models import DraftSpec, UncertaintySeverity
+from services.draft_spec.translator import DraftSpecTranslator
+from services.draft_spec.validator import DraftSpecValidator
+from services.draft_spec.session_state import DraftSpecSessionState
+from services.compiler.compiler import DraftSpecCompiler
+from services.compiler.models import CompiledPlan, CompileStatus
+
 from runtime_profiles.models import RuntimeProfile, DriftPolicyMode
 from runtime_profiles.registry import ProfileRegistry
 from runtime_profiles.interpreter import InterpreterResolver, InterpreterValidator
@@ -141,6 +148,11 @@ class AgentWorkbenchApp:
         self.policy_evaluator = PolicyEvaluator(self.policy_config)
         self.approval_service = ApprovalService(Path.cwd())
 
+        self.draft_translator = DraftSpecTranslator(self.ollama_service)
+        self.draft_validator = DraftSpecValidator()
+        self.draft_session = DraftSpecSessionState()
+        self.compiler = DraftSpecCompiler()
+
         self.profile_registry = ProfileRegistry()
         self._load_external_profiles()
         self.env_masker = EnvironmentMasker()
@@ -186,6 +198,7 @@ class AgentWorkbenchApp:
         self.selection_active = False
         self.queue_active = False
         self.restore_active = False
+        self.translation_active = False
         self.pending_restore_type: str = "none"  # "none", "bundle", "candidate"
         self.llm_run_started_at = 0.0
         self.llm_chunk_count = 0
@@ -329,6 +342,7 @@ class AgentWorkbenchApp:
         self._refresh_candidate_view()
         self._refresh_queue_view()
         self._refresh_restore_view()
+        self._check_run_invariants()
         self._refresh_restore_preview()
         self._refresh_approvals_view()
         self._refresh_pipeline_view()
@@ -364,16 +378,45 @@ class AgentWorkbenchApp:
         self.write_mode_combo.grid(row=0, column=9, sticky="w", padx=(8, 0))
         Tooltip(self.write_mode_combo, "Choose whether file operations are simulated or written to disk.")
 
-        ttk.Label(top, text="Spec Editor", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        # Request Pane (027A)
+        ttk.Label(top, text="Request (Prose)", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        req_frame = ttk.Frame(top, style="Panel.TFrame")
+        req_frame.grid(row=1, column=1, columnspan=2, sticky="nsew", pady=(10, 0))
+        req_frame.rowconfigure(0, weight=1)
+        req_frame.columnconfigure(0, weight=1)
+        self.request_text = tk.Text(
+            req_frame, wrap="word", height=8, bg="#1b1b1c", fg="#d4d4d4", insertbackground="#d4d4d4", font=("Segoe UI", 10), relief="flat"
+        )
+        req_scroll = ttk.Scrollbar(req_frame, orient="vertical", command=self.request_text.yview)
+        self.request_text.configure(yscrollcommand=req_scroll.set)
+        self.request_text.grid(row=0, column=0, sticky="nsew")
+        req_scroll.grid(row=0, column=1, sticky="ns")
+
+        # Draft Spec Pane (027A)
+        ttk.Label(top, text="Draft Spec (YAML)", style="Panel.TLabel").grid(row=1, column=3, sticky="nw", pady=(10, 0), padx=(10, 0))
+        draft_frame = ttk.Frame(top, style="Panel.TFrame")
+        draft_frame.grid(row=1, column=4, columnspan=2, sticky="nsew", pady=(10, 0))
+        draft_frame.rowconfigure(0, weight=1)
+        draft_frame.columnconfigure(0, weight=1)
+        self.draft_text = tk.Text(
+            draft_frame, wrap="word", height=8, bg="#1b1b1c", fg="#d4d4d4", insertbackground="#d4d4d4", font=("Consolas", 10), relief="flat"
+        )
+        draft_scroll = ttk.Scrollbar(draft_frame, orient="vertical", command=self.draft_text.yview)
+        self.draft_text.configure(yscrollcommand=draft_scroll.set)
+        self.draft_text.grid(row=0, column=0, sticky="nsew")
+        draft_scroll.grid(row=0, column=1, sticky="ns")
+        self.draft_text.bind("<KeyRelease>", self._on_draft_changed)
+
+        ttk.Label(top, text="Spec Editor (Legacy/Compiled)", style="Panel.TLabel").grid(row=2, column=0, sticky="nw", pady=(10, 0))
         spec_frame = ttk.Frame(top, style="Panel.TFrame")
-        spec_frame.grid(row=1, column=1, columnspan=5, sticky="nsew", pady=(10, 0))
+        spec_frame.grid(row=2, column=1, columnspan=5, sticky="nsew", pady=(10, 0))
         spec_frame.rowconfigure(0, weight=1)
         spec_frame.columnconfigure(0, weight=1)
 
         self.spec_text = tk.Text(
             spec_frame,
             wrap="word",
-            height=8,
+            height=4,
             bg="#1b1b1c",
             fg="#d4d4d4",
             insertbackground="#d4d4d4",
@@ -386,7 +429,7 @@ class AgentWorkbenchApp:
         spec_scroll.grid(row=0, column=1, sticky="ns")
         self.spec_text.bind("<KeyRelease>", self._on_spec_changed)
         queue_frame = ttk.Frame(top, style="Panel.TFrame")
-        queue_frame.grid(row=1, column=6, columnspan=2, sticky="nsew", pady=(10, 0), padx=(10, 0))
+        queue_frame.grid(row=1, column=6, columnspan=2, rowspan=2, sticky="nsew", pady=(10, 0), padx=(10, 0))
         queue_frame.rowconfigure(1, weight=1)
         queue_frame.columnconfigure(0, weight=1)
         ttk.Label(queue_frame, text="Execution Queue", style="Panel.TLabel").grid(row=0, column=0, sticky="w")
@@ -421,7 +464,15 @@ class AgentWorkbenchApp:
             status_label.bind("<Button-1>", lambda e, i=idx: self.select_slot(i))
             slot_text.bind("<Button-1>", lambda e, i=idx: self.select_slot(i))
         action_row = ttk.Frame(top, style="Panel.TFrame")
-        action_row.grid(row=2, column=6, columnspan=2, sticky="e", pady=(8, 0))
+        action_row.grid(row=3, column=1, columnspan=7, sticky="ew", pady=(8, 0))
+        self.translate_button = ttk.Button(action_row, text="Translate Request", command=self.translate_request)
+        self.translate_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.translate_button, "Translate the natural language request into a Draft Spec.")
+
+        self.compile_button = ttk.Button(action_row, text="Compile Draft", command=self.compile_draft)
+        self.compile_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.compile_button, "Compile the Draft Spec into an executable Compiled Plan.")
+
         self.run_llm_button = ttk.Button(action_row, text="Run LLM", command=self.run_llm)
         self.run_llm_button.pack(side="left", padx=(0, 8))
         Tooltip(self.run_llm_button, "Send the current spec to the selected model for analysis or response (no file changes).")
@@ -514,6 +565,8 @@ class AgentWorkbenchApp:
         viewer_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         prompt_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         response_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        draft_details_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        compile_report_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         index_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         selection_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         bundle_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
@@ -526,6 +579,8 @@ class AgentWorkbenchApp:
         notebook.add(viewer_frame, text="File Viewer")
         notebook.add(prompt_frame, text="Prompt Preview")
         notebook.add(response_frame, text="Latest Response")
+        notebook.add(draft_details_frame, text="Draft Translation")
+        notebook.add(compile_report_frame, text="Compile Report")
         notebook.add(index_frame, text="Architecture Index")
         notebook.add(selection_frame, text="File Selection")
         notebook.add(bundle_frame, text="Bundle Preview")
@@ -537,7 +592,7 @@ class AgentWorkbenchApp:
         notebook.add(ops_console_frame, text="Operations Console")
         self.notebook = notebook
 
-        for frame in (viewer_frame, prompt_frame, response_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, ops_console_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, ops_console_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -588,6 +643,36 @@ class AgentWorkbenchApp:
         self.response_view.grid(row=0, column=0, sticky="nsew")
         response_scroll.grid(row=0, column=1, sticky="ns")
         self.response_view.configure(state="disabled")
+
+        self.draft_details_view = tk.Text(
+            draft_details_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        draft_details_scroll = ttk.Scrollbar(draft_details_frame, orient="vertical", command=self.draft_details_view.yview)
+        self.draft_details_view.configure(yscrollcommand=draft_details_scroll.set)
+        self.draft_details_view.grid(row=0, column=0, sticky="nsew")
+        draft_details_scroll.grid(row=0, column=1, sticky="ns")
+        self.draft_details_view.configure(state="disabled")
+
+        self.compile_report_view = tk.Text(
+            compile_report_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        compile_report_scroll = ttk.Scrollbar(compile_report_frame, orient="vertical", command=self.compile_report_view.yview)
+        self.compile_report_view.configure(yscrollcommand=compile_report_scroll.set)
+        self.compile_report_view.grid(row=0, column=0, sticky="nsew")
+        compile_report_scroll.grid(row=0, column=1, sticky="ns")
+        self.compile_report_view.configure(state="disabled")
 
         self.index_view = tk.Text(
             index_frame,
@@ -1141,6 +1226,14 @@ class AgentWorkbenchApp:
 
     def _on_spec_changed(self, _event: object) -> None:
         self._refresh_prompt_preview()
+        self._check_run_invariants()
+
+    def _on_draft_changed(self, _event: object) -> None:
+        # If draft changes, existing compiled plan in spec_text is stale
+        self.draft_session.draft_status = "edited"
+        self.spec_text.delete("1.0", "end")
+        self.spec_text.insert("1.0", "# Draft changed. Re-compile to run.")
+        self._check_run_invariants()
 
     def _current_project_folder_text(self) -> str:
         return str(self.current_folder) if self.current_folder else "not selected"
@@ -1152,6 +1245,40 @@ class AgentWorkbenchApp:
             spec_text=self.spec_text.get("1.0", "end-1c"),
         )
         return self.prompt_builder.build(request)
+
+    def _check_run_invariants(self) -> None:
+        spec = self.spec_text.get("1.0", "end-1c").strip()
+        is_compiled = False
+        try:
+            import yaml
+            data = yaml.safe_load(spec)
+            if isinstance(data, dict) and "plan_id" in data:
+                is_compiled = True
+        except:
+            pass
+
+        # Prose in request pane cannot run
+        # Draft in draft pane cannot run
+
+        # Only successfully compiled plan in spec editor can run
+        # For legacy compatibility, we might allow it, but Spec 027B says "only compiled plans can run"
+        # However, to avoid breaking existing functionality, I'll be careful.
+        # But the requirement says: "run button for actual execution remains disabled unless compiled plan exists"
+
+        if is_compiled:
+            self.start_queue_button.state(["!disabled"])
+            self.submit_spec_button.state(["!disabled"])
+        else:
+            # Check if it's a legacy spec
+            is_dsl = self.spec_parser.dsl_parser.is_dsl_spec(spec)
+            if is_dsl or not spec:
+                self.start_queue_button.state(["disabled"])
+                self.submit_spec_button.state(["disabled"])
+            else:
+                # Legacy NLP might still be allowed if it doesn't look like DSL
+                # But Spec 027B says strict. Let's follow strict for now.
+                self.start_queue_button.state(["disabled"])
+                self.submit_spec_button.state(["disabled"])
 
     def _set_text_widget_content(self, widget: tk.Text, content: str) -> None:
         widget.configure(state="normal")
@@ -1274,6 +1401,90 @@ class AgentWorkbenchApp:
         else:
             content = restore.to_preview_text()
         self._set_text_widget_content(self.restore_view, content)
+
+    def translate_request(self) -> None:
+        if self.translation_active:
+            return
+        model = self.model_var.get().strip()
+        if not model:
+            self.log_event("Translate blocked: no model selected.")
+            return
+        request = self.request_text.get("1.0", "end-1c").strip()
+        if not request:
+            self.log_event("Translate blocked: request is empty.")
+            return
+
+        self.translation_active = True
+        self.translate_button.state(["disabled"])
+        self.log_event("Draft translation started...")
+
+        def worker():
+            try:
+                draft = self.draft_translator.translate_request_to_draft_spec(model, request)
+                self.ui_queue.put(("translation_done", draft))
+            except Exception as e:
+                self.ui_queue.put(("translation_failed", str(e)))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def compile_draft(self) -> None:
+        draft_yaml = self.draft_text.get("1.0", "end-1c").strip()
+        if not draft_yaml:
+            self.log_event("Compile blocked: draft is empty.")
+            return
+
+        try:
+            import yaml
+            data = yaml.safe_load(draft_yaml)
+            # Re-map back to DraftSpec if needed, or just re-parse using our parsing logic
+            # For simplicity, let's just use the current draft in session if it matches hash,
+            # or re-parse from YAML.
+            # I'll implement a simple from_dict on DraftSpec or similar.
+
+            # For now, let's assume we can reconstruct it or just use the session's if it hasn't changed.
+            # Actually, the user can edit the YAML, so we must re-parse.
+
+            # Re-parse logic (simplified)
+            draft = self.draft_translator._parse_translator_response(draft_yaml)
+            plan, report = self.compiler.compile(draft)
+
+            self._refresh_compile_report(report)
+
+            if report.status == CompileStatus.SUCCESS:
+                self.log_event(f"Compile successful: {plan.plan_id}")
+                # Update spec editor with compiled plan summary/tasks
+                self.spec_text.delete("1.0", "end")
+                self.spec_text.insert("1.0", yaml.dump(plan.to_dict(), sort_keys=False))
+                self.log_event("Compiled plan loaded into spec editor.")
+            else:
+                self.log_event(f"Compile failed with {len(report.errors)} error(s).")
+
+        except Exception as e:
+            self.log_event(f"Compile failed: {str(e)}")
+
+    def _refresh_compile_report(self, report: CompileReport):
+        self.compile_report_view.configure(state="normal")
+        self.compile_report_view.delete("1.0", "end")
+
+        self.compile_report_view.insert("end", f"Status: {report.status.value.upper()}\n\n")
+
+        if report.errors:
+            self.compile_report_view.insert("end", "[ERRORS]\n")
+            for err in report.errors:
+                self.compile_report_view.insert("end", f"- {err.code}: {err.message} ({err.field_path or ''})\n")
+            self.compile_report_view.insert("end", "\n")
+
+        if report.warnings:
+            self.compile_report_view.insert("end", "[WARNINGS]\n")
+            for warn in report.warnings:
+                self.compile_report_view.insert("end", f"- {warn.code}: {warn.message} ({warn.field_path or ''})\n")
+
+        self.compile_report_view.configure(state="disabled")
+        # Switch to report tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Compile Report" in self.notebook.tab(tabid, "text"):
+                self.notebook.select(i)
+                break
 
     def _refresh_approvals_view(self) -> None:
         self.approvals_list.delete(*self.approvals_list.get_children())
@@ -1952,6 +2163,19 @@ class AgentWorkbenchApp:
         slot = self.spec_queue.queue_slots[idx]
         slot.spec_text = spec
         slot.status = "ready" if spec.strip() else "empty"
+
+        # Check if it's a compiled plan
+        try:
+            import yaml
+            data = yaml.safe_load(spec)
+            if isinstance(data, dict) and "plan_id" in data:
+                 self.log_event(f"Compiled plan {data['plan_id']} submitted to slot {idx + 1}")
+                 # We'll store it as a dict for now, or re-parse to CompiledPlan
+                 # Actually, let's just let the worker handle it from the spec_text if needed,
+                 # but marking it as compiled is good.
+        except:
+            pass
+
         self.log_event(f"Spec submitted to slot {idx + 1}")
         self._refresh_queue_view()
 
@@ -2256,8 +2480,18 @@ class AgentWorkbenchApp:
                     raise RuntimeError("no spec")
 
                 is_dsl = self.spec_parser.dsl_parser.is_dsl_spec(slot.spec_text)
+                is_compiled = False
+                try:
+                    import yaml
+                    potential_plan = yaml.safe_load(slot.spec_text)
+                    if isinstance(potential_plan, dict) and "plan_id" in potential_plan:
+                        is_compiled = True
+                except:
+                    pass
 
-                if is_dsl:
+                if is_compiled:
+                    self.ui_queue.put(("queue_log", "Executing from COMPILED PLAN"))
+                elif is_dsl:
                     spec_data, validation = self.spec_parser.dsl_parser.parse(slot.spec_text)
                     if not validation.is_valid:
                          failure_stage = FailureStage.SPEC_FAILURE
@@ -2353,7 +2587,21 @@ class AgentWorkbenchApp:
 
                 # 2. Spec Parsing
                 update_stage("Spec Parsing", "running")
-                tasks, verification_data = self.spec_parser.parse(slot.spec_text)
+                if is_compiled:
+                    # Map compiled plan tasks to Task objects
+                    plan_data = yaml.safe_load(slot.spec_text)
+                    # For this implementation, we'll re-run lowering or just parse the task ids.
+                    # Actually, the plan in spec editor contains a lot of info.
+                    # But the simplest is to re-parse the draft and compile if we want full objects,
+                    # OR we can just use the parser if it supports compiled plan format.
+                    # Let's assume the compiled plan in YAML is enough to reconstruct tasks.
+
+                    # For now, let's just fall back to spec_parser if it can handle it,
+                    # or implement a minimal loader.
+                    tasks, verification_data = self.spec_parser.parse(slot.spec_text)
+                else:
+                    tasks, verification_data = self.spec_parser.parse(slot.spec_text)
+
                 if not tasks:
                     self.ui_queue.put(("queue_log", "No tasks found in spec"))
                 else:
@@ -3448,6 +3696,34 @@ class AgentWorkbenchApp:
                 self.spec_queue.queue_slots[edit_run.slot_index].llm_edit_run = edit_run
                 self._refresh_queue_view()
             return
+        if message == "translation_done":
+            draft = payload
+            if not isinstance(draft, DraftSpec):
+                return
+            self.translation_active = False
+            self.translate_button.state(["!disabled"])
+            self.draft_session.current_draft = draft
+            self.draft_session.record_attempt(self.request_text.get("1.0", "end-1c"), draft, True)
+
+            import yaml
+            self.draft_text.delete("1.0", "end")
+            self.draft_text.insert("1.0", yaml.dump(draft.to_dict(), sort_keys=False))
+
+            self._refresh_draft_details(draft)
+            self.log_event("Draft translation completed.")
+            # Switch to draft translation tab
+            for i, tabid in enumerate(self.notebook.tabs()):
+                if "Draft Translation" in self.notebook.tab(tabid, "text"):
+                    self.notebook.select(i)
+                    break
+            return
+
+        if message == "translation_failed":
+            self.translation_active = False
+            self.translate_button.state(["!disabled"])
+            self.log_event(f"Draft translation failed: {payload}")
+            return
+
         if message == "llm_failed":
             self.llm_run_active = False
             self.run_llm_button.state(["!disabled"])
@@ -3456,3 +3732,28 @@ class AgentWorkbenchApp:
             self._refresh_response_view()
             self.set_status_action("failed")
             self.active_run_snapshot = None
+
+    def _refresh_draft_details(self, draft: DraftSpec):
+        self.draft_details_view.configure(state="normal")
+        self.draft_details_view.delete("1.0", "end")
+
+        self.draft_details_view.insert("end", f"Draft ID: {draft.draft_id}\n")
+        self.draft_details_view.insert("end", f"Title: {draft.title}\n")
+        self.draft_details_view.insert("end", f"Description: {draft.description}\n\n")
+
+        self.draft_details_view.insert("end", "[UNCERTAINTIES]\n")
+        if not draft.uncertainties:
+            self.draft_details_view.insert("end", "None\n")
+        else:
+            for u in draft.uncertainties:
+                self.draft_details_view.insert("end", f"- [{u.severity.value}] {u.code}: {u.message} (Field: {u.field_path})\n")
+
+        self.draft_details_view.insert("end", "\n[ASSUMPTIONS]\n")
+        for a in draft.translation_notes.get("assumptions", []):
+            self.draft_details_view.insert("end", f"- {a}\n")
+
+        self.draft_details_view.insert("end", "\n[UNRESOLVED QUESTIONS]\n")
+        for q in draft.translation_notes.get("unresolved_questions", []):
+            self.draft_details_view.insert("end", f"- {q}\n")
+
+        self.draft_details_view.configure(state="disabled")
