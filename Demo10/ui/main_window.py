@@ -58,6 +58,8 @@ from services.draft_spec.validator import DraftSpecValidator
 from services.draft_spec.session_state import DraftSpecSessionState
 from services.compiler.compiler import DraftSpecCompiler
 from services.compiler.models import CompiledPlan, CompileStatus
+from services.compiled_runtime.run_controller import CompiledPlanRunController
+from services.compiled_runtime.run_models import CompiledPlanRun, CompiledRunStatus
 
 from runtime_profiles.models import RuntimeProfile, DriftPolicyMode
 from runtime_profiles.registry import ProfileRegistry
@@ -1726,6 +1728,30 @@ class AgentWorkbenchApp:
                 prom_data = data.get("promotion", {})
                 add_field("Promotion Enabled", str(prom_data.get("enabled", True)))
 
+        # 0.5 Compiled Run Detail (SPEC 028)
+        if slot.current_run_id:
+             compiled_run_path = Path.cwd() / "runs" / slot.current_run_id / "compiled_plan_run.json"
+             if compiled_run_path.exists():
+                  add_section("COMPILED PLAN EXECUTION")
+                  try:
+                       with compiled_run_path.open("r") as f:
+                            cr = json.load(f)
+                       add_field("Plan ID", cr.get("compiled_plan_id", "-"))
+                       add_field("Overall Status", cr.get("overall_status", "-"))
+                       add_field("Tasks", f"{cr.get('tasks_succeeded')}/{cr.get('tasks_total')} succeeded")
+
+                       self.slot_detail_view.insert("end", "\nTask Details:\n", "label")
+                       ts_map = cr.get("task_states", {})
+                       # We might need the execution graph to show them in order
+                       # If not in cr, we just show them sorted by tid or something
+                       for tid, ts in ts_map.items():
+                            status = ts.get("status", "pending")
+                            tag = "success" if status == "succeeded" else "error" if status == "failed" else "dim"
+                            self.slot_detail_view.insert("end", f"  [{status.upper():<10}] {tid} ({ts.get('task_type')})\n", tag)
+                            if ts.get("result_summary"):
+                                 self.slot_detail_view.insert("end", f"               > {ts.get('result_summary')}\n", "dim")
+                  except: pass
+
         # 1. Spec
         add_section("SPEC")
         if slot.spec_text.strip():
@@ -2491,6 +2517,20 @@ class AgentWorkbenchApp:
 
                 if is_compiled:
                     self.ui_queue.put(("queue_log", "Executing from COMPILED PLAN"))
+                    # Spec 028: Reconstruct plan object
+                    import yaml
+                    plan_dict = yaml.safe_load(slot.spec_text)
+                    from services.compiler.models import CompiledPlan, CompileReport, CompileStatus
+                    plan = CompiledPlan(
+                        plan_id=plan_dict["plan_id"],
+                        tasks=[], # Will be populated after Spec Parsing stage below
+                        execution_graph=plan_dict["execution_graph"],
+                        policies=plan_dict.get("policies", {}),
+                        allowed_targets=plan_dict.get("allowed_targets", []),
+                        compile_report=CompileReport(status=CompileStatus.SUCCESS),
+                        created_at=plan_dict.get("created_at", ""),
+                        draft_hash=plan_dict.get("draft_hash", "")
+                    )
                 elif is_dsl:
                     spec_data, validation = self.spec_parser.dsl_parser.parse(slot.spec_text)
                     if not validation.is_valid:
@@ -2606,6 +2646,15 @@ class AgentWorkbenchApp:
                     self.ui_queue.put(("queue_log", "No tasks found in spec"))
                 else:
                     self.ui_queue.put(("queue_log", f"Parsed {len(tasks)} tasks"))
+
+                if is_compiled:
+                     plan.tasks = tasks
+                     # Check freshness
+                     if self.compiler.is_plan_stale(plan, self.draft_session.current_draft):
+                          if self.draft_session.current_draft:
+                               failure_stage = FailureStage.SPEC_FAILURE
+                               raise RuntimeError("STALE_PLAN_BLOCKED: Draft has changed since compilation.")
+
                 update_stage("Spec Parsing", "completed", f"tasks={len(tasks)}")
                 check_stop()
 
@@ -2755,17 +2804,39 @@ class AgentWorkbenchApp:
                 if spec_data and "settings" in spec_data:
                     fail_fast = spec_data["settings"].get("fail_fast", True)
 
-                for task in tasks:
-                    self.ui_queue.put(("queue_log", f"Executing task: {task.id} ({task.type.value} {task.target})"))
-                    result = executor.execute(task)
-                    self.ui_queue.put(("queue_log", f"Task result: {result.message}"))
-                    if not result.success:
-                        if fail_fast:
-                            failure_stage = FailureStage.EDIT_FAILURE
-                            raise RuntimeError(f"Task {task.id} failed: {result.message}")
-                        else:
-                            self.ui_queue.put(("queue_log", f"Task {task.id} failed (continuing): {result.message}"))
-                    all_changes.extend(result.changes)
+                if is_compiled:
+                    self.ui_queue.put(("queue_log", f"Executing COMPILED PLAN: {plan.plan_id}"))
+                    controller = CompiledPlanRunController(executor)
+                    compiled_run = controller.execute_compiled_plan(plan, slot.current_run_id)
+
+                    # Log run results
+                    self.audit_log_service.log_artifact(run_folder, "compiled_plan_run.json", json.dumps(compiled_run.to_dict(), indent=2))
+
+                    if compiled_run.overall_status == CompiledRunStatus.SUCCESS:
+                        self.ui_queue.put(("queue_log", "Compiled plan executed successfully"))
+                    else:
+                        failure_stage = FailureStage.EDIT_FAILURE
+                        raise RuntimeError(f"Compiled plan execution failed: {compiled_run.overall_status.value}")
+
+                    # Collect changes from all tasks
+                    for tid, tstate in compiled_run.task_states.items():
+                        if "changes" in tstate.artifacts:
+                            all_changes.extend(tstate.artifacts["changes"])
+                        # Some adapters might return batch directly
+                        if "batch" in tstate.artifacts:
+                            all_changes.extend([r.path for r in tstate.artifacts["batch"].results])
+                else:
+                    for task in tasks:
+                        self.ui_queue.put(("queue_log", f"Executing task: {task.id} ({task.type.value} {task.target})"))
+                        result = executor.execute(task)
+                        self.ui_queue.put(("queue_log", f"Task result: {result.message}"))
+                        if not result.success:
+                            if fail_fast:
+                                failure_stage = FailureStage.EDIT_FAILURE
+                                raise RuntimeError(f"Task {task.id} failed: {result.message}")
+                            else:
+                                self.ui_queue.put(("queue_log", f"Task {task.id} failed (continuing): {result.message}"))
+                        all_changes.extend(result.changes)
 
                 update_stage("Task Execution", "completed", f"changes={len(all_changes)}")
                 check_stop()
