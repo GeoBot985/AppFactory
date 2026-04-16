@@ -59,6 +59,11 @@ from services.draft_spec.models import DraftSpec, UncertaintySeverity
 from services.draft_spec.translator import DraftSpecTranslator
 from services.draft_spec.validator import DraftSpecValidator
 from services.draft_spec.session_state import DraftSpecSessionState
+from services.session_memory.session_manager import SessionManager
+from services.session_memory.working_set_manager import WorkingSetManager
+from services.session_memory.updater import SessionUpdater
+from services.session_memory.eviction import SessionEvictor
+from services.session_memory.context_adapter import SessionContextAdapter
 from services.compiler.compiler import DraftSpecCompiler
 from templates.registry import TemplateRegistry
 from templates.selector import TemplateSelector
@@ -165,6 +170,12 @@ class AgentWorkbenchApp:
         self.draft_translator = DraftSpecTranslator(self.ollama_service)
         self.draft_validator = DraftSpecValidator()
         self.draft_session = DraftSpecSessionState()
+
+        self.session_manager = SessionManager()
+        self.working_set_manager = WorkingSetManager()
+        self.session_updater = SessionUpdater(self.working_set_manager)
+        self.session_evictor = SessionEvictor()
+
         self.compiler = DraftSpecCompiler()
         self.approval_controller = ApprovalController(auto_approve_low_risk=True)
 
@@ -621,6 +632,7 @@ class AgentWorkbenchApp:
         restore_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         approvals_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         slot_detail_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        session_memory_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         ops_console_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         notebook.add(viewer_frame, text="File Viewer")
         notebook.add(prompt_frame, text="Prompt Preview")
@@ -636,10 +648,11 @@ class AgentWorkbenchApp:
         notebook.add(restore_frame, text="Restore Result")
         notebook.add(approvals_frame, text="Policy & Approvals")
         notebook.add(slot_detail_frame, text="Slot Detail")
+        notebook.add(session_memory_frame, text="Session Memory")
         notebook.add(ops_console_frame, text="Operations Console")
         self.notebook = notebook
 
-        for frame in (viewer_frame, prompt_frame, response_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, ops_console_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, session_memory_frame, ops_console_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -961,6 +974,9 @@ class AgentWorkbenchApp:
         self.slot_detail_view.configure(state="disabled")
 
         self.slot_detail_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 11, "bold"))
+
+        # Session Memory Tab
+        self._build_session_memory_view(session_memory_frame)
 
         # Operations Console Tab
         self._build_ops_console(ops_console_frame)
@@ -1600,6 +1616,12 @@ class AgentWorkbenchApp:
         self.translate_button.state(["disabled"])
         self.log_event("Draft translation started...")
 
+        # Session context
+        session_context = None
+        if self.session_manager.current_session:
+            adapter = SessionContextAdapter(self.session_manager.current_session)
+            session_context = adapter.get_context_for_translation()
+
         # Spec 032: Translation metrics (standalone)
         from metrics.metrics_service import MetricsService
         m = MetricsService()
@@ -1608,7 +1630,7 @@ class AgentWorkbenchApp:
 
         def worker():
             try:
-                draft = self.draft_translator.translate_request_to_draft_spec(model, request)
+                draft = self.draft_translator.translate_request_to_draft_spec(model, request, session_context)
 
                 # Record template usage if applicable
                 if draft.origin_metadata.get("origin_type") == "template":
@@ -1645,9 +1667,36 @@ class AgentWorkbenchApp:
 
             # Re-parse logic (simplified)
             draft = self.draft_translator._parse_translator_response(draft_yaml)
-            plan, report = self.compiler.compile(draft)
+
+            # Session context for repair
+            session_context = None
+            if self.session_manager.current_session:
+                adapter = SessionContextAdapter(self.session_manager.current_session)
+                session_context = adapter.get_context_for_repair()
+
+            plan, report, repair_session, repaired_draft = self.compiler.compile_with_repair(draft, session_context=session_context)
+
+            if repair_session and repair_session.attempts:
+                 # Update draft text with repaired draft
+                 self.draft_text.delete("1.0", "end")
+                 self.draft_text.insert("1.0", yaml.dump(repaired_draft.to_dict(), sort_keys=False))
+                 self.log_event(f"Draft auto-repaired ({len(repair_session.attempts)} attempts)")
 
             self._refresh_compile_report(report)
+
+            # Update Session Memory
+            if self.session_manager.current_session:
+                success = report.status == CompileStatus.SUCCESS
+                errors = [e.message for e in report.errors]
+                plan_id = plan.plan_id if plan else "none"
+                self.session_updater.record_compile_event(
+                    self.session_manager.current_session,
+                    draft.draft_id,
+                    plan_id,
+                    success,
+                    errors
+                )
+                self.session_manager.save_session()
 
             if report.status == CompileStatus.SUCCESS:
                 self.log_event(f"Compile successful: {plan.plan_id}")
@@ -1817,7 +1866,104 @@ class AgentWorkbenchApp:
 
         self.pipeline_view.configure(state="disabled")
 
+    def _build_session_memory_view(self, parent: ttk.Frame):
+        parent.rowconfigure(1, weight=1)
+        parent.columnconfigure(0, weight=1)
+
+        header = ttk.Frame(parent, style="Panel.TFrame")
+        header.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+
+        ttk.Label(header, text="Session Memory", font=("Segoe UI", 12, "bold"), style="Panel.TLabel").pack(side="left")
+
+        refresh_btn = ttk.Button(header, text="Refresh", command=self._refresh_session_memory_view)
+        refresh_btn.pack(side="right", padx=5)
+
+        reset_btn = ttk.Button(header, text="Reset Session", command=self._reset_session_memory)
+        reset_btn.pack(side="right", padx=5)
+
+        prune_btn = ttk.Button(header, text="Clear Working Set", command=self._clear_working_set)
+        prune_btn.pack(side="right")
+
+        self.session_memory_view = tk.Text(
+            parent,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        scroll = ttk.Scrollbar(parent, orient="vertical", command=self.session_memory_view.yview)
+        self.session_memory_view.configure(yscrollcommand=scroll.set)
+        self.session_memory_view.grid(row=1, column=0, sticky="nsew")
+        scroll.grid(row=1, column=1, sticky="ns")
+        self.session_memory_view.configure(state="disabled")
+
+        self.session_memory_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 11, "bold"))
+        self.session_memory_view.tag_configure("label", foreground="#9cdcfe")
+        self.session_memory_view.tag_configure("value", foreground="#d4d4d4")
+        self.session_memory_view.tag_configure("dim", foreground="#808080")
+
+    def _refresh_session_memory_view(self):
+        if not self.session_manager.current_session:
+            self._set_text_widget_content(self.session_memory_view, "No active session.")
+            return
+
+        session = self.session_manager.current_session
+        self.session_memory_view.configure(state="normal")
+        self.session_memory_view.delete("1.0", "end")
+
+        def add_section(title: str):
+            self.session_memory_view.insert("end", f"\n=== {title} ===\n", "header")
+
+        def add_field(label: str, value: str, tag: str = "value"):
+            self.session_memory_view.insert("end", f"{label:20}: ", "label")
+            self.session_memory_view.insert("end", f"{value}\n", tag)
+
+        add_section("SESSION STATE")
+        add_field("Session ID", session.session_id)
+        add_field("Status", session.status)
+        add_field("Created At", session.created_at)
+        add_field("Updated At", session.updated_at)
+        add_field("Focus Summary", session.current_focus_summary)
+
+        add_section("WORKING SET")
+        ws = session.working_set
+        add_field("Confidence", f"{ws.confidence:.2f}")
+        add_field("Primary Files", ", ".join(ws.primary_files) if ws.primary_files else "None")
+        add_field("Failure Files", ", ".join(ws.recent_failure_files) if ws.recent_failure_files else "None")
+        add_field("Recent Symbols", ", ".join(ws.recent_symbols) if ws.recent_symbols else "None")
+
+        add_section("RECENT HISTORY")
+        add_field("Drafts", ", ".join(session.recent_draft_ids[:5]))
+        add_field("Plans", ", ".join(session.recent_compiled_plan_ids[:5]))
+        add_field("Runs", ", ".join(session.recent_run_ids[:5]))
+
+        add_section("MEMORY ENTRIES (Latest 10)")
+        for entry in reversed(session.memory_entries[-10:]):
+            timestamp = entry.timestamp.split("T")[1].split(".")[0]
+            self.session_memory_view.insert("end", f"[{timestamp}] {entry.entry_type.value}: ", "label")
+            self.session_memory_view.insert("end", f"{json.dumps(entry.data)}\n", "dim")
+
+        self.session_memory_view.configure(state="disabled")
+
+    def _reset_session_memory(self):
+        if self.current_folder:
+            self.session_manager.reset_session(str(self.current_folder))
+            self.log_event("Session reset.")
+            self._refresh_session_memory_view()
+
+    def _clear_working_set(self):
+        if self.session_manager.current_session:
+            self.working_set_manager.clear(self.session_manager.current_session.working_set)
+            self.session_manager.save_session()
+            self.log_event("Working set cleared.")
+            self._refresh_session_memory_view()
+
     def _refresh_slot_detail_view(self) -> None:
+        # Also refresh session view if it's visible or on any major event
+        self._refresh_session_memory_view()
+
         idx = self.selected_slot_index
         slot = self.spec_queue.queue_slots[idx]
 
@@ -2390,6 +2536,11 @@ class AgentWorkbenchApp:
         self.folder_var.set(str(self.current_folder))
         self.status_folder_var.set(f"Folder: {self.current_folder}")
         self.log_event(f"Project folder selected: {self.current_folder}")
+
+        # Initialize Session
+        self.session_manager.load_or_create_session(str(self.current_folder))
+        self.log_event(f"Session loaded: {self.session_manager.current_session.session_id}")
+
         self._refresh_prompt_preview()
         self.refresh_tree()
 
@@ -2651,6 +2802,13 @@ class AgentWorkbenchApp:
         if self.selection_active:
             self.log_event("Select Files blocked: a selection is already in progress.")
             return
+
+        # Session context for targeting
+        session_context = None
+        if self.session_manager.current_session:
+            adapter = SessionContextAdapter(self.session_manager.current_session)
+            session_context = adapter.get_context_for_targeting()
+
         architecture_index = self.run_state_service.index_state.latest_index
         if architecture_index is None:
             self.log_event("Select Files blocked: no architecture index available.")
@@ -2672,13 +2830,13 @@ class AgentWorkbenchApp:
         self.log_event(f"normalized term count: {term_count}")
         self.log_event("index availability confirmed")
         self.set_status_action("selection running")
-        thread = threading.Thread(target=self._select_files_worker, args=(spec, architecture_index, self.selected_slot_index), daemon=True)
+        thread = threading.Thread(target=self._select_files_worker, args=(spec, architecture_index, self.selected_slot_index, session_context), daemon=True)
         self.selection_thread = thread
         thread.start()
 
-    def _select_files_worker(self, spec: str, architecture_index: ArchitectureIndex, slot_index: int) -> None:
+    def _select_files_worker(self, spec: str, architecture_index: ArchitectureIndex, slot_index: int, session_context: dict | None = None) -> None:
         try:
-            selection_result = self.file_selector.select(spec, architecture_index)
+            selection_result = self.file_selector.select(spec, architecture_index, session_context=session_context)
             self.ui_queue.put(("selection_done", (slot_index, selection_result)))
         except Exception as exc:
             self.ui_queue.put(("selection_failed", str(exc)))
@@ -3368,6 +3526,20 @@ class AgentWorkbenchApp:
 
                 self.audit_log_service.log_artifact(run_folder, "tasks.json", [{"id": t.id, "type": t.type.value, "target": t.target, "status": t.status.value} for t in tasks])
 
+                # Update Session Memory (Execution)
+                if self.session_manager.current_session:
+                    success = run_summary.final_status in {FinalOutcome.COMPLETED, FinalOutcome.COMPLETED_WITH_WARNINGS}
+                    modified = all_changes
+                    failed_tests = v_report.summary.get("failed_check_ids", []) if v_report else []
+                    self.session_updater.record_execution_event(
+                        self.session_manager.current_session,
+                        slot.current_run_id,
+                        success,
+                        modified,
+                        failed_tests
+                    )
+                    self.session_manager.save_session()
+
                 if slot.run_summary:
                     # Serializing RunSummary (simplified)
                     summary_dict = {
@@ -3560,6 +3732,11 @@ class AgentWorkbenchApp:
             self.ui_queue.put(("restore_failed", str(exc)))
 
     def undo_last_run(self) -> None:
+        # Update session if applicable
+        if self.session_manager.current_session:
+            # We don't have a specific restore_id here yet, but we'll record the event after restore_done
+            pass
+
         if self.restore_active:
             return
 
@@ -4247,6 +4424,15 @@ class AgentWorkbenchApp:
             self.log_event(f"Verification: {restore_run.verification_status}")
             self.set_status_action(f"restore {restore_run.status}")
 
+            # Update Session Memory (Restore)
+            if self.session_manager.current_session:
+                self.session_updater.record_restore_event(
+                    self.session_manager.current_session,
+                    restore_run.run_id,
+                    restore_run.snapshot_id # Using snapshot_id as baseline_run_id for simplicity
+                )
+                self.session_manager.save_session()
+
             # Show result in restore view
             self.restore_view.configure(state="normal")
             self.restore_view.delete("1.0", "end")
@@ -4382,6 +4568,19 @@ class AgentWorkbenchApp:
             self.translate_button.state(["!disabled"])
             self.draft_session.current_draft = draft
             self.draft_session.record_attempt(self.request_text.get("1.0", "end-1c"), draft, True)
+
+            # Update Session Memory
+            if self.session_manager.current_session:
+                inferred = draft.targets.inferred_editable_paths
+                template_id = draft.origin_metadata.get("template_id")
+                self.session_updater.record_translation_event(
+                    self.session_manager.current_session,
+                    draft.draft_id,
+                    self.request_text.get("1.0", "end-1c"),
+                    inferred,
+                    template_id
+                )
+                self.session_manager.save_session()
 
             import yaml
             self.draft_text.delete("1.0", "end")

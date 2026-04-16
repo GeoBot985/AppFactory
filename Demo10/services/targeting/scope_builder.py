@@ -19,7 +19,7 @@ class ScopeBuilder:
         self.inventory_builder = WorkspaceInventoryBuilder()
         self._inventory_cache: dict[str, list[InventoryFile]] = {}
 
-    def build(self, project_root: str, task_id: str, spec_text: str, task_target: str = "", prior_history: list[AttemptRecord] | None = None) -> ScopeContract:
+    def build(self, project_root: str, task_id: str, spec_text: str, task_target: str = "", prior_history: list[AttemptRecord] | None = None, session_context: dict | None = None) -> ScopeContract:
         prior_history = prior_history or []
         inventory = self._inventory_cache.get(project_root)
         if inventory is None:
@@ -32,6 +32,11 @@ class ScopeBuilder:
         explicit_paths = {term for term in terms if "/" in term or term.endswith(".py") or term.endswith(".json") or term.endswith(".yaml") or term.endswith(".yml")}
         symbol_terms = [term for term in terms if re.match(r"^[a-zA-Z_][a-zA-Z0-9_]*$", term)]
         failure_files = [path for attempt in prior_history for path in attempt.targeted_files if attempt.failure_class]
+        if session_context:
+            failure_files.extend(session_context.get("failure_files", []))
+            failure_files = list(set(failure_files))
+
+        session_primary = session_context.get("primary_files", []) if session_context else []
 
         scored: list[tuple[int, str, InventoryFile]] = []
         symbol_match_paths: set[str] = set()
@@ -50,6 +55,9 @@ class ScopeBuilder:
             elif path in failure_files:
                 score += 95
                 reason = "previous_attempt_failure_file"
+            elif path in session_primary:
+                score += 30
+                reason = "session_working_set_boost"
             else:
                 filename = path.split("/")[-1].lower()
                 if any(term in filename for term in terms):

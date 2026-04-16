@@ -133,12 +133,13 @@ class DraftSpecCompiler:
         content = json.dumps(draft.to_dict(), sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()
 
-    def compile_with_repair(self, draft: DraftSpec, max_attempts: int = 3) -> Tuple[CompiledPlan, CompileReport, Optional[CompileRepairSession], DraftSpec]:
+    def compile_with_repair(self, draft: DraftSpec, max_attempts: int = 3, session_context: Optional[Dict[str, Any]] = None) -> Tuple[CompiledPlan, CompileReport, Optional[CompileRepairSession], DraftSpec]:
         """Runs compile with auto-repair loop."""
         repaired_draft, repair_session = self.repair_controller.run_repair_loop(
             draft,
             self.compile,
-            max_attempts=max_attempts
+            max_attempts=max_attempts,
+            session_context=session_context
         )
 
         # Final compilation of the (possibly) repaired draft
