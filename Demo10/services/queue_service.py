@@ -74,11 +74,14 @@ class QueueService:
         slot.pipeline_stages = [
             PipelineStage(name="Spec Intake"),
             PipelineStage(name="Spec Parsing"),
+            PipelineStage(name="Policy Check (Pre-Exec)"),
+            PipelineStage(name="Runtime Environment"),
             PipelineStage(name="Task Execution"),
             PipelineStage(name="Structural Validation"),
             PipelineStage(name="Deterministic Verification"),
             PipelineStage(name="Regression Comparison"),
             PipelineStage(name="Outcome Synthesis"),
+            PipelineStage(name="Policy Check (Pre-Promote)"),
             PipelineStage(name="Logging / Audit"),
         ]
 
