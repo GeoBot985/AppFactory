@@ -1,0 +1,20 @@
+[
+  {
+    "approval_id": "appr_20260416_ae67",
+    "gate_type": "execution",
+    "entity_type": "run",
+    "entity_id": "run_20260416_111720_96ee",
+    "queue_id": "q_28307a7e",
+    "slot_id": "0",
+    "risk_class": "R2_HIGH",
+    "reason_codes": [
+      "SHELL_STRING_COMMAND",
+      "UNATTENDED_RISK_THRESHOLD_EXCEEDED"
+    ],
+    "status": "pending",
+    "requested_at": "2026-04-16T11:27:13.460574",
+    "age_minutes": 2,
+    "decider": null,
+    "decided_at": null
+  }
+]

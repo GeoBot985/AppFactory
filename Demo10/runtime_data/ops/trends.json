@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-04-16T11:29:26.107765",
+  "runs_by_status": {
+    "SNAPSHOT_PREPARING": 1
+  },
+  "failures_by_stage": {},
+  "approvals_by_decision": {
+    "pending": 1
+  },
+  "regressions_by_status": {}
+}

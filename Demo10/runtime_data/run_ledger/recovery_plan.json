@@ -1,0 +1,8 @@
+[
+  {
+    "run_id": "run_20260416_111720_96ee",
+    "category": "RESTART_REQUIRED",
+    "recommended_action": "RESTART",
+    "reason": "Interrupted in state SNAPSHOT_PREPARING"
+  }
+]

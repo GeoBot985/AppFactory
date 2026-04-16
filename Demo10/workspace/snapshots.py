@@ -42,10 +42,9 @@ class SnapshotService:
 
         # Save manifest
         manifest_path = execution_root / "snapshot_manifest.json"
+        manifest.manifest_path = str(manifest_path.resolve())
         with open(manifest_path, "w") as f:
-            # We need a custom serializer or convert dataclass to dict
-            manifest_dict = self._manifest_to_dict(manifest)
-            json.dump(manifest_dict, f, indent=2)
+            json.dump(manifest.to_dict(), f, indent=2)
 
         return manifest
 
@@ -60,17 +59,4 @@ class SnapshotService:
                 shutil.copy2(item, target / item.name)
 
     def _manifest_to_dict(self, manifest: SnapshotManifest) -> dict:
-        return {
-            "run_id": manifest.run_id,
-            "spec_id": manifest.spec_id,
-            "source_workspace": manifest.source_workspace,
-            "execution_workspace": manifest.execution_workspace,
-            "mode": manifest.mode,
-            "created_at": manifest.created_at,
-            "source_fingerprint": {
-                "file_count": manifest.source_fingerprint.file_count,
-                "summary_hash": manifest.source_fingerprint.summary_hash,
-                "entries": manifest.source_fingerprint.entries,
-                "created_at": manifest.source_fingerprint.created_at
-            }
-        }
+        return manifest.to_dict()

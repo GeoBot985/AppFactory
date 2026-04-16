@@ -3,7 +3,7 @@ import sys
 import argparse
 import json
 from pathlib import Path
-from Demo10.verification.regression_runner import RegressionRunner
+from verification.regression_runner import RegressionRunner
 
 def main():
     parser = argparse.ArgumentParser(description="Demo10 Regression Runner")

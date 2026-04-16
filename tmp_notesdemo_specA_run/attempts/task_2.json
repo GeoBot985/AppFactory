@@ -1,0 +1,67 @@
+{
+  "final_outcome": "succeeded_after_regenerate",
+  "applied_attempt_index": 3,
+  "stopped_reason": "success",
+  "attempts": [
+    {
+      "attempt_index": 1,
+      "attempt_type": "initial_generate",
+      "input_summary": "prompt_len=431 generated_len=469",
+      "operation_plan_summary": "failed; create_file:tests/test_models.py",
+      "validation_result_summary": "validated=1, passed=1, failed=0",
+      "failure_class": "module_not_found",
+      "repair_strategy_used": "initial_generate",
+      "success": false,
+      "stop_reason": "targeted repair after deterministic failure",
+      "targeted_files": [
+        "tests/test_models.py"
+      ],
+      "diff_preview_summary": "--- tests/test_models.py:before\n+++ tests/test_models.py:after\n@@ -0,0 +1,22 @@\n+import unittest\n+\n+from myapp.models import MyModel  # Import the model you want to test\n+\n+\n+class TestModels(unittest.TestCase):\n+    def setUp(self) -> None",
+      "error_summary": "module not found during test execution",
+      "disk_write_performed": false,
+      "failure_fingerprint": "module_not_found|tests/test_models.py|0|0|module not found during test execution",
+      "context_summary": "files=0, confidence=weak",
+      "targeting_summary": "class=single_file_local, confidence=high, editable=1, policy=scope_allowed"
+    },
+    {
+      "attempt_index": 2,
+      "attempt_type": "repair_generate",
+      "input_summary": "prompt_len=1013 generated_len=195",
+      "operation_plan_summary": "failed; create_file:tests/test_models.py",
+      "validation_result_summary": "validated=1, passed=0, failed=1",
+      "failure_class": "python_syntax_error",
+      "repair_strategy_used": "repair_generate",
+      "success": false,
+      "stop_reason": "escalate after repeated or second failure",
+      "targeted_files": [
+        "tests/test_models.py"
+      ],
+      "diff_preview_summary": "--- tests/test_models.py:before\n+++ tests/test_models.py:after\n@@ -0,0 +1,13 @@\n+```python\n+import unittest\n+\n+class TestModels(unittest.TestCase):\n+    def setUp(self):\n+        pass\n+        \n+    def tearDown(self):\n+        pass\n+\n+if _",
+      "error_summary": "invalid syntax",
+      "disk_write_performed": false,
+      "failure_fingerprint": "python_syntax_error|tests/test_models.py|1|1|invalid syntax",
+      "context_summary": "files=0, confidence=weak",
+      "targeting_summary": "class=single_file_local, confidence=high, editable=1, policy=scope_allowed"
+    },
+    {
+      "attempt_index": 3,
+      "attempt_type": "full_regenerate",
+      "input_summary": "prompt_len=967 generated_len=183",
+      "operation_plan_summary": "completed; create_file:tests/test_models.py",
+      "validation_result_summary": "validated=1, passed=1, failed=0",
+      "failure_class": "",
+      "repair_strategy_used": "full_regenerate",
+      "success": true,
+      "stop_reason": "accepted_after_validation",
+      "targeted_files": [
+        "tests/test_models.py"
+      ],
+      "diff_preview_summary": "--- tests/test_models.py:before\n+++ tests/test_models.py:after\n@@ -0,0 +1,9 @@\n+import unittest\n+\n+class TestModels(unittest.TestCase):\n+    def test_model(self):\n+        # Add your model testing code here\n+        pass\n+\n+if __name__ == '",
+      "error_summary": "",
+      "disk_write_performed": true,
+      "failure_fingerprint": "",
+      "context_summary": "files=0, confidence=weak",
+      "targeting_summary": "class=single_file_local, confidence=high, editable=1, policy=scope_allowed"
+    }
+  ]
+}

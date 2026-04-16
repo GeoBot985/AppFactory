@@ -61,8 +61,8 @@ class LedgerService:
         # 2. Trigger incremental ops update (SPEC 018 Mode A)
         if trigger_ops_update:
             try:
-                from Demo10.ops.ops_service import OpsService
-                from Demo10.ops.health import HealthEvaluator
+                from ops.ops_service import OpsService
+                from ops.health import HealthEvaluator
                 ops = OpsService(self.storage_root)
                 # For now, simple rebuild of relevant indices on any event
                 # In production this would be more granular

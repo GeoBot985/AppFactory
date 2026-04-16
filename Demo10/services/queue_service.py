@@ -20,6 +20,7 @@ class PipelineStage:
     started_at: str = ""
     completed_at: str = ""
     last_message: str = ""
+    message_history: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -139,6 +140,7 @@ class QueueService:
             stage.started_at = ""
             stage.completed_at = ""
             stage.last_message = ""
+            stage.message_history = []
 
     def update_stage_status(
         self,
@@ -156,6 +158,9 @@ class QueueService:
                     stage.completed_at = self._now()
                 if message:
                     stage.last_message = message
+                    stage.message_history.append(message)
+                    if len(stage.message_history) > 8:
+                        stage.message_history = stage.message_history[-8:]
                 break
 
     def mark_slot_completed(self, state: SpecQueueState, slot: QueueSlot) -> None:

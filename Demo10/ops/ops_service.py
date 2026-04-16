@@ -194,8 +194,8 @@ class OpsService:
 
     def rebuild_recovery_index(self):
         recovery_index = []
-        from Demo10.services.run_ledger.ledger import LedgerService
-        from Demo10.services.run_ledger.recovery import RecoveryService
+        from services.run_ledger.ledger import LedgerService
+        from services.run_ledger.recovery import RecoveryService
         ledger = LedgerService(self.project_root)
         recovery_service = RecoveryService(self.project_root, ledger)
         plan = recovery_service.scan_for_interrupted_runs()

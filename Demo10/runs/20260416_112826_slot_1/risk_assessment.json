@@ -1,0 +1,29 @@
+{
+  "spec_risk": "R2_HIGH",
+  "task_risks": [
+    {
+      "task_id": "task_1",
+      "risk": "R0_LOW",
+      "reasons": [
+        "CREATE task"
+      ]
+    },
+    {
+      "task_id": "task_2",
+      "risk": "R0_LOW",
+      "reasons": [
+        "CREATE task"
+      ]
+    },
+    {
+      "task_id": "task_3",
+      "risk": "R2_HIGH",
+      "reasons": [
+        "RUN task",
+        "Shell string command detected"
+      ]
+    }
+  ],
+  "promotion_risk_estimate": "R2_HIGH",
+  "overall_risk": "R2_HIGH"
+}

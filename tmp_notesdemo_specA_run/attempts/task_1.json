@@ -1,0 +1,27 @@
+{
+  "final_outcome": "succeeded_first_try",
+  "applied_attempt_index": 1,
+  "stopped_reason": "success",
+  "attempts": [
+    {
+      "attempt_index": 1,
+      "attempt_type": "initial_generate",
+      "input_summary": "prompt_len=421 generated_len=240",
+      "operation_plan_summary": "completed; create_file:notes/models.py",
+      "validation_result_summary": "validated=1, passed=1, failed=0",
+      "failure_class": "",
+      "repair_strategy_used": "initial_generate",
+      "success": true,
+      "stop_reason": "accepted_after_validation",
+      "targeted_files": [
+        "notes/models.py"
+      ],
+      "diff_preview_summary": "--- notes/models.py:before\n+++ notes/models.py:after\n@@ -0,0 +1,9 @@\n+from django.db import models\n+\n+class Note(models.Model):\n+    title = models.CharField(max_length=100)\n+    content = models.TextField()\n+    created_at = models.DateTim",
+      "error_summary": "",
+      "disk_write_performed": true,
+      "failure_fingerprint": "",
+      "context_summary": "files=0, confidence=weak",
+      "targeting_summary": "class=single_file_local, confidence=high, editable=1, policy=scope_allowed"
+    }
+  ]
+}

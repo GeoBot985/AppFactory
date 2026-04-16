@@ -1,0 +1,14 @@
+{
+  "task_summary": "Generate code for the file 'tests/test_models.py' based on these constraints: none. Output ONLY the code, no markdown markers.",
+  "attempt_type": "full_regenerate",
+  "project_root": "D:\\Projects\\AppFactory\\tmp_notesdemo_specA",
+  "selection_confidence": "weak",
+  "selected_files": [],
+  "editable_targets": [
+    "tests/test_models.py"
+  ],
+  "read_only_context_files": [],
+  "prior_attempt_summary": "repair_generate: validated=1, passed=0, failed=1",
+  "failure_detail": "invalid syntax",
+  "policy_summary": "Respect workspace path safety. Do not use fuzzy patching. Keep changes bounded."
+}

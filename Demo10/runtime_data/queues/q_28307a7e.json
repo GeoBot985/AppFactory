@@ -1,0 +1,51 @@
+{
+  "queue_id": "q_28307a7e",
+  "created_at": "2026-04-16T11:29:25.758576",
+  "settings": {},
+  "slots": [
+    {
+      "index": 0,
+      "spec": "create file notes/models.py\ncreate file tests/test_models.py\nrun command python -m unittest discover -s tests"
+    },
+    {
+      "index": 1,
+      "spec": ""
+    },
+    {
+      "index": 2,
+      "spec": ""
+    },
+    {
+      "index": 3,
+      "spec": ""
+    },
+    {
+      "index": 4,
+      "spec": ""
+    },
+    {
+      "index": 5,
+      "spec": ""
+    },
+    {
+      "index": 6,
+      "spec": ""
+    },
+    {
+      "index": 7,
+      "spec": ""
+    },
+    {
+      "index": 8,
+      "spec": ""
+    },
+    {
+      "index": 9,
+      "spec": ""
+    }
+  ],
+  "runtime_defaults": {},
+  "recovery_policy": "manual",
+  "source_policy": "promoted_head",
+  "state": "RUNNING"
+}

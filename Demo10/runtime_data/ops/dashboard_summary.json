@@ -1,0 +1,16 @@
+{
+  "active_queues": 1,
+  "paused_queues": 0,
+  "running_runs": 0,
+  "approval_pending_runs": 0,
+  "failed_runs_24h": 0,
+  "partial_failures_24h": 0,
+  "completed_runs_24h": 0,
+  "blocked_promotions": 0,
+  "interrupted_runs": 1,
+  "failing_regression_suites": 0,
+  "ledger_issues": 0,
+  "banners": [
+    "RECOVERY_PENDING"
+  ]
+}

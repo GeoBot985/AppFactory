@@ -1,0 +1,17 @@
+[
+  {
+    "queue_id": "q_28307a7e",
+    "status": "RUNNING",
+    "source_policy": "promoted_head",
+    "runtime_profile_default": "unknown",
+    "slots_total": 10,
+    "slots_completed": 0,
+    "slots_failed": 0,
+    "slots_pending": 10,
+    "slots_approval_pending": 0,
+    "current_slot_id": null,
+    "created_at": "2026-04-16T11:29:25.758576",
+    "updated_at": "2026-04-16T11:29:25.758576",
+    "age_minutes": 0
+  }
+]

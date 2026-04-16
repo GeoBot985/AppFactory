@@ -3,9 +3,9 @@ import sys
 import argparse
 import json
 from pathlib import Path
-from Demo10.ops.ops_service import OpsService
-from Demo10.ops.health import HealthEvaluator
-from Demo10.ops.rebuild import RebuildService
+from ops.ops_service import OpsService
+from ops.health import HealthEvaluator
+from ops.rebuild import RebuildService
 
 def main():
     parser = argparse.ArgumentParser(description="Demo10 Operations CLI")

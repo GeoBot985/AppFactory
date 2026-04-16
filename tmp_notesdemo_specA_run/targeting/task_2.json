@@ -1,0 +1,41 @@
+{
+  "task_id": "task_2",
+  "primary_target_files": [
+    "tests/test_models.py"
+  ],
+  "secondary_edit_files": [],
+  "secondary_context_files": [],
+  "read_only_context_files": [],
+  "excluded_files": [],
+  "target_symbols": [
+    {
+      "symbol_name": "generate",
+      "resolution_status": "symbol_unresolved",
+      "file_candidates": [],
+      "region_hint": ""
+    },
+    {
+      "symbol_name": "based",
+      "resolution_status": "symbol_unresolved",
+      "file_candidates": [],
+      "region_hint": ""
+    },
+    {
+      "symbol_name": "these",
+      "resolution_status": "symbol_unresolved",
+      "file_candidates": [],
+      "region_hint": ""
+    }
+  ],
+  "target_regions": {},
+  "targeting_reasons": {
+    "tests/test_models.py": "explicit_task_target"
+  },
+  "scope_confidence": "high",
+  "scope_class": "single_file_local",
+  "scope_policy_result": "scope_allowed",
+  "warnings": [
+    "unresolved symbols: generate, based, these"
+  ],
+  "expansion_log": []
+}

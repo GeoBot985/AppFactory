@@ -1,0 +1,15 @@
+{
+  "policy_domain": "SPEC_INTAKE",
+  "entity_id": "run_20260416_111720_96ee",
+  "risk_class": "R2_HIGH",
+  "decision": "APPROVAL_REQUIRED",
+  "reason_codes": [
+    "SHELL_STRING_COMMAND",
+    "UNATTENDED_RISK_THRESHOLD_EXCEEDED"
+  ],
+  "matched_rules": [
+    "defaults.unattended_max_risk",
+    "command_rules.shell_string_commands_require_approval"
+  ],
+  "facts": {}
+}

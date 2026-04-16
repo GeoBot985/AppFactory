@@ -1,0 +1,128 @@
+{
+  "project_root": "D:\\Projects\\AppFactory\\tmp_notesdemo_specA",
+  "mode": "apply",
+  "status": "completed",
+  "created_count": 1,
+  "modified_count": 0,
+  "deleted_count": 0,
+  "unchanged_count": 0,
+  "failed_count": 0,
+  "files_validated": 1,
+  "files_passed": 1,
+  "files_failed": 0,
+  "validation_errors": [],
+  "batch_summary": {
+    "batch_id": "batch_1",
+    "spec_item_id": "task_1",
+    "target_files": [
+      "notes/models.py"
+    ],
+    "file_summaries": [
+      {
+        "path": "notes/models.py",
+        "operation_type": "create_file",
+        "purpose": "task_executor.create",
+        "symbols_added": [
+          "Note"
+        ],
+        "symbols_removed": [],
+        "imports_added": [
+          "django.db:models"
+        ],
+        "imports_removed": [],
+        "depends_on": [
+          "django.db"
+        ]
+      }
+    ],
+    "planned_symbols_added": [
+      "notes/models.py:Note"
+    ],
+    "planned_symbols_modified": [
+      "notes/models.py"
+    ],
+    "planned_symbols_removed": [],
+    "import_changes": [
+      "notes/models.py:django.db:models"
+    ],
+    "entrypoint_changes": [],
+    "batch_validation_status": "batch_valid_with_warnings",
+    "batch_failure_reasons": [],
+    "warnings": [
+      "notes/models.py: orphan new file not referenced in affected batch"
+    ],
+    "impacted_files": [],
+    "complexity": "single_file_simple"
+  },
+  "test_summary": {
+    "test_run_id": "test_1776331936344",
+    "status": "passed_with_warnings",
+    "runner": "none",
+    "total_tests": 0,
+    "tests_passed": 0,
+    "tests_failed": 0,
+    "tests_skipped": 0,
+    "exit_code": 0,
+    "duration_seconds": 0.0,
+    "stdout": "",
+    "stderr": "",
+    "failure_class": "",
+    "failure_detail": "no tests detected",
+    "failing_tests": [],
+    "no_tests_found": true,
+    "timed_out": false
+  },
+  "results": [
+    {
+      "op_id": "task_1",
+      "op_type": "create_file",
+      "path": "notes/models.py",
+      "normalized_path": "D:\\Projects\\AppFactory\\tmp_notesdemo_specA\\notes\\models.py",
+      "status": "created",
+      "matches_found": 0,
+      "matches_replaced": 0,
+      "content_changed": true,
+      "before_hash": "",
+      "after_hash": "372d9965c368ea8b24ec6135e85f059fadbb2bd97f3fe587cd622643e5760812",
+      "before_size": 0,
+      "after_size": 240,
+      "line_delta": 9,
+      "size_delta": 240,
+      "failure_reason": "",
+      "failure_code": "",
+      "diff_preview": "--- notes/models.py:before\n+++ notes/models.py:after\n@@ -0,0 +1,9 @@\n+from django.db import models\n+\n+class Note(models.Model):\n+    title = models.CharField(max_length=100)\n+    content = models.TextField()\n+    created_at = models.DateTimeField(auto_now_add=True)\n+\n+    def __str__(self):\n+        return self.title",
+      "validation": {
+        "path": "notes/models.py",
+        "language": "python",
+        "status": "valid",
+        "error_type": "",
+        "line_number": 0,
+        "column_offset": 0,
+        "error_message": "",
+        "offending_line": "",
+        "check_name": "ast_parse"
+      }
+    }
+  ],
+  "ledger": [
+    {
+      "order_index": 0,
+      "timestamp": "2026-04-16T11:32:16",
+      "op_id": "task_1",
+      "op_type": "create_file",
+      "target_path": "notes/models.py",
+      "normalized_path": "D:\\Projects\\AppFactory\\tmp_notesdemo_specA\\notes\\models.py",
+      "validated": true,
+      "executed": true,
+      "success": true,
+      "failure_reason": "",
+      "failure_code": "",
+      "before_hash": "",
+      "after_hash": "372d9965c368ea8b24ec6135e85f059fadbb2bd97f3fe587cd622643e5760812",
+      "before_size": 0,
+      "after_size": 240,
+      "validation_status": "valid",
+      "validation_error": ""
+    }
+  ]
+}

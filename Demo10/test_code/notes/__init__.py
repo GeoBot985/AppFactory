@@ -1,0 +1,1 @@
+"""Simple note application package."""

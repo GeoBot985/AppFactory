@@ -1,0 +1,22 @@
+{
+  "run_20260416_111720_96ee": {
+    "run_id": "run_20260416_111720_96ee",
+    "spec_id": "legacy",
+    "queue_id": "q_28307a7e",
+    "slot_id": "0",
+    "state": "SNAPSHOT_PREPARING",
+    "execution_mode": "promote_on_success",
+    "runtime_profile": "default",
+    "source_policy": "promoted_head",
+    "source_snapshot_manifest": "D:\\Projects\\AppFactory\\Demo10\\runs\\20260416_112925_slot_1\\snapshot_manifest.json",
+    "execution_workspace": "D:\\Projects\\AppFactory\\Demo10\\runs\\20260416_112925_slot_1\\execution_workspace",
+    "verification_report": null,
+    "promotion_report": null,
+    "resume_policy": "restart_from_phase_boundary",
+    "parent_run_id": null,
+    "restart_of_run_id": null,
+    "replay_of_run_id": null,
+    "created_at": "2026-04-16T11:17:20.821175",
+    "updated_at": "2026-04-16T11:29:26.054093"
+  }
+}

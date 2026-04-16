@@ -1,0 +1,20 @@
+[
+  {
+    "run_id": "run_20260416_111720_96ee",
+    "queue_id": "q_28307a7e",
+    "slot_id": "0",
+    "spec_id": "legacy",
+    "state": "SNAPSHOT_PREPARING",
+    "final_status": null,
+    "failure_stage": null,
+    "risk_class": null,
+    "policy_status": null,
+    "approval_status": null,
+    "promotion_status": null,
+    "runtime_profile": "default",
+    "started_at": "2026-04-16T11:17:20.821175",
+    "duration_seconds": 725.232918,
+    "last_phase": "SNAPSHOT_PREPARING",
+    "resumable_classification": null
+  }
+]

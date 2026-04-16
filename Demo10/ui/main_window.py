@@ -814,6 +814,9 @@ class AgentWorkbenchApp:
             relief="flat",
         )
         self.pipeline_view.grid(row=0, column=0, sticky="nsew")
+        pipeline_scroll = ttk.Scrollbar(pipeline_frame, orient="vertical", command=self.pipeline_view.yview)
+        self.pipeline_view.configure(yscrollcommand=pipeline_scroll.set)
+        pipeline_scroll.grid(row=0, column=1, sticky="ns")
         self.pipeline_view.configure(state="disabled")
         self.pipeline_view.tag_configure("pending", foreground="#808080")
         self.pipeline_view.tag_configure("running", foreground="#569cd6")
@@ -1389,7 +1392,10 @@ class AgentWorkbenchApp:
                 status_sym = "[-]"
 
             self.pipeline_view.insert("end", f"  {status_sym} {stage.name}\n", stage.status)
-            if stage.last_message:
+            if getattr(stage, "message_history", None):
+                for entry in stage.message_history[-5:]:
+                    self.pipeline_view.insert("end", f"      > {entry}\n", "pending")
+            elif stage.last_message:
                 self.pipeline_view.insert("end", f"      > {stage.last_message}\n", "pending")
 
         # Durable Run Info

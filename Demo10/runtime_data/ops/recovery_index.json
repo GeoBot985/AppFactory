@@ -1,0 +1,12 @@
+[
+  {
+    "run_id": "run_20260416_111720_96ee",
+    "queue_id": "q_28307a7e",
+    "last_durable_state": "SNAPSHOT_PREPARING",
+    "classification": "RESTART_REQUIRED",
+    "action_options": [
+      "RESTART"
+    ],
+    "artifact_integrity": "OK"
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "status": "OK",
+  "generated_at": "2026-04-16T11:29:26.121287",
+  "components": {
+    "queues": "OK",
+    "runs": "OK",
+    "approvals": "OK",
+    "regression": "OK",
+    "ledger": "OK"
+  }
+}
