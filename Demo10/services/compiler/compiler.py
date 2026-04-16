@@ -11,6 +11,10 @@ from .lowering import TaskLowerer
 from .dependency_graph import DependencyGraphNormalizer
 from services.policy.engine import PolicyEngine
 from services.policy.models import PolicyConfig, PolicyDomain, PolicyDecision
+from .repair_controller import RepairController
+from .repair_strategies import RepairStrategies
+from .error_classifier import ErrorClassifier
+from .repair_models import CompileRepairSession
 
 class DraftSpecCompiler:
     def __init__(self, policy_config: Optional[PolicyConfig] = None):
@@ -18,6 +22,10 @@ class DraftSpecCompiler:
         self.lowerer = TaskLowerer()
         self.graph_normalizer = DependencyGraphNormalizer()
         self.policy_engine = PolicyEngine(policy_config or PolicyConfig())
+        self.repair_controller = RepairController(
+            RepairStrategies(ErrorClassifier()),
+            self.policy_engine
+        )
 
     def compile(self, draft: DraftSpec) -> Tuple[CompiledPlan, CompileReport]:
         diagnostics = self.validator.validate(draft)
@@ -124,6 +132,19 @@ class DraftSpecCompiler:
     def _hash_draft(self, draft: DraftSpec) -> str:
         content = json.dumps(draft.to_dict(), sort_keys=True)
         return hashlib.sha256(content.encode()).hexdigest()
+
+    def compile_with_repair(self, draft: DraftSpec, max_attempts: int = 3) -> Tuple[CompiledPlan, CompileReport, Optional[CompileRepairSession], DraftSpec]:
+        """Runs compile with auto-repair loop."""
+        repaired_draft, repair_session = self.repair_controller.run_repair_loop(
+            draft,
+            self.compile,
+            max_attempts=max_attempts
+        )
+
+        # Final compilation of the (possibly) repaired draft
+        plan, report = self.compile(repaired_draft)
+
+        return plan, report, repair_session, repaired_draft
 
     def is_plan_stale(self, plan: CompiledPlan, draft: DraftSpec) -> bool:
         return plan.draft_hash != self._hash_draft(draft)
