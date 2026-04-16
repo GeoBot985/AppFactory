@@ -4,7 +4,12 @@ import time
 import json
 from dataclasses import asdict
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
+from services.attempts.failure_classifier import classify_batch_failure, classify_edit_failure, fingerprint_failure
+from services.attempts.models import AttemptConfig, AttemptLedger, AttemptRecord
+from services.attempts.repair_prompt_builder import build_repair_input
+from services.attempts.strategy_policy import classify_final_outcome, select_next_strategy
+from services.context import ContextConfig, ContextPackageBuilder
 from services.task_service import Task, TaskType, TaskStatus, TaskResult
 from services.file_ops_service import FileOpsService
 from services.ollama_service import OllamaService
@@ -38,6 +43,8 @@ class TaskExecutorService:
         self.cmd_executor = cmd_executor
         self.mutation_mode = mutation_mode
         self.edit_engine = EditEngine(AnchorResolver())
+        self.attempt_config = AttemptConfig()
+        self.context_builder = ContextPackageBuilder(ContextConfig())
 
     def execute(self, task: Task) -> TaskResult:
         task.status = TaskStatus.RUNNING
@@ -65,29 +72,34 @@ class TaskExecutorService:
         return result
 
     def _handle_create(self, task: Task) -> TaskResult:
-        # LLM helps generate content if not provided
-        content = task.content
-        if not content:
-            prompt = f"Generate code for the file '{task.target}' based on these constraints: {task.constraints or 'none'}. Output ONLY the code, no markdown markers."
-            content = self._call_llm(prompt)
+        base_prompt = f"Generate code for the file '{task.target}' based on these constraints: {task.constraints or 'none'}. Output ONLY the code, no markdown markers."
 
-        batch = self.file_ops.execute_plan(
-            [
-                FileOperation(
-                    op_id=task.id,
-                    op_type="create_file",
-                    path=task.target,
-                    content=content,
-                    reason=task.constraints or "",
-                    source_stage="task_executor.create",
-                )
-            ],
-            mode=self.mutation_mode,
+        def build_batch(content: str, mode: str):
+            return self.file_ops.execute_plan(
+                [
+                    FileOperation(
+                        op_id=task.id,
+                        op_type="create_file",
+                        path=task.target,
+                        content=content,
+                        reason=task.constraints or "",
+                        source_stage="task_executor.create",
+                    )
+                ],
+                mode=mode,
+            )
+
+        result, accepted_batch, ledger, _ = self._run_generation_attempt_loop(
+            task=task,
+            base_prompt=base_prompt,
+            supplied_content=task.content,
+            build_batch=build_batch,
         )
-        self._write_mutation_artifacts(task.id, batch)
-        if batch.failed_count:
-            return TaskResult(success=False, message=batch.results[0].failure_reason or "create failed", details={"mutation_batch": batch})
-        return TaskResult(success=True, message=f"Created {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
+        if accepted_batch:
+            self._write_mutation_artifacts(task.id, accepted_batch)
+        self._write_attempt_artifacts(task.id, ledger)
+        self.write_context_artifact(task.id, result.details.get("context_package"))
+        return result
 
     def _handle_modify(self, task: Task) -> TaskResult:
         # SPEC 011 New modify flow
@@ -103,69 +115,109 @@ class TaskExecutorService:
         old_content = target_path.read_text(encoding="utf-8")
         lines = target_path.read_text(encoding="utf-8").splitlines(keepends=True)
 
-        # Get payload from LLM if not present
-        if not task.content:
-            prompt = f"Generate the content/payload for this edit task on '{task.target}': {task.constraints}. Output ONLY the new code block, no markdown markers."
-            task.content = self._call_llm(prompt)
+        base_prompt = f"Generate the content/payload for this edit task on '{task.target}': {task.constraints}. Output ONLY the new code block, no markdown markers."
 
-        instr.payload = task.content
-
-        # Apply edit
-        new_lines, edit_result = self.edit_engine.apply(lines, instr)
-
-        if edit_result.status == EditStatus.FAILED:
-            return TaskResult(success=False, message=f"Edit failed: {edit_result.reason}", error=edit_result.reason)
-
-        if edit_result.status == EditStatus.NO_OP:
-            return TaskResult(success=True, message=f"No changes needed: {edit_result.reason}", changes=[])
-
-        new_content = "".join(new_lines)
-
-        # Safe Write & Backup
-        if self.run_folder:
-            sw = SafeWriteService(self.file_ops.project_root, self.run_folder)
-
-            # Backup
-            edit_result.backup_path = str(sw.backup(task.target))
-
-            # Validation
-            val = sw.validate_python(new_content)
-            edit_result.validation = val
-            if not val.syntax_ok:
-                return TaskResult(success=False, message=f"Syntax validation failed: {val.error_message}", error=val.error_message)
-
-            # Symbol validation if applicable
-            if instr.operation in [OperationType.ENSURE_FUNCTION, OperationType.REPLACE_BLOCK] and instr.anchor_type == AnchorType.FUNCTION:
-                if not sw.verify_symbol(new_content, instr.anchor_value, "function"):
-                     return TaskResult(success=False, message=f"Symbol validation failed: function {instr.anchor_value} missing after edit")
-
-            # Diff
-            diff_text = generate_unified_diff(old_content, new_content, task.target)
-            edit_result.diff_path = str(save_diff(self.run_folder, task.target, diff_text))
-
-            # Commit is now routed through the mutation engine after validation/diff generation.
-        batch = self.file_ops.execute_plan(
-            [
-                FileOperation(
-                    op_id=task.id,
-                    op_type="replace_file",
-                    path=task.target,
-                    content=new_content,
-                    reason=edit_result.reason,
-                    source_stage="task_executor.modify",
+        def build_batch(payload: str, mode: str):
+            instr.payload = payload
+            new_lines, edit_result = self.edit_engine.apply(lines, instr)
+            if edit_result.status == EditStatus.FAILED:
+                failure_class, failure_detail = classify_edit_failure(edit_result.reason)
+                record = AttemptRecord(
+                    attempt_index=0,
+                    attempt_type="",
+                    input_summary=f"payload_len={len(payload)}",
+                    operation_plan_summary=f"{instr.operation.value}:{task.target}",
+                    validation_result_summary="edit_engine_failed",
+                    failure_class=failure_class,
+                    error_summary=failure_detail,
+                    targeted_files=[task.target],
+                    failure_fingerprint=fingerprint_failure(failure_class, failure_detail, task.target),
                 )
-            ],
-            mode=self.mutation_mode,
+                return None, edit_result, record
+
+            if edit_result.status == EditStatus.NO_OP:
+                batch = self.file_ops.execute_plan([], mode="dry-run")
+                batch.status = "completed"
+                return batch, edit_result, None
+
+            new_content = "".join(new_lines)
+
+            # Safe Write & Backup
+            if self.run_folder:
+                sw = SafeWriteService(self.file_ops.project_root, self.run_folder)
+
+                # Backup
+                edit_result.backup_path = str(sw.backup(task.target))
+
+                # Validation
+                val = sw.validate_python(new_content)
+                edit_result.validation = val
+                if not val.syntax_ok:
+                    batch = self.file_ops.execute_plan(
+                        [
+                            FileOperation(
+                                op_id=task.id,
+                                op_type="replace_file",
+                                path=task.target,
+                                content=new_content,
+                                reason=edit_result.reason,
+                                source_stage="task_executor.modify",
+                            )
+                        ],
+                        mode="dry-run",
+                    )
+                    return batch, edit_result, None
+
+                # Symbol validation if applicable
+                if instr.operation in [OperationType.ENSURE_FUNCTION, OperationType.REPLACE_BLOCK] and instr.anchor_type == AnchorType.FUNCTION:
+                    if not sw.verify_symbol(new_content, instr.anchor_value, "function"):
+                        batch = self.file_ops.execute_plan(
+                            [
+                                FileOperation(
+                                    op_id=task.id,
+                                    op_type="replace_file",
+                                    path=task.target,
+                                    content=new_content,
+                                    reason=f"symbol validation failed: function {instr.anchor_value} missing after edit",
+                                    source_stage="task_executor.modify",
+                                )
+                            ],
+                            mode="dry-run",
+                        )
+                        return batch, edit_result, None
+
+                # Diff
+                diff_text = generate_unified_diff(old_content, new_content, task.target)
+                edit_result.diff_path = str(save_diff(self.run_folder, task.target, diff_text))
+
+            batch = self.file_ops.execute_plan(
+                [
+                    FileOperation(
+                        op_id=task.id,
+                        op_type="replace_file",
+                        path=task.target,
+                        content=new_content,
+                        reason=edit_result.reason,
+                        source_stage="task_executor.modify",
+                    )
+                ],
+                mode=mode,
+            )
+            return batch, edit_result, None
+
+        result, accepted_batch, ledger, extra_details = self._run_generation_attempt_loop(
+            task=task,
+            base_prompt=base_prompt,
+            supplied_content=task.content,
+            build_batch=build_batch,
         )
-        self._write_mutation_artifacts(task.id, batch)
-        if batch.failed_count:
-            return TaskResult(success=False, message=batch.results[0].failure_reason or "replace failed", error=batch.results[0].failure_code, details={"mutation_batch": batch})
-        return TaskResult(
-            success=True,
-            message=f"Applied {instr.operation.value} to {task.target}; {batch.to_summary()}",
-            changes=[task.target],
-            details={"mutation_batch": batch, "edit_result": edit_result},
-        )
+        if accepted_batch:
+            self._write_mutation_artifacts(task.id, accepted_batch)
+        self._write_attempt_artifacts(task.id, ledger)
+        self.write_context_artifact(task.id, result.details.get("context_package"))
+        if extra_details and result.success:
+            result.details["edit_result"] = extra_details.get("edit_result")
+        return result
 
     def _get_edit_instruction(self, task: Task) -> Optional[EditInstruction]:
         if not task.constraints:
@@ -186,28 +238,34 @@ class TaskExecutorService:
         return None
 
     def _handle_modify_legacy(self, task: Task) -> TaskResult:
-        content = task.content
-        if not content:
-            prompt = f"Modify the file '{task.target}' based on these constraints: {task.constraints or 'none'}. Output ONLY the new content for the file, no markdown markers."
-            content = self._call_llm(prompt)
+        base_prompt = f"Modify the file '{task.target}' based on these constraints: {task.constraints or 'none'}. Output ONLY the new content for the file, no markdown markers."
 
-        batch = self.file_ops.execute_plan(
-            [
-                FileOperation(
-                    op_id=task.id,
-                    op_type="replace_file",
-                    path=task.target,
-                    content=content,
-                    reason=task.constraints or "",
-                    source_stage="task_executor.modify_legacy",
-                )
-            ],
-            mode=self.mutation_mode,
+        def build_batch(content: str, mode: str):
+            return self.file_ops.execute_plan(
+                [
+                    FileOperation(
+                        op_id=task.id,
+                        op_type="replace_file",
+                        path=task.target,
+                        content=content,
+                        reason=task.constraints or "",
+                        source_stage="task_executor.modify_legacy",
+                    )
+                ],
+                mode=mode,
+            )
+
+        result, accepted_batch, ledger, _ = self._run_generation_attempt_loop(
+            task=task,
+            base_prompt=base_prompt,
+            supplied_content=task.content,
+            build_batch=build_batch,
         )
-        self._write_mutation_artifacts(task.id, batch)
-        if batch.failed_count:
-            return TaskResult(success=False, message=batch.results[0].failure_reason or "replace failed", details={"mutation_batch": batch})
-        return TaskResult(success=True, message=f"File modified: {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
+        if accepted_batch:
+            self._write_mutation_artifacts(task.id, accepted_batch)
+        self._write_attempt_artifacts(task.id, ledger)
+        self.write_context_artifact(task.id, result.details.get("context_package"))
+        return result
 
     def _handle_delete(self, task: Task) -> TaskResult:
         batch = self.file_ops.execute_plan(
@@ -225,6 +283,210 @@ class TaskExecutorService:
         if batch.failed_count:
             return TaskResult(success=False, message=batch.results[0].failure_reason or "delete failed", details={"mutation_batch": batch})
         return TaskResult(success=True, message=f"Deleted {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch})
+
+    def _run_generation_attempt_loop(
+        self,
+        task: Task,
+        base_prompt: str,
+        supplied_content: str | None,
+        build_batch: Callable[[str, str], object],
+    ):
+        history: list[AttemptRecord] = []
+        last_batch = None
+        last_extra = None
+        last_context_package = None
+        stop_reason = ""
+        accepted_batch = None
+        generated_content = supplied_content
+        next_strategy = "initial_generate"
+
+        if supplied_content is not None:
+            batch, extra, prebuilt_attempt = self._normalize_attempt_output(build_batch(supplied_content, self.mutation_mode))
+            if self._is_batch_success(batch):
+                accepted_batch = batch
+                record = AttemptRecord(
+                    attempt_index=1,
+                    attempt_type="initial_generate",
+                    input_summary=f"supplied_content_len={len(supplied_content)}",
+                    operation_plan_summary=self._summarize_batch(batch),
+                    validation_result_summary=self._summarize_validation(batch),
+                    success=True,
+                    stop_reason="supplied_content_valid",
+                    targeted_files=self._targeted_files(batch),
+                    diff_preview_summary=self._summarize_diff(batch),
+                    disk_write_performed=self.mutation_mode == "apply",
+                    context_summary="supplied_content_no_context_build",
+                )
+                history.append(record)
+                result = TaskResult(success=True, message=f"Applied {task.target}; {batch.to_summary()}", changes=[task.target], details={"mutation_batch": batch, "attempt_ledger": AttemptLedger(attempts=history, final_outcome="succeeded_first_try", applied_attempt_index=1, stopped_reason="success"), "context_package": None})
+                return result, accepted_batch, AttemptLedger(attempts=history, final_outcome="succeeded_first_try", applied_attempt_index=1, stopped_reason="success"), {"edit_result": extra} if extra else None
+            detail = "generation failed"
+            failure_class = "unknown_validation_failure"
+            if prebuilt_attempt:
+                failure_class = prebuilt_attempt.failure_class
+                detail = prebuilt_attempt.error_summary or detail
+            elif batch:
+                failure_class, detail = classify_batch_failure(batch)
+            history.append(
+                AttemptRecord(
+                    attempt_index=1,
+                    attempt_type="initial_generate",
+                    input_summary=f"supplied_content_len={len(supplied_content)}",
+                    operation_plan_summary=self._summarize_batch(batch) if batch else task.target,
+                    validation_result_summary=self._summarize_validation(batch) if batch else "failed",
+                    failure_class=failure_class,
+                    repair_strategy_used="supplied_content",
+                    success=False,
+                    stop_reason="supplied_content_failed",
+                    targeted_files=[task.target],
+                    diff_preview_summary=self._summarize_diff(batch) if batch else "",
+                    error_summary=detail,
+                    failure_fingerprint=fingerprint_failure(failure_class, detail, task.target),
+                    context_summary="supplied_content_no_context_build",
+                )
+            )
+            ledger = AttemptLedger(attempts=history, final_outcome="failed_policy_blocked", applied_attempt_index=0, stopped_reason="supplied_content_failed")
+            message = detail or "generation failed"
+            return TaskResult(success=False, message=message, details={"mutation_batch": batch, "attempt_ledger": ledger, "context_package": None}), None, ledger, {"edit_result": extra} if extra else None
+
+        for attempt_index in range(1, self.attempt_config.max_total_attempts + 1):
+            attempt_type = next_strategy
+            context_package = self.context_builder.build(
+                project_root=self.file_ops.project_root,
+                spec_text=base_prompt,
+                attempt_type=attempt_type,
+                prior_history=history,
+                task_target=task.target,
+            )
+            last_context_package = context_package
+            prompt = f"{base_prompt}\n\n{self.context_builder.to_prompt_text(context_package)}"
+            if attempt_index > 1:
+                prior = history[-1]
+                prompt = (
+                    build_repair_input(task.target, base_prompt, prior.failure_class, prior.error_summary, history, next_strategy)
+                    + "\n\n"
+                    + self.context_builder.to_prompt_text(context_package)
+                )
+            generated_content = self._call_llm(prompt)
+            batch, extra, prebuilt_attempt = self._normalize_attempt_output(build_batch(generated_content, "dry-run"))
+            last_batch = batch
+            last_extra = extra
+
+            if prebuilt_attempt:
+                record = prebuilt_attempt
+                record.attempt_index = attempt_index
+                record.attempt_type = attempt_type
+                record.repair_strategy_used = next_strategy
+                record.validation_result_summary = "failed"
+                record.context_summary = self._summarize_context(context_package)
+            else:
+                failure_class = ""
+                error_detail = ""
+                success = self._is_batch_success(batch)
+                if not success:
+                    failure_class, error_detail = classify_batch_failure(batch)
+                validation = self._summarize_validation(batch) if batch else "failed"
+                fingerprint = ""
+                if not success:
+                    path = batch.results[0].path if batch and batch.results else task.target
+                    line = 0
+                    column = 0
+                    if batch and batch.results and batch.results[0].validation:
+                        line = batch.results[0].validation.line_number
+                        column = batch.results[0].validation.column_offset
+                    fingerprint = fingerprint_failure(failure_class, error_detail, path, line, column)
+                record = AttemptRecord(
+                    attempt_index=attempt_index,
+                    attempt_type=next_strategy,
+                    input_summary=f"prompt_len={len(prompt)} generated_len={len(generated_content)}",
+                    operation_plan_summary=self._summarize_batch(batch) if batch else task.target,
+                    validation_result_summary=validation,
+                    failure_class=failure_class,
+                    repair_strategy_used=next_strategy,
+                    success=success,
+                    stop_reason="success" if success else "",
+                    targeted_files=self._targeted_files(batch) if batch else [task.target],
+                    diff_preview_summary=self._summarize_diff(batch) if batch else "",
+                    error_summary=error_detail,
+                    failure_fingerprint=fingerprint,
+                    context_summary=self._summarize_context(context_package),
+                )
+            history.append(record)
+
+            if record.success and batch:
+                accepted_batch = batch
+                if self.mutation_mode == "apply":
+                    accepted_batch, extra, _ = self._normalize_attempt_output(build_batch(generated_content, "apply"))
+                history[-1].disk_write_performed = self.mutation_mode == "apply"
+                history[-1].stop_reason = "accepted_after_validation"
+                final_outcome = classify_final_outcome(history, True, "success")
+                ledger = AttemptLedger(attempts=history, final_outcome=final_outcome, applied_attempt_index=attempt_index, stopped_reason="success")
+                message = self._success_message_for_task(task, accepted_batch, final_outcome)
+                details = {"mutation_batch": accepted_batch, "attempt_ledger": ledger, "context_package": context_package}
+                return TaskResult(success=True, message=message, changes=[task.target], details=details), accepted_batch, ledger, {"edit_result": extra} if extra else None
+
+            strategy, strategy_reason = select_next_strategy(self.attempt_config, history, history[-1].failure_class)
+            history[-1].stop_reason = strategy_reason
+            if strategy == "abort_nonrepairable":
+                stop_reason = "nonrepairable"
+                break
+            if strategy == "abort_exhausted":
+                stop_reason = "exhausted"
+                break
+            next_strategy = strategy
+
+        final_outcome = classify_final_outcome(history, False, stop_reason or "exhausted")
+        ledger = AttemptLedger(attempts=history, final_outcome=final_outcome, applied_attempt_index=0, stopped_reason=stop_reason or "exhausted")
+        details = {"mutation_batch": last_batch, "attempt_ledger": ledger, "context_package": last_context_package}
+        message = history[-1].error_summary if history else "generation failed"
+        return TaskResult(success=False, message=message or "generation failed", error=history[-1].failure_class if history else "", details=details), None, ledger, {"edit_result": last_extra} if last_extra else None
+
+    def _success_message_for_task(self, task: Task, batch, final_outcome: str) -> str:
+        if task.type == TaskType.CREATE:
+            return f"Created {task.target}; {batch.to_summary()}; outcome={final_outcome}"
+        if task.type == TaskType.MODIFY:
+            return f"File modified: {task.target}; {batch.to_summary()}; outcome={final_outcome}"
+        return f"Applied {task.target}; {batch.to_summary()}; outcome={final_outcome}"
+
+    def _summarize_batch(self, batch) -> str:
+        if not batch:
+            return "no_batch"
+        ops = ", ".join(f"{item.op_type}:{item.path}" for item in batch.results) or "no_results"
+        return f"{batch.status}; {ops}"
+
+    def _summarize_validation(self, batch) -> str:
+        if not batch:
+            return "not_validated"
+        if batch.files_validated:
+            return f"validated={batch.files_validated}, passed={batch.files_passed}, failed={batch.files_failed}"
+        return "validation_skipped"
+
+    def _summarize_diff(self, batch) -> str:
+        if not batch or not batch.results:
+            return ""
+        previews = [item.diff_preview[:240] for item in batch.results if item.diff_preview]
+        return "\n\n".join(previews[:3])
+
+    def _targeted_files(self, batch) -> list[str]:
+        if not batch:
+            return []
+        return [item.path for item in batch.results]
+
+    def _is_batch_success(self, batch) -> bool:
+        if not batch:
+            return False
+        return not batch.validation_errors and batch.failed_count == 0 and batch.status == "completed"
+
+    def _normalize_attempt_output(self, output):
+        if isinstance(output, tuple):
+            if len(output) == 3:
+                return output
+            if len(output) == 2:
+                return output[0], output[1], None
+        return output, None, None
+
+    def _summarize_context(self, package) -> str:
+        return f"files={len(package.selected_files)}, confidence={package.selection_confidence}"
 
     def _handle_run(self, task: Task) -> TaskResult:
         if self.cmd_executor:
@@ -324,6 +586,27 @@ class TaskExecutorService:
             "ledger": [asdict(entry) for entry in batch_result.ledger],
         }
         (mutations_dir / f"{task_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def _write_attempt_artifacts(self, task_id: str, ledger: AttemptLedger) -> None:
+        if not self.run_folder:
+            return
+        attempts_dir = self.run_folder / "attempts"
+        attempts_dir.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "final_outcome": ledger.final_outcome,
+            "applied_attempt_index": ledger.applied_attempt_index,
+            "stopped_reason": ledger.stopped_reason,
+            "attempts": [asdict(item) for item in ledger.attempts],
+        }
+        (attempts_dir / f"{task_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def write_context_artifact(self, task_id: str, context_package) -> None:
+        if not self.run_folder or context_package is None:
+            return
+        context_dir = self.run_folder / "contexts"
+        context_dir.mkdir(parents=True, exist_ok=True)
+        payload = self.context_builder.to_dict(context_package)
+        (context_dir / f"{task_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def _now(self) -> str:
         return time.strftime("%Y-%m-%dT%H:%M:%S")

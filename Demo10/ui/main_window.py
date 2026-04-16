@@ -1628,6 +1628,75 @@ class AgentWorkbenchApp:
         else:
             self.slot_detail_view.insert("end", "No mutation artifacts available.\n", "dim")
 
+        # 4.2 Attempt History
+        add_section("ATTEMPT HISTORY")
+        attempt_dir = None
+        if slot.current_run_id:
+            metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+            if metadata and metadata.execution_workspace:
+                attempt_dir = Path(metadata.execution_workspace).parent / "attempts"
+        if attempt_dir and attempt_dir.exists():
+            attempt_files = sorted(attempt_dir.glob("*.json"))
+            if attempt_files:
+                for artifact in attempt_files:
+                    try:
+                        with artifact.open("r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        add_field(f"Attempt Artifact {artifact.stem}", data.get("final_outcome", "-"))
+                        add_field("Applied Attempt", str(data.get("applied_attempt_index", 0)))
+                        add_field("Stopped Reason", data.get("stopped_reason", "-"))
+                        for attempt in data.get("attempts", []):
+                            idx = attempt.get("attempt_index", 0)
+                            attempt_type = attempt.get("attempt_type", "-")
+                            success = attempt.get("success", False)
+                            failure = attempt.get("failure_class", "")
+                            tag = "success" if success else "error" if failure else "value"
+                            self.slot_detail_view.insert("end", f"  Attempt {idx} [{attempt_type}] -> {'success' if success else 'failed'}\n", tag)
+                            if failure:
+                                self.slot_detail_view.insert("end", f"    failure: {failure}\n", "error")
+                            summary = attempt.get("validation_result_summary", "")
+                            if summary:
+                                self.slot_detail_view.insert("end", f"    validation: {summary}\n", "value")
+                            stop = attempt.get("stop_reason", "")
+                            if stop:
+                                self.slot_detail_view.insert("end", f"    next/stop: {stop}\n", "dim")
+                    except Exception as exc:
+                        self.slot_detail_view.insert("end", f"  Failed to read {artifact.name}: {exc}\n", "error")
+            else:
+                self.slot_detail_view.insert("end", "No attempt artifacts available.\n", "dim")
+        else:
+            self.slot_detail_view.insert("end", "No attempt artifacts available.\n", "dim")
+
+        # 4.3 Context Package
+        add_section("GENERATION CONTEXT")
+        context_dir = None
+        if slot.current_run_id:
+            metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+            if metadata and metadata.execution_workspace:
+                context_dir = Path(metadata.execution_workspace).parent / "contexts"
+        if context_dir and context_dir.exists():
+            context_files = sorted(context_dir.glob("*.json"))
+            if context_files:
+                for artifact in context_files:
+                    try:
+                        with artifact.open("r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        add_field(f"Context Artifact {artifact.stem}", data.get("selection_confidence", "-"))
+                        selected = data.get("selected_files", [])
+                        add_field("Selected Files", str(len(selected)))
+                        for item in selected:
+                            path = item.get("relative_path", "-")
+                            reason = item.get("reason", "-")
+                            mode = item.get("include_mode", "-")
+                            chars = item.get("included_chars", 0)
+                            self.slot_detail_view.insert("end", f"  {path} [{reason}] mode={mode} chars={chars}\n", "value")
+                    except Exception as exc:
+                        self.slot_detail_view.insert("end", f"  Failed to read {artifact.name}: {exc}\n", "error")
+            else:
+                self.slot_detail_view.insert("end", "No context artifacts available.\n", "dim")
+        else:
+            self.slot_detail_view.insert("end", "No context artifacts available.\n", "dim")
+
         # 5. LLM / Edit Result
         add_section("LLM EDIT RESULT")
         if slot.llm_edit_run:
