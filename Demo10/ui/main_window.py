@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import copy
 import queue
 import shutil
 import threading
 import time
 import json
 import uuid
+import yaml
 import tkinter as tk
 from pathlib import Path
 from datetime import datetime
@@ -58,6 +60,10 @@ from services.draft_spec.translator import DraftSpecTranslator
 from services.draft_spec.validator import DraftSpecValidator
 from services.draft_spec.session_state import DraftSpecSessionState
 from services.compiler.compiler import DraftSpecCompiler
+from templates.registry import TemplateRegistry
+from templates.selector import TemplateSelector
+from templates.fill import TemplateFiller
+from templates.validator import TemplateValidator
 from services.compiler.models import CompiledPlan, CompileStatus
 from services.compiled_runtime.run_controller import CompiledPlanRunController
 from services.compiled_runtime.run_models import CompiledPlanRun, CompiledRunStatus, CompiledTaskStatus
@@ -161,6 +167,11 @@ class AgentWorkbenchApp:
         self.draft_session = DraftSpecSessionState()
         self.compiler = DraftSpecCompiler()
         self.approval_controller = ApprovalController(auto_approve_low_risk=True)
+
+        self.template_registry = TemplateRegistry()
+        self.template_selector = TemplateSelector(self.template_registry)
+        self.template_filler = TemplateFiller()
+        self.template_validator = TemplateValidator()
 
         self.profile_registry = ProfileRegistry()
         self._load_external_profiles()
@@ -391,7 +402,25 @@ class AgentWorkbenchApp:
         Tooltip(self.write_mode_combo, "Choose whether file operations are simulated or written to disk.")
 
         # Request Pane (027A)
-        ttk.Label(top, text="Request (Prose)", style="Panel.TLabel").grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        req_label_frame = ttk.Frame(top, style="Panel.TFrame")
+        req_label_frame.grid(row=1, column=0, sticky="nw", pady=(10, 0))
+        ttk.Label(req_label_frame, text="Request (Prose)", style="Panel.TLabel").pack(side="top", anchor="w")
+
+        # Guided Shortcuts
+        shortcut_frame = ttk.Frame(req_label_frame, style="Panel.TFrame")
+        shortcut_frame.pack(side="top", anchor="w", pady=(10, 0))
+
+        shortcuts = [
+            ("Build App", "build_small_app"),
+            ("Add Feature", "add_feature"),
+            ("Fix Bug", "fix_bug"),
+            ("Add Tests", "add_tests"),
+            ("Patch Mod", "patch_existing_module")
+        ]
+        for label, tid in shortcuts:
+            btn = ttk.Button(shortcut_frame, text=label, width=12, command=lambda t=tid: self.apply_template_shortcut(t))
+            btn.pack(side="top", pady=2)
+
         req_frame = ttk.Frame(top, style="Panel.TFrame")
         req_frame.grid(row=1, column=1, columnspan=2, sticky="nsew", pady=(10, 0))
         req_frame.rowconfigure(0, weight=1)
@@ -1523,6 +1552,38 @@ class AgentWorkbenchApp:
             content = restore.to_preview_text()
         self._set_text_widget_content(self.restore_view, content)
 
+    def apply_template_shortcut(self, template_id: str) -> None:
+        template = self.template_registry.get_template(template_id)
+        if not template:
+            return
+
+        self.log_event(f"Applying template shortcut: {template.title}")
+        self.request_text.delete("1.0", "end")
+        self.request_text.insert("1.0", f"I want to {template.title.lower()}.")
+
+        # Build initial fill with defaults
+        fill = self.template_filler.fill(template, {})
+
+        # Merge origin metadata into filled_spec
+        draft_dict = copy.deepcopy(fill.filled_spec)
+        draft_dict["origin_metadata"] = {
+            "origin_type": "template",
+            "template_id": template.template_id,
+            "template_version": template.version,
+            "parameters": fill.parameters
+        }
+
+        self.draft_text.delete("1.0", "end")
+        self.draft_text.insert("1.0", yaml.dump(draft_dict, sort_keys=False))
+
+        self.log_event(f"Draft seeded from template: {template_id}")
+        # Switch to draft tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Draft Translation" in self.notebook.tab(tabid, "text"):
+                # Actually, draft is in top section, so we just want to highlight it or similar
+                # For now, just logging is fine.
+                break
+
     def translate_request(self) -> None:
         if self.translation_active:
             return
@@ -1548,6 +1609,13 @@ class AgentWorkbenchApp:
         def worker():
             try:
                 draft = self.draft_translator.translate_request_to_draft_spec(model, request)
+
+                # Record template usage if applicable
+                if draft.origin_metadata.get("origin_type") == "template":
+                    tid = draft.origin_metadata.get("template_id")
+                    ver = draft.origin_metadata.get("template_version", 1)
+                    m.record_template_usage(tid, ver)
+
                 m.end_high_level_stage("translation")
                 m.end_run()
                 self.ui_queue.put(("translation_done", draft))
