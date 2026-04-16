@@ -25,6 +25,12 @@ class MetricsService:
         self.current_run.metadata["template_id"] = template_id
         self.current_run.metadata["template_version"] = version
 
+    def record_clarification_metrics(self, issue_count: int, question_count: int):
+        if not self.current_run:
+            return
+        self.current_run.metadata["clarification_issues"] = issue_count
+        self.current_run.metadata["clarification_questions"] = question_count
+
     def end_run(self):
         if not self.current_run:
             return

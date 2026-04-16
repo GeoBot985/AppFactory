@@ -59,6 +59,8 @@ from services.draft_spec.models import DraftSpec, UncertaintySeverity
 from services.planning.planning_models import PlanningSkeleton, NormalizedRequest, IntentType, ComplexityClass, SkeletonStep
 from services.planning.request_normalizer import RequestNormalizer
 from services.planning.planning_skeleton_builder import SkeletonBuilder
+from services.planning.clarification_service import ClarificationService
+from services.planning.clarification_models import ClarificationSession, ClarificationSessionStatus
 from services.draft_spec.translator import DraftSpecTranslator
 from services.draft_spec.validator import DraftSpecValidator
 from services.draft_spec.session_state import DraftSpecSessionState
@@ -172,11 +174,13 @@ class AgentWorkbenchApp:
 
         self.request_normalizer = RequestNormalizer(self.ollama_service)
         self.skeleton_builder = SkeletonBuilder()
+        self.clarification_service = ClarificationService()
         self.draft_translator = DraftSpecTranslator(self.ollama_service)
         self.draft_validator = DraftSpecValidator()
         self.draft_session = DraftSpecSessionState()
         self.current_normalized_request: Optional[NormalizedRequest] = None
         self.current_planning_skeleton: Optional[PlanningSkeleton] = None
+        self.current_clarification_session: Optional[ClarificationSession] = None
 
         self.session_manager = SessionManager()
         self.working_set_manager = WorkingSetManager()
@@ -633,6 +637,7 @@ class AgentWorkbenchApp:
         prompt_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         response_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         planning_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        clarification_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         draft_details_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         compile_report_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         index_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
@@ -650,6 +655,7 @@ class AgentWorkbenchApp:
         notebook.add(prompt_frame, text="Prompt Preview")
         notebook.add(response_frame, text="Latest Response")
         notebook.add(planning_frame, text="Planning")
+        notebook.add(clarification_frame, text="Clarification")
         notebook.add(draft_details_frame, text="Draft Translation")
         notebook.add(compile_report_frame, text="Compile Report")
         notebook.add(index_frame, text="Architecture Index")
@@ -665,7 +671,9 @@ class AgentWorkbenchApp:
         notebook.add(ops_console_frame, text="Operations Console")
         self.notebook = notebook
 
-        for frame in (viewer_frame, prompt_frame, response_frame, planning_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, session_memory_frame, ops_console_frame):
+        self._build_clarification_view(clarification_frame)
+
+        for frame in (viewer_frame, prompt_frame, response_frame, planning_frame, clarification_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, session_memory_frame, ops_console_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -1651,7 +1659,28 @@ class AgentWorkbenchApp:
             try:
                 normalized = self.request_normalizer.normalize(model, request)
                 skeleton = self.skeleton_builder.build(normalized)
-                self.ui_queue.put(("planning_ready", (normalized, skeleton)))
+
+                # Session context for clarification
+                session_context = None
+                if self.session_manager.current_session:
+                    adapter = SessionContextAdapter(self.session_manager.current_session)
+                    session_context = adapter.get_context_for_translation()
+
+                # SPEC 038: Clarification Gate
+                session = self.clarification_service.create_session(
+                    normalized, skeleton,
+                    session_context=session_context,
+                    policy_evaluator=self.policy_evaluator
+                )
+
+                # Record metrics if a run is active
+                # Note: decompose might not be in a run context yet, but we'll try
+                from metrics.metrics_service import MetricsService
+                m = MetricsService()
+                if m.current_run:
+                    m.record_clarification_metrics(len(session.issues), len(session.questions))
+
+                self.ui_queue.put(("planning_ready", (normalized, skeleton, session)))
             except Exception as e:
                 self.ui_queue.put(("queue_log", f"Decomposition failed: {e}"))
             finally:
@@ -4631,10 +4660,22 @@ class AgentWorkbenchApp:
             self.decompose_button.state(["!disabled"])
             return
         if message == "planning_ready":
-            normalized, skeleton = payload
+            normalized, skeleton, session = payload
             self.current_normalized_request = normalized
             self.current_planning_skeleton = skeleton
+            self.current_clarification_session = session
             self._refresh_planning_view(normalized, skeleton)
+            self._refresh_clarification_view()
+
+            if session.status == ClarificationSessionStatus.AWAITING_USER:
+                self.log_event("Clarification required before drafting. See 'Clarification' tab.")
+                # SPEC 038: Block Translate Plan if clarification is required
+                self.translate_button.state(["disabled"])
+                # Switch to clarification tab
+                for i, tabid in enumerate(self.notebook.tabs()):
+                    if "Clarification" in self.notebook.tab(tabid, "text"):
+                        self.notebook.select(i)
+                        break
             return
         if message == "translation_done":
             draft = payload
@@ -4710,6 +4751,112 @@ class AgentWorkbenchApp:
             self.draft_details_view.insert("end", f"- {q}\n")
 
         self.draft_details_view.configure(state="disabled")
+
+    def _build_clarification_view(self, parent: ttk.Frame):
+        parent.rowconfigure(0, weight=1)
+        parent.columnconfigure(0, weight=1)
+
+        self.clarification_view = tk.Text(
+            parent,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        scroll = ttk.Scrollbar(parent, orient="vertical", command=self.clarification_view.yview)
+        self.clarification_view.configure(yscrollcommand=scroll.set)
+        self.clarification_view.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.clarification_view.configure(state="disabled")
+
+        self.clarification_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 11, "bold"))
+        self.clarification_view.tag_configure("issue", foreground="#f44747")
+        self.clarification_view.tag_configure("warning", foreground="#d7ba7d")
+        self.clarification_view.tag_configure("question", foreground="#9cdcfe", font=("Consolas", 10, "bold"))
+        self.clarification_view.tag_configure("answered", foreground="#6a9955")
+        self.clarification_view.tag_configure("value", foreground="#ce9178")
+
+        self.clarification_input_frame = ttk.Frame(parent, style="Panel.TFrame")
+        self.clarification_input_frame.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
+    def _refresh_clarification_view(self):
+        self.clarification_view.configure(state="normal")
+        self.clarification_view.delete("1.0", "end")
+
+        for widget in self.clarification_input_frame.winfo_children():
+            widget.destroy()
+
+        if not self.current_clarification_session:
+            self.clarification_view.insert("end", "No active clarification session.")
+            self.clarification_view.configure(state="disabled")
+            return
+
+        session = self.current_clarification_session
+        self.clarification_view.insert("end", f"Clarification Session: {session.session_id}\n", "header")
+        self.clarification_view.insert("end", f"Status: {session.status.value.upper()}\n\n")
+
+        if session.issues:
+            self.clarification_view.insert("end", "[ISSUES DETECTED]\n", "header")
+            for issue in session.issues:
+                tag = "issue" if issue.severity.value == "blocking" else "warning"
+                self.clarification_view.insert("end", f"- [{issue.severity.value.upper()}] {issue.message}\n", tag)
+            self.clarification_view.insert("end", "\n")
+
+        if session.questions:
+            self.clarification_view.insert("end", "[QUESTIONS FOR YOU]\n", "header")
+            for i, q in enumerate(session.questions):
+                ans = session.answers.get(q.question_id, "Pending")
+                tag = "answered" if q.question_id in session.answers else "question"
+                self.clarification_view.insert("end", f"{i+1}. {q.text}\n", tag)
+                self.clarification_view.insert("end", f"   Answer: {ans}\n\n", "value")
+
+                # Add input widget for unanswered question
+                if q.question_id not in session.answers:
+                    row = ttk.Frame(self.clarification_input_frame, style="Panel.TFrame")
+                    row.pack(fill="x", pady=2)
+                    ttk.Label(row, text=f"Q{i+1}:", style="Panel.TLabel", width=4).pack(side="left")
+
+                    if q.question_type.value == "single_select":
+                        var = tk.StringVar()
+                        combo = ttk.Combobox(row, textvariable=var, values=q.options, state="readonly")
+                        combo.pack(side="left", fill="x", expand=True, padx=5)
+                        btn = ttk.Button(row, text="Submit", command=lambda qid=q.question_id, v=var: self.submit_clarification_answer(qid, v.get()))
+                        btn.pack(side="left")
+                    else:
+                        ent = ttk.Entry(row)
+                        ent.pack(side="left", fill="x", expand=True, padx=5)
+                        btn = ttk.Button(row, text="Submit", command=lambda qid=q.question_id, e=ent: self.submit_clarification_answer(qid, e.get()))
+                        btn.pack(side="left")
+
+        self.clarification_view.configure(state="disabled")
+
+    def submit_clarification_answer(self, question_id: str, answer: str):
+        if not answer.strip(): return
+        if not self.current_clarification_session: return
+
+        self.log_event(f"Submitted answer for {question_id}: {answer}")
+        self.clarification_service.apply_answers(
+            self.current_clarification_session,
+            {question_id: answer},
+            self.current_normalized_request,
+            self.current_planning_skeleton
+        )
+
+        # SPEC 038: Regenerate planning skeleton after answers are applied
+        if self.current_normalized_request:
+            new_skeleton = self.skeleton_builder.build(self.current_normalized_request)
+            self.current_planning_skeleton = new_skeleton
+            self.current_clarification_session.planning_skeleton_id = new_skeleton.skeleton_id
+
+        self._refresh_clarification_view()
+        self._refresh_planning_view(self.current_normalized_request, self.current_planning_skeleton)
+
+        # If all questions answered, we can potentially auto-proceed or just inform user
+        if self.current_clarification_session.status == ClarificationSessionStatus.RESOLVED:
+            self.log_event("All clarification questions resolved. You can now 'Translate Plan'.")
+            self.translate_button.state(["!disabled"])
 
     def _refresh_planning_view(self, normalized: NormalizedRequest, skeleton: PlanningSkeleton) -> None:
         self.planning_view.configure(state="normal")
