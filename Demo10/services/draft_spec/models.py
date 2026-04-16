@@ -90,6 +90,7 @@ class DraftSpec:
     policies: Dict[str, Any] = field(default_factory=lambda: {"require_tests_pass": True, "fail_fast": True})
     uncertainties: List[UncertaintyRecord] = field(default_factory=list)
     translation_notes: Dict[str, List[str]] = field(default_factory=lambda: {"assumptions": [], "unresolved_questions": []})
+    origin_metadata: Dict[str, Any] = field(default_factory=lambda: {"origin_type": "freeform_translation"})
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -102,5 +103,6 @@ class DraftSpec:
             "tasks": [t.to_dict() for t in self.tasks],
             "policies": self.policies,
             "uncertainties": [u.to_dict() for u in self.uncertainties],
-            "translation_notes": self.translation_notes
+            "translation_notes": self.translation_notes,
+            "origin_metadata": self.origin_metadata
         }

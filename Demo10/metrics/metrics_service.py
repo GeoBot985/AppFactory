@@ -19,6 +19,12 @@ class MetricsService:
             started_at=self._now()
         )
 
+    def record_template_usage(self, template_id: str, version: int):
+        if not self.current_run:
+            return
+        self.current_run.metadata["template_id"] = template_id
+        self.current_run.metadata["template_version"] = version
+
     def end_run(self):
         if not self.current_run:
             return

@@ -3,6 +3,8 @@ import uuid
 import json
 from typing import List, Dict, Any, Tuple
 from services.draft_spec.models import DraftSpec, DraftTask, UncertaintySeverity, Certainty
+from templates.registry import TemplateRegistry
+from templates.fill import TemplateFiller
 from .models import CompileDiagnostic
 from .repair_models import RepairChange, RepairConfidence
 from .error_classifier import ErrorClassifier
@@ -10,10 +12,49 @@ from .error_classifier import ErrorClassifier
 class RepairStrategies:
     def __init__(self, error_classifier: ErrorClassifier):
         self.error_classifier = error_classifier
+        self.template_registry = TemplateRegistry()
 
     def apply_deterministic_repairs(self, draft: DraftSpec, diagnostics: List[CompileDiagnostic]) -> Tuple[List[RepairChange], List[str]]:
         changes = []
         fixed_errors = []
+
+        # 0. Template-backed skeleton restoration
+        if hasattr(draft, "origin_metadata") and draft.origin_metadata.get("origin_type") == "template":
+            tid = draft.origin_metadata.get("template_id")
+            template = self.template_registry.get_template(tid)
+            if template:
+                for diag in diagnostics:
+                    if diag.code == "missing_required_task":
+                        # Try to restore from skeleton
+                        skeleton = template.skeleton
+                        params = draft.origin_metadata.get("parameters", {})
+
+                        # Find the missing task ID from diagnostic message or field_path
+                        # Message usually contains the ID or we can find it in skeleton
+                        skeleton_tasks = skeleton.get("tasks", [])
+                        existing_ids = {t.id for t in draft.tasks}
+
+                        for st in skeleton_tasks:
+                            if st["id"] not in existing_ids:
+                                # Found a task in skeleton missing in draft
+                                # Substitute placeholders in skeleton task
+                                st_json = json.dumps(st)
+                                filler = TemplateFiller()
+                                filled_st_json = filler._substitute_placeholders(st_json, params)
+                                filled_st = json.loads(filled_st_json)
+
+                                new_task = DraftTask(
+                                    id=filled_st["id"],
+                                    type=filled_st["type"],
+                                    path=filled_st["path"],
+                                    summary=filled_st["summary"],
+                                    depends_on=filled_st.get("depends_on", []),
+                                    certainty=Certainty.INFERRED
+                                )
+                                draft.tasks.append(new_task)
+                                changes.append(RepairChange(f"tasks[{len(draft.tasks)-1}]", None, new_task.id, f"Restored task '{new_task.id}' from template skeleton"))
+                                fixed_errors.append(diag.code)
+                                break
 
         # Sort diagnostics to avoid indexing issues if we were deleting (we aren't currently)
         for diag in diagnostics:
@@ -91,6 +132,23 @@ class RepairStrategies:
                         pass
 
             elif failure_type == "blocking_uncertainty_present":
+                # Check if it's a missing template parameter
+                if diag.code == "missing_template_parameter":
+                    # In a real scenario, LLM would infer or ask.
+                    # Here we simulate resolving it by injecting a placeholder if it's missing.
+                    for u in draft.uncertainties:
+                        if u.code == "missing_template_parameter" and u.field_path == diag.field_path:
+                            param_name = u.field_path.split(".")[-1]
+                            old_val = draft.origin_metadata["parameters"].get(param_name)
+                            new_val = f"auto_filled_{param_name}"
+                            draft.origin_metadata["parameters"][param_name] = new_val
+                            u.severity = UncertaintySeverity.INFO
+                            u.message = f"[AUTO-FILLED] {u.message}"
+                            changes.append(RepairChange(u.field_path, old_val, new_val, f"Auto-filled missing template parameter: {param_name}"))
+                            fixed_errors.append(diag.code)
+                            break
+                    continue
+
                 # LLM simulation: resolve a blocking uncertainty if possible
                 # Find the uncertainty
                 for u in draft.uncertainties:

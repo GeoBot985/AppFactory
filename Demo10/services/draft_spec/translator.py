@@ -5,12 +5,60 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from services.ollama_service import OllamaService, OllamaRunSnapshot
 from .models import DraftSpec, DraftTask, DraftIntent, DraftTargets, UncertaintyRecord, UncertaintySeverity, Certainty
+from templates.registry import TemplateRegistry
+from templates.selector import TemplateSelector
+from templates.fill import TemplateFiller
+from templates.validator import TemplateValidator
+from templates.models import MatchStrength
 
 class DraftSpecTranslator:
     def __init__(self, ollama_service: OllamaService):
         self.ollama_service = ollama_service
+        self.template_registry = TemplateRegistry()
+        self.template_selector = TemplateSelector(self.template_registry)
+        self.template_filler = TemplateFiller()
+        self.template_validator = TemplateValidator()
 
     def translate_request_to_draft_spec(self, model_name: str, request_text: str) -> DraftSpec:
+        # Step 0: Try template matching
+        selection = self.template_selector.select_template(request_text)
+        if selection.strength in [MatchStrength.EXACT, MatchStrength.STRONG]:
+            template = self.template_registry.get_template(selection.template_id)
+            if template:
+                # Ask LLM to fill parameters if they are not all inferred
+                # For now, we'll simulate filling or use inferred ones
+                fill = self.template_filler.fill(template, selection.inferred_parameters)
+                draft = self._parse_translator_response(json.dumps(fill.filled_spec))
+                draft.origin_metadata = {
+                    "origin_type": "template",
+                    "template_id": template.template_id,
+                    "template_version": template.version,
+                    "parameters": fill.parameters
+                }
+
+                # Template Validation
+                is_valid, validation_errors = self.template_validator.validate(template, fill.parameters)
+                if not is_valid:
+                    for err in validation_errors:
+                        draft.uncertainties.append(UncertaintyRecord(
+                            code="template_validation_error",
+                            message=err,
+                            severity=UncertaintySeverity.BLOCKING,
+                            field_path="origin_metadata.parameters"
+                        ))
+
+                # Check for missing required params and add uncertainties
+                for p in template.parameters:
+                    if p.required and p.name not in fill.parameters and p.default is None:
+                        draft.uncertainties.append(UncertaintyRecord(
+                            code="missing_template_parameter",
+                            message=f"Required parameter '{p.name}' for template '{template.template_id}' is missing.",
+                            severity=UncertaintySeverity.BLOCKING,
+                            field_path=f"origin_metadata.parameters.{p.name}",
+                            certainty=Certainty.MISSING
+                        ))
+                return draft
+
         prompt = self._build_translation_prompt(request_text)
         snapshot = self.ollama_service.create_snapshot(model_name, prompt)
 
