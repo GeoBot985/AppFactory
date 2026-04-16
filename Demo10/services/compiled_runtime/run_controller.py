@@ -18,7 +18,7 @@ class CompiledPlanRunController:
         self.dispatcher = CompiledTaskDispatcher(executor)
         self.rerun_controller = ReRunController(executor)
 
-    def execute_compiled_plan(self, plan: CompiledPlan, run_id: str) -> CompiledPlanRun:
+    def execute_compiled_plan(self, plan: CompiledPlan, run_id: str, context: Optional[SharedRunContext] = None) -> CompiledPlanRun:
         # 1. Initialize Run State
         run = CompiledPlanRun(
             compiled_plan_id=plan.plan_id,
@@ -43,7 +43,8 @@ class CompiledPlanRunController:
 
         # 3. Start Execution
         run.overall_status = CompiledRunStatus.RUNNING
-        context = SharedRunContext()
+        if context is None:
+            context = SharedRunContext()
 
         # Execute in graph order
         for task_id in plan.execution_graph:
