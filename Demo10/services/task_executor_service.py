@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 import time
+import json
+from pathlib import Path
 from typing import Optional
 from services.task_service import Task, TaskType, TaskStatus, TaskResult
 from services.file_ops_service import FileOpsService
 from services.ollama_service import OllamaService
 from services.process_service import ProcessService
+
+from editing.models import EditInstruction, OperationType, AnchorType, EditStatus
+from editing.anchor_resolver import AnchorResolver
+from editing.operations import EditEngine
+from editing.safe_write import SafeWriteService
+from editing.diffing import generate_unified_diff, save_diff
 
 
 class TaskExecutorService:
@@ -14,12 +22,15 @@ class TaskExecutorService:
         file_ops: FileOpsService,
         ollama: OllamaService,
         process: ProcessService,
-        model_name: str
+        model_name: str,
+        run_folder: Optional[Path] = None
     ):
         self.file_ops = file_ops
         self.ollama = ollama
         self.process = process
         self.model_name = model_name
+        self.run_folder = run_folder
+        self.edit_engine = EditEngine(AnchorResolver())
 
     def execute(self, task: Task) -> TaskResult:
         task.status = TaskStatus.RUNNING
@@ -57,7 +68,86 @@ class TaskExecutorService:
         return TaskResult(success=True, message=msg, changes=[task.target])
 
     def _handle_modify(self, task: Task) -> TaskResult:
-        # LLM helps generate patch/content if not provided
+        # SPEC 011 New modify flow
+        instr = self._get_edit_instruction(task)
+        if not instr:
+            # Fallback to legacy if no structured instruction found
+            return self._handle_modify_legacy(task)
+
+        target_path = self.file_ops._safe_path(task.target)
+        if not target_path.exists():
+             return TaskResult(success=False, message=f"File not found: {task.target}")
+
+        old_content = target_path.read_text(encoding="utf-8")
+        lines = target_path.read_text(encoding="utf-8").splitlines(keepends=True)
+
+        # Get payload from LLM if not present
+        if not task.content:
+            prompt = f"Generate the content/payload for this edit task on '{task.target}': {task.constraints}. Output ONLY the new code block, no markdown markers."
+            task.content = self._call_llm(prompt)
+
+        instr.payload = task.content
+
+        # Apply edit
+        new_lines, edit_result = self.edit_engine.apply(lines, instr)
+
+        if edit_result.status == EditStatus.FAILED:
+            return TaskResult(success=False, message=f"Edit failed: {edit_result.reason}", error=edit_result.reason)
+
+        if edit_result.status == EditStatus.NO_OP:
+            return TaskResult(success=True, message=f"No changes needed: {edit_result.reason}", changes=[])
+
+        new_content = "".join(new_lines)
+
+        # Safe Write & Backup
+        if self.run_folder:
+            sw = SafeWriteService(self.file_ops.project_root, self.run_folder)
+
+            # Backup
+            edit_result.backup_path = str(sw.backup(task.target))
+
+            # Validation
+            val = sw.validate_python(new_content)
+            edit_result.validation = val
+            if not val.syntax_ok:
+                return TaskResult(success=False, message=f"Syntax validation failed: {val.error_message}", error=val.error_message)
+
+            # Symbol validation if applicable
+            if instr.operation in [OperationType.ENSURE_FUNCTION, OperationType.REPLACE_BLOCK] and instr.anchor_type == AnchorType.FUNCTION:
+                if not sw.verify_symbol(new_content, instr.anchor_value, "function"):
+                     return TaskResult(success=False, message=f"Symbol validation failed: function {instr.anchor_value} missing after edit")
+
+            # Diff
+            diff_text = generate_unified_diff(old_content, new_content, task.target)
+            edit_result.diff_path = str(save_diff(self.run_folder, task.target, diff_text))
+
+            # Commit
+            sw.commit(task.target, new_content)
+        else:
+            # Fallback if no run_folder (shouldn't happen in queue)
+            self.file_ops.modify(task.target, new_content)
+
+        return TaskResult(success=True, message=f"Applied {instr.operation.value} to {task.target}", changes=[task.target])
+
+    def _get_edit_instruction(self, task: Task) -> Optional[EditInstruction]:
+        if not task.constraints:
+            return None
+        try:
+            data = json.loads(task.constraints)
+            if "operation" in data and "anchor_type" in data:
+                return EditInstruction(
+                    task_id=task.id,
+                    file_path=task.target,
+                    operation=OperationType(data["operation"]),
+                    anchor_type=AnchorType(data["anchor_type"]),
+                    anchor_value=data.get("anchor_value", ""),
+                    payload=""
+                )
+        except:
+            pass
+        return None
+
+    def _handle_modify_legacy(self, task: Task) -> TaskResult:
         content = task.content
         if not content:
             prompt = f"Modify the file '{task.target}' based on these constraints: {task.constraints or 'none'}. Output ONLY the new content for the file, no markdown markers."
