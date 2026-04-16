@@ -13,7 +13,7 @@ class SpecParserService:
         self.dsl_parser = DSLParser()
         self.planner = Planner()
 
-    def parse(self, spec_text: str) -> list[Task]:
+    def parse(self, spec_text: str) -> tuple[list[Task], dict]:
         if self.dsl_parser.is_dsl_spec(spec_text):
             return self._parse_dsl(spec_text)
 
@@ -29,7 +29,7 @@ class SpecParserService:
 
         return self._parse_legacy(spec_text)
 
-    def _parse_dsl(self, spec_text: str) -> list[Task]:
+    def _parse_dsl(self, spec_text: str) -> tuple[list[Task], dict]:
         data, validation = self.dsl_parser.parse(spec_text)
         if not validation.is_valid:
             error_msgs = [f"{e['field']}: {e['error']}" for e in validation.errors]
@@ -67,7 +67,9 @@ class SpecParserService:
                     constraints=json.dumps(instr_data),
                     depends_on=depends_on
                 ))
-        return tasks
+
+        verification_data = data.get("verification", {})
+        return tasks, verification_data
 
     def _map_dsl_to_instr(self, t_data: dict) -> dict:
         t_type = t_data["type"]
@@ -115,7 +117,7 @@ class SpecParserService:
             "anchor_value": anchor_value
         }
 
-    def _parse_legacy(self, spec_text: str) -> list[Task]:
+    def _parse_legacy(self, spec_text: str) -> tuple[list[Task], dict]:
         tasks: list[Task] = []
         lines = spec_text.splitlines()
 
@@ -195,7 +197,7 @@ class SpecParserService:
                 tasks.append(Task(id=f"task_{len(tasks)+1}", type=TaskType.VALIDATE, target=match.group(1)))
                 continue
 
-        return tasks
+        return tasks, {}
 
     def _create_modify_task(self, tasks, target, op, anchor_type, anchor_value):
         instr_data = {
