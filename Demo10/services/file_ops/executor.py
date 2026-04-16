@@ -4,6 +4,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
+from services.batch.coherence_validator import validate_batch_coherence
 from services.code_validation import validate_file_content
 from services.file_ops.diff_preview import build_change_summary
 from services.file_ops.models import ExecutionMode, FileMutationResult, FileOperation, FileOperationBatchResult, MutationLedgerEntry
@@ -30,10 +31,15 @@ class FileOperationExecutor:
         if validation_errors:
             return batch
 
+        simulated_payloads: dict[str, str | None] = {}
+        pending_writes: list[tuple[Path, FileOperation, str, FileMutationResult, MutationLedgerEntry]] = []
         for idx, item in enumerate(validated):
-            result, ledger = self._execute_one(idx, Path(item.normalized_path), item.operation, mode)
+            result, ledger, after_text = self._execute_one(idx, Path(item.normalized_path), item.operation, "dry-run")
             batch.results.append(result)
             batch.ledger.append(ledger)
+            if result.status != "failed":
+                simulated_payloads[item.operation.path] = after_text
+                pending_writes.append((Path(item.normalized_path), item.operation, after_text, result, ledger))
             if result.validation and result.validation.status != "skipped":
                 batch.files_validated += 1
                 if result.validation.status == "valid":
@@ -51,6 +57,40 @@ class FileOperationExecutor:
             else:
                 batch.failed_count += 1
 
+        if batch.failed_count == 0:
+            batch.batch_summary = validate_batch_coherence(root, [item.operation for item in validated], simulated_payloads)
+            if batch.batch_summary.batch_validation_status.startswith("batch_invalid"):
+                batch.status = "failed"
+                batch.failed_count = max(batch.failed_count, 1)
+                return batch
+        else:
+            batch.batch_summary = validate_batch_coherence(root, [item.operation for item in validated if item.operation.path in simulated_payloads], simulated_payloads)
+
+        if mode == "apply":
+            for target, op, after_text, result, ledger in pending_writes:
+                if not self._apply_write(target, op, after_text):
+                    failed_result = self._failed(
+                        ledger.order_index,
+                        ledger.timestamp,
+                        op,
+                        target,
+                        "write_failed",
+                        "write_failed",
+                        before_hash=result.before_hash,
+                        before_size=result.before_size,
+                        validation=result.validation,
+                        diff_preview=result.diff_preview,
+                    )[0]
+                    batch.results[ledger.order_index] = failed_result
+                    batch.ledger[ledger.order_index].success = False
+                    batch.ledger[ledger.order_index].failure_reason = "write_failed"
+                    batch.ledger[ledger.order_index].failure_code = "write_failed"
+                    batch.failed_count += 1
+                    if result.status == "created":
+                        batch.created_count -= 1
+                    elif result.status == "modified":
+                        batch.modified_count -= 1
+
         if batch.failed_count and (batch.created_count or batch.modified_count or batch.deleted_count or batch.unchanged_count):
             batch.status = "completed_with_failures"
         elif batch.failed_count:
@@ -66,7 +106,8 @@ class FileOperationExecutor:
         before_size = 0
         if target.exists() and target.is_file():
             if self._is_binary(target) and op.op_type in {"replace_file", "patch_file"}:
-                return self._failed(order_index, now, op, target, "binary_file_not_supported", "binary_file_not_supported")
+                result, ledger = self._failed(order_index, now, op, target, "binary_file_not_supported", "binary_file_not_supported")
+                return result, ledger, None
             before_text = target.read_text(encoding="utf-8", errors="replace")
             before_hash = self._hash(before_text)
             before_size = len(before_text)
@@ -100,10 +141,12 @@ class FileOperationExecutor:
             else:
                 raise OperationError("invalid_operation_schema", "invalid_operation_schema")
         except OperationError as exc:
-            return self._failed(order_index, now, op, target, str(exc), exc.code, before_hash, before_size)
+            result, ledger = self._failed(order_index, now, op, target, str(exc), exc.code, before_hash, before_size)
+            return result, ledger, None
         except ValueError as exc:
             code = str(exc)
-            return self._failed(order_index, now, op, target, code, code, before_hash, before_size)
+            result, ledger = self._failed(order_index, now, op, target, code, code, before_hash, before_size)
+            return result, ledger, None
 
         after_hash = self._hash(after_text)
         after_size = len(after_text)
@@ -115,7 +158,7 @@ class FileOperationExecutor:
         if op.op_type != "delete_file":
             validation = validate_file_content(op.path, after_text)
             if validation.status == "invalid":
-                return self._failed(
+                result, ledger = self._failed(
                     order_index,
                     now,
                     op,
@@ -127,16 +170,11 @@ class FileOperationExecutor:
                     validation=validation,
                     diff_preview=diff_preview,
                 )
+                return result, ledger, after_text
 
-        if mode == "apply":
-            try:
-                target.parent.mkdir(parents=True, exist_ok=True)
-                if op.op_type == "delete_file":
-                    target.unlink()
-                else:
-                    target.write_text(after_text, encoding="utf-8", newline="")
-            except OSError as exc:
-                return self._failed(order_index, now, op, target, str(exc), "write_failed", before_hash, before_size)
+        if mode == "apply" and not self._apply_write(target, op, after_text):
+            result, ledger = self._failed(order_index, now, op, target, "write_failed", "write_failed", before_hash, before_size)
+            return result, ledger, after_text
 
         result = FileMutationResult(
             op_id=op.op_id,
@@ -173,7 +211,7 @@ class FileOperationExecutor:
             validation_status=validation.status if validation else "skipped",
             validation_error=validation.error_message if validation else "",
         )
-        return result, ledger
+        return result, ledger, after_text
 
     def _failed(self, order_index, timestamp, op, target, reason, code, before_hash="", before_size=0, validation=None, diff_preview=""):
         result = FileMutationResult(
@@ -207,6 +245,18 @@ class FileOperationExecutor:
             validation_error=validation.error_message if validation else "",
         )
         return result, ledger
+
+    def _apply_write(self, target: Path, op: FileOperation, after_text: str) -> bool:
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if op.op_type == "delete_file":
+                if target.exists():
+                    target.unlink()
+            else:
+                target.write_text(after_text, encoding="utf-8", newline="")
+            return True
+        except OSError:
+            return False
 
     def _hash(self, content: str) -> str:
         return hashlib.sha256(content.encode("utf-8")).hexdigest()

@@ -3,7 +3,7 @@ from __future__ import annotations
 from services.file_ops.models import FileOperationBatchResult
 
 
-NON_REPAIRABLE_FAILURES = {"path_validation_failure", "binary_file_not_supported"}
+NON_REPAIRABLE_FAILURES = {"path_validation_failure", "binary_file_not_supported", "policy_blocked_complex_batch"}
 
 
 def classify_batch_failure(batch: FileOperationBatchResult) -> tuple[str, str]:
@@ -14,6 +14,13 @@ def classify_batch_failure(batch: FileOperationBatchResult) -> tuple[str, str]:
         if "invalid_operation_schema" in first:
             return "operation_schema_invalid", first
         return "unknown_validation_failure", first
+
+    if batch.batch_summary and batch.batch_summary.batch_validation_status.startswith("batch_invalid"):
+        status = batch.batch_summary.batch_validation_status
+        detail = batch.batch_summary.batch_failure_reasons[0] if batch.batch_summary.batch_failure_reasons else status
+        if detail.startswith("policy_blocked_complex_batch"):
+            return "policy_blocked_complex_batch", detail
+        return status, detail
 
     if not batch.results:
         return "unknown_validation_failure", "no mutation results"

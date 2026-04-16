@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Literal
 
+from services.batch.models import BatchValidationSummary
+
 
 OperationType = Literal["create_file", "replace_file", "patch_file", "delete_file"]
 PatchMatchType = Literal["exact", "regex"]
@@ -119,10 +121,12 @@ class FileOperationBatchResult:
     files_validated: int = 0
     files_passed: int = 0
     files_failed: int = 0
+    batch_summary: BatchValidationSummary | None = None
 
     def to_summary(self) -> str:
+        batch_status = self.batch_summary.batch_validation_status if self.batch_summary else "batch_unknown"
         return (
             f"mode={self.mode}, created={self.created_count}, modified={self.modified_count}, "
             f"deleted={self.deleted_count}, unchanged={self.unchanged_count}, failed={self.failed_count}, "
-            f"validated={self.files_validated}, validation_failed={self.files_failed}"
+            f"validated={self.files_validated}, validation_failed={self.files_failed}, batch={batch_status}"
         )

@@ -95,8 +95,9 @@ class TaskExecutorService:
             supplied_content=task.content,
             build_batch=build_batch,
         )
-        if accepted_batch:
-            self._write_mutation_artifacts(task.id, accepted_batch)
+        mutation_batch = result.details.get("mutation_batch")
+        if mutation_batch:
+            self._write_mutation_artifacts(task.id, mutation_batch)
         self._write_attempt_artifacts(task.id, ledger)
         self.write_context_artifact(task.id, result.details.get("context_package"))
         return result
@@ -211,8 +212,9 @@ class TaskExecutorService:
             supplied_content=task.content,
             build_batch=build_batch,
         )
-        if accepted_batch:
-            self._write_mutation_artifacts(task.id, accepted_batch)
+        mutation_batch = result.details.get("mutation_batch")
+        if mutation_batch:
+            self._write_mutation_artifacts(task.id, mutation_batch)
         self._write_attempt_artifacts(task.id, ledger)
         self.write_context_artifact(task.id, result.details.get("context_package"))
         if extra_details and result.success:
@@ -261,8 +263,9 @@ class TaskExecutorService:
             supplied_content=task.content,
             build_batch=build_batch,
         )
-        if accepted_batch:
-            self._write_mutation_artifacts(task.id, accepted_batch)
+        mutation_batch = result.details.get("mutation_batch")
+        if mutation_batch:
+            self._write_mutation_artifacts(task.id, mutation_batch)
         self._write_attempt_artifacts(task.id, ledger)
         self.write_context_artifact(task.id, result.details.get("context_package"))
         return result
@@ -582,6 +585,7 @@ class TaskExecutorService:
             "files_passed": batch_result.files_passed,
             "files_failed": batch_result.files_failed,
             "validation_errors": batch_result.validation_errors,
+            "batch_summary": asdict(batch_result.batch_summary) if batch_result.batch_summary else None,
             "results": [asdict(result) for result in batch_result.results],
             "ledger": [asdict(entry) for entry in batch_result.ledger],
         }

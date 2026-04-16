@@ -1597,6 +1597,21 @@ class AgentWorkbenchApp:
                         total_deleted += data.get("deleted_count", 0)
                         total_failed += data.get("failed_count", 0)
                         add_field(f"Artifact {artifact.stem}", data.get("status", "-"))
+                        batch_summary = data.get("batch_summary")
+                        if batch_summary:
+                            self.slot_detail_view.insert(
+                                "end",
+                                f"  batch: {batch_summary.get('batch_validation_status', '-')} complexity={batch_summary.get('complexity', '-')}\n",
+                                "value" if not str(batch_summary.get("batch_validation_status", "")).startswith("batch_invalid") else "error",
+                            )
+                            for reason in batch_summary.get("batch_failure_reasons", []):
+                                self.slot_detail_view.insert("end", f"    batch failure: {reason}\n", "error")
+                            for warning in batch_summary.get("warnings", []):
+                                self.slot_detail_view.insert("end", f"    batch warning: {warning}\n", "dim")
+                            for summary in batch_summary.get("file_summaries", []):
+                                path = summary.get("path", "-")
+                                purpose = summary.get("purpose", "-")
+                                self.slot_detail_view.insert("end", f"    file: {path} [{purpose}]\n", "value")
                         if data.get("files_validated", 0):
                             self.slot_detail_view.insert(
                                 "end",
