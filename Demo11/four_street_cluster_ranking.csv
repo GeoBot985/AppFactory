@@ -1,0 +1,49 @@
+rank,cluster_name,street_1,street_2,street_3,street_4,unique_outage_days
+TARGET,Spes Bona Avenue | Glaudina Drive | Jacqueline Street | Proot Street,Spes Bona Avenue,Glaudina Drive,Jacqueline Street,Proot Street,28
+1,Agulhas | Carob Crescent | Mahogany Crescent | Uys Krige Drive,Agulhas,Carob Crescent,Mahogany Crescent,Uys Krige Drive,22
+2,Agulhas | Carob Crescent | Glaudina Drive | Uys Krige Drive,Agulhas,Carob Crescent,Glaudina Drive,Uys Krige Drive,21
+3,Antoinette Street | Claire Street | Fairfield Street North | Hannes Louw Drive,Antoinette Street,Claire Street,Fairfield Street North,Hannes Louw Drive,21
+4,Colette Close | Fleur Drive | Hannes Louw Drive | Rene Street,Colette Close,Fleur Drive,Hannes Louw Drive,Rene Street,21
+5,Claire Street | Colette Close | Hannes Louw Drive | Madeleine Street,Claire Street,Colette Close,Hannes Louw Drive,Madeleine Street,20
+6,Antoinette Street | Bridgitte Road | Hannes Louw Drive | Rene Street,Antoinette Street,Bridgitte Road,Hannes Louw Drive,Rene Street,18
+7,Colette Close | Jacqueline Street | Madeleine Street | Yvette Street,Colette Close,Jacqueline Street,Madeleine Street,Yvette Street,17
+8,Glaudina Drive | Orange Street | Proot Street | Spes Bona Avenue,Glaudina Drive,Orange Street,Proot Street,Spes Bona Avenue,17
+9,Antoinette Street | Claire Street | Hannes Louw Drive | Rene Street,Antoinette Street,Claire Street,Hannes Louw Drive,Rene Street,16
+10,Colette Close | Fleur Drive | Michelle Street | Yvette Street,Colette Close,Fleur Drive,Michelle Street,Yvette Street,16
+11,Glaudina Drive | Proot Street | Spes Bona Avenue | Uys Krige Drive,Glaudina Drive,Proot Street,Spes Bona Avenue,Uys Krige Drive,16
+12,Charmaine Close | Fairfield Street North | Minette Close | Nicole Street,Charmaine Close,Fairfield Street North,Minette Close,Nicole Street,15
+13,Colette Close | Fleur Drive | Michelle Street | Rene Street,Colette Close,Fleur Drive,Michelle Street,Rene Street,15
+14,Charmaine Close | Fairfield Street North | Nicole Street | Odette Street,Charmaine Close,Fairfield Street North,Nicole Street,Odette Street,14
+15,Antoinette Street | Fairfield Street North | Nicole Street | Odette Street,Antoinette Street,Fairfield Street North,Nicole Street,Odette Street,13
+16,Claire Street | Colette Close | Madeleine Street | Yvette Street,Claire Street,Colette Close,Madeleine Street,Yvette Street,13
+17,Nassau Street | Orange Street | Proot Street | Tierberg Road,Nassau Street,Orange Street,Proot Street,Tierberg Road,13
+18,Gordon Road | Powell Street | Reid Street West | Seddon Street,Gordon Road,Powell Street,Reid Street West,Seddon Street,12
+19,Leerdam Street | Mauritius Street | Nassau Street | Orange Street,Leerdam Street,Mauritius Street,Nassau Street,Orange Street,12
+20,Amsterdam Street | Buren Street | Toner Street South | Wessel Street South,Amsterdam Street,Buren Street,Toner Street South,Wessel Street South,11
+21,Chantelle Street | Dauphine Street | Minette Close | Simone Street,Chantelle Street,Dauphine Street,Minette Close,Simone Street,11
+22,Mauritius Street | Nassau Street | Orange Street | Proot Street,Mauritius Street,Nassau Street,Orange Street,Proot Street,11
+23,Amsterdam Street | Buren Street | Culemborg Street | Wessel Street South,Amsterdam Street,Buren Street,Culemborg Street,Wessel Street South,10
+24,Frans Conradie Drive | Haarlem Street | Toner Street North | Wessel Street North,Frans Conradie Drive,Haarlem Street,Toner Street North,Wessel Street North,10
+25,Friesland Street | Haarlem Street | Provident Street North | Wessel Street North,Friesland Street,Haarlem Street,Provident Street North,Wessel Street North,10
+26,Amsterdam Street | Brug Street | Buren Street | Culemborg Street,Amsterdam Street,Brug Street,Buren Street,Culemborg Street,9
+27,Fairfield Street South | Gordon Road | Plein Street | Wendtlandt South Street,Fairfield Street South,Gordon Road,Plein Street,Wendtlandt South Street,9
+28,Gordon Road | Plein Street | Reid Street West | Seddon Street,Gordon Road,Plein Street,Reid Street West,Seddon Street,9
+29,Gordon Road | Plein Street | Seddon Street | Wendtlandt South Street,Gordon Road,Plein Street,Seddon Street,Wendtlandt South Street,9
+30,Chantelle Street | Claire Street | Dauphine Street | Simone Street,Chantelle Street,Claire Street,Dauphine Street,Simone Street,8
+31,Drommedaris Street | Esperance Street | Toner Street North | Wessel Street North,Drommedaris Street,Esperance Street,Toner Street North,Wessel Street North,8
+32,Fairfield Street South | McGuinness Street | Perry Avenue | Ricketts Drive,Fairfield Street South,McGuinness Street,Perry Avenue,Ricketts Drive,8
+33,Brug Street | Buren Street | Culemborg Street | Reid Street East,Brug Street,Buren Street,Culemborg Street,Reid Street East,7
+34,Brug Street | Powell Street | Reid Street East | Seddon Street,Brug Street,Powell Street,Reid Street East,Seddon Street,7
+35,Chantelle Street | Dauphine Street | Minette Close | Van Bruggen Street,Chantelle Street,Dauphine Street,Minette Close,Van Bruggen Street,7
+36,Faull Road | McGuinness Street | Ricketts Drive | Ricketts Street,Faull Road,McGuinness Street,Ricketts Drive,Ricketts Street,7
+37,Friesland Street | Haarlem Street | Java East Street | Wessel Street North,Friesland Street,Haarlem Street,Java East Street,Wessel Street North,7
+38,Friesland Street | Haarlem Street | Toner Street North | Wessel Street North,Friesland Street,Haarlem Street,Toner Street North,Wessel Street North,7
+39,McGuinness Street | Perry Avenue | Ricketts Drive | Ricketts Street,McGuinness Street,Perry Avenue,Ricketts Drive,Ricketts Street,7
+40,Nelson Road | Powell Street | Reid Street West | Warren Street,Nelson Road,Powell Street,Reid Street West,Warren Street,7
+41,Nelson Road | Powell Street | Warren Street | Wendtland North Street,Nelson Road,Powell Street,Warren Street,Wendtland North Street,7
+42,Chantelle Street | Dauphine Street | Roy Campbell Crescent | Van Bruggen Street,Chantelle Street,Dauphine Street,Roy Campbell Crescent,Van Bruggen Street,6
+43,Grosskopf Street | McGuinness Street | Ricketts Drive | Ricketts Street,Grosskopf Street,McGuinness Street,Ricketts Drive,Ricketts Street,6
+44,Haarlem Street | Java East Street | Leerdam Street | Mauritius Street,Haarlem Street,Java East Street,Leerdam Street,Mauritius Street,5
+45,Java East Street | Leerdam Street | Mauritius Street | Nassau Street,Java East Street,Leerdam Street,Mauritius Street,Nassau Street,5
+46,Fairfield Street South | Perry Avenue | Plein Street | Wendtlandt South Street,Fairfield Street South,Perry Avenue,Plein Street,Wendtlandt South Street,3
+47,Faull Road | Ricketts Street | Warren Street | Wendtland North Street,Faull Road,Ricketts Street,Warren Street,Wendtland North Street,3
