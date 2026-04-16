@@ -30,6 +30,10 @@ class QueueSlot:
     started_at: str = ""
     completed_at: str = ""
     failure_reason: str = ""
+    current_run_id: str = ""
+    prior_run_ids: list[str] = field(default_factory=list)
+    replay_run_ids: list[str] = field(default_factory=list)
+    restart_run_ids: list[str] = field(default_factory=list)
     selection_result: SelectionResult | None = None
     bundle_result: WorkingSetBundle | None = None
     restore_result: RestoreResult | None = None
@@ -43,6 +47,7 @@ class QueueSlot:
 @dataclass
 class SpecQueueState:
     queue_slots: list[QueueSlot]
+    queue_id: str = ""
     queue_status: str = "idle"
     active_slot_index: int = -1
     started_at: str = ""
@@ -53,9 +58,14 @@ class SpecQueueState:
     skipped_count: int = 0
 
 
+import uuid
+
 class QueueService:
     def create_state(self) -> SpecQueueState:
-        state = SpecQueueState(queue_slots=[QueueSlot(slot_index=i) for i in range(QUEUE_SIZE)])
+        state = SpecQueueState(
+            queue_slots=[QueueSlot(slot_index=i) for i in range(QUEUE_SIZE)],
+            queue_id=f"q_{uuid.uuid4().hex[:8]}"
+        )
         for slot in state.queue_slots:
             self._initialize_pipeline(slot)
         return state
