@@ -27,6 +27,7 @@ class AttemptRecord:
     disk_write_performed: bool = False
     failure_fingerprint: str = ""
     context_summary: str = ""
+    targeting_summary: str = ""
 
 
 @dataclass

@@ -7,6 +7,7 @@ from services.attempts.models import AttemptRecord
 from services.context.file_excerptor import extract_file_context
 from services.context.file_inventory import WorkspaceInventoryBuilder
 from services.context.file_selector import SelectedContextFile, select_relevant_files
+from services.targeting.models import ScopeContract
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,8 @@ class GenerationContextPackage:
     project_root: str
     selection_confidence: str
     selected_files: list[ContextFilePayload] = field(default_factory=list)
+    editable_targets: list[str] = field(default_factory=list)
+    read_only_context_files: list[str] = field(default_factory=list)
     prior_attempt_summary: str = ""
     failure_detail: str = ""
     policy_summary: str = "Respect workspace path safety. Do not use fuzzy patching. Keep changes bounded."
@@ -53,6 +56,7 @@ class ContextPackageBuilder:
         attempt_type: str,
         prior_history: list[AttemptRecord],
         task_target: str = "",
+        scope_contract: ScopeContract | None = None,
     ) -> GenerationContextPackage:
         root = str(Path(project_root).expanduser().resolve())
         inventory = self._inventory_cache.get(root)
@@ -112,6 +116,8 @@ class ContextPackageBuilder:
             project_root=root,
             selection_confidence=confidence,
             selected_files=payloads,
+            editable_targets=(scope_contract.editable_files if scope_contract else []),
+            read_only_context_files=(scope_contract.read_only_context_files if scope_contract else []),
             prior_attempt_summary=prior_attempt_summary,
             failure_detail=failure_detail,
         )
@@ -123,6 +129,8 @@ class ContextPackageBuilder:
             f"Attempt type: {package.attempt_type}",
             f"Selection confidence: {package.selection_confidence}",
             f"Policy: {package.policy_summary}",
+            f"Editable targets: {package.editable_targets}",
+            f"Read-only context: {package.read_only_context_files}",
         ]
         if package.prior_attempt_summary:
             lines.append(f"Prior attempt: {package.prior_attempt_summary}")

@@ -10,6 +10,8 @@ from services.attempts.models import AttemptConfig, AttemptLedger, AttemptRecord
 from services.attempts.repair_prompt_builder import build_repair_input
 from services.attempts.strategy_policy import classify_final_outcome, select_next_strategy
 from services.context import ContextConfig, ContextPackageBuilder
+from services.targeting import ScopeBuilder
+from services.targeting.plan_guard import validate_operation_plan_against_scope
 from services.task_service import Task, TaskType, TaskStatus, TaskResult
 from services.file_ops_service import FileOpsService
 from services.ollama_service import OllamaService
@@ -45,6 +47,7 @@ class TaskExecutorService:
         self.edit_engine = EditEngine(AnchorResolver())
         self.attempt_config = AttemptConfig()
         self.context_builder = ContextPackageBuilder(ContextConfig())
+        self.scope_builder = ScopeBuilder()
 
     def execute(self, task: Task) -> TaskResult:
         task.status = TaskStatus.RUNNING
@@ -73,17 +76,23 @@ class TaskExecutorService:
 
     def _handle_create(self, task: Task) -> TaskResult:
         base_prompt = f"Generate code for the file '{task.target}' based on these constraints: {task.constraints or 'none'}. Output ONLY the code, no markdown markers."
+        target_exists = False
+        try:
+            target_exists = self.file_ops._safe_path(task.target).exists()
+        except Exception:
+            target_exists = False
 
         def build_batch(content: str, mode: str):
             return self.file_ops.execute_plan(
                 [
                     FileOperation(
                         op_id=task.id,
-                        op_type="create_file",
+                        op_type="replace_file" if target_exists else "create_file",
                         path=task.target,
                         content=content,
                         reason=task.constraints or "",
                         source_stage="task_executor.create",
+                        allow_overwrite=target_exists,
                     )
                 ],
                 mode=mode,
@@ -100,6 +109,7 @@ class TaskExecutorService:
             self._write_mutation_artifacts(task.id, mutation_batch)
         self._write_attempt_artifacts(task.id, ledger)
         self.write_context_artifact(task.id, result.details.get("context_package"))
+        self.write_scope_artifact(task.id, result.details.get("scope_contract"))
         return result
 
     def _handle_modify(self, task: Task) -> TaskResult:
@@ -217,6 +227,7 @@ class TaskExecutorService:
             self._write_mutation_artifacts(task.id, mutation_batch)
         self._write_attempt_artifacts(task.id, ledger)
         self.write_context_artifact(task.id, result.details.get("context_package"))
+        self.write_scope_artifact(task.id, result.details.get("scope_contract"))
         if extra_details and result.success:
             result.details["edit_result"] = extra_details.get("edit_result")
         return result
@@ -268,6 +279,7 @@ class TaskExecutorService:
             self._write_mutation_artifacts(task.id, mutation_batch)
         self._write_attempt_artifacts(task.id, ledger)
         self.write_context_artifact(task.id, result.details.get("context_package"))
+        self.write_scope_artifact(task.id, result.details.get("scope_contract"))
         return result
 
     def _handle_delete(self, task: Task) -> TaskResult:
@@ -298,6 +310,7 @@ class TaskExecutorService:
         last_batch = None
         last_extra = None
         last_context_package = None
+        last_scope_contract = None
         stop_reason = ""
         accepted_batch = None
         generated_content = supplied_content
@@ -354,12 +367,40 @@ class TaskExecutorService:
 
         for attempt_index in range(1, self.attempt_config.max_total_attempts + 1):
             attempt_type = next_strategy
+            scope_contract = self.scope_builder.build(
+                project_root=str(self.file_ops.project_root),
+                task_id=task.id,
+                spec_text=base_prompt,
+                task_target=task.target,
+                prior_history=history,
+            )
+            last_scope_contract = scope_contract
+            if scope_contract.scope_policy_result.startswith("scope_blocked"):
+                record = AttemptRecord(
+                    attempt_index=attempt_index,
+                    attempt_type=attempt_type,
+                    input_summary="scope_policy_block",
+                    operation_plan_summary=task.target,
+                    validation_result_summary="scope_blocked",
+                    failure_class=scope_contract.scope_policy_result,
+                    repair_strategy_used=attempt_type,
+                    success=False,
+                    stop_reason="scope blocked",
+                    targeted_files=scope_contract.editable_files or scope_contract.read_only_context_files,
+                    error_summary="; ".join(scope_contract.warnings) or scope_contract.scope_policy_result,
+                    failure_fingerprint=fingerprint_failure(scope_contract.scope_policy_result, "; ".join(scope_contract.warnings), task.target),
+                    targeting_summary=self._summarize_scope(scope_contract),
+                )
+                history.append(record)
+                stop_reason = "policy_blocked"
+                break
             context_package = self.context_builder.build(
                 project_root=self.file_ops.project_root,
                 spec_text=base_prompt,
                 attempt_type=attempt_type,
                 prior_history=history,
                 task_target=task.target,
+                scope_contract=scope_contract,
             )
             last_context_package = context_package
             prompt = f"{base_prompt}\n\n{self.context_builder.to_prompt_text(context_package)}"
@@ -374,6 +415,13 @@ class TaskExecutorService:
             batch, extra, prebuilt_attempt = self._normalize_attempt_output(build_batch(generated_content, "dry-run"))
             last_batch = batch
             last_extra = extra
+            if batch and batch.results:
+                draft_ops = [FileOperation(op_id=item.op_id, op_type=item.op_type, path=item.path) for item in batch.results]
+                ok_scope, scope_errors = validate_operation_plan_against_scope(draft_ops, scope_contract)
+                if not ok_scope:
+                    batch.validation_errors.extend(scope_errors)
+                    batch.status = "failed"
+                    batch.failed_count = max(batch.failed_count, 1)
 
             if prebuilt_attempt:
                 record = prebuilt_attempt
@@ -382,6 +430,7 @@ class TaskExecutorService:
                 record.repair_strategy_used = next_strategy
                 record.validation_result_summary = "failed"
                 record.context_summary = self._summarize_context(context_package)
+                record.targeting_summary = self._summarize_scope(scope_contract)
             else:
                 failure_class = ""
                 error_detail = ""
@@ -413,6 +462,7 @@ class TaskExecutorService:
                     error_summary=error_detail,
                     failure_fingerprint=fingerprint,
                     context_summary=self._summarize_context(context_package),
+                    targeting_summary=self._summarize_scope(scope_contract),
                 )
             history.append(record)
 
@@ -425,7 +475,7 @@ class TaskExecutorService:
                 final_outcome = classify_final_outcome(history, True, "success")
                 ledger = AttemptLedger(attempts=history, final_outcome=final_outcome, applied_attempt_index=attempt_index, stopped_reason="success")
                 message = self._success_message_for_task(task, accepted_batch, final_outcome)
-                details = {"mutation_batch": accepted_batch, "attempt_ledger": ledger, "context_package": context_package}
+                details = {"mutation_batch": accepted_batch, "attempt_ledger": ledger, "context_package": context_package, "scope_contract": scope_contract}
                 return TaskResult(success=True, message=message, changes=[task.target], details=details), accepted_batch, ledger, {"edit_result": extra} if extra else None
 
             strategy, strategy_reason = select_next_strategy(self.attempt_config, history, history[-1].failure_class)
@@ -440,7 +490,7 @@ class TaskExecutorService:
 
         final_outcome = classify_final_outcome(history, False, stop_reason or "exhausted")
         ledger = AttemptLedger(attempts=history, final_outcome=final_outcome, applied_attempt_index=0, stopped_reason=stop_reason or "exhausted")
-        details = {"mutation_batch": last_batch, "attempt_ledger": ledger, "context_package": last_context_package}
+        details = {"mutation_batch": last_batch, "attempt_ledger": ledger, "context_package": last_context_package, "scope_contract": last_scope_contract}
         message = history[-1].error_summary if history else "generation failed"
         return TaskResult(success=False, message=message or "generation failed", error=history[-1].failure_class if history else "", details=details), None, ledger, {"edit_result": last_extra} if last_extra else None
 
@@ -490,6 +540,11 @@ class TaskExecutorService:
 
     def _summarize_context(self, package) -> str:
         return f"files={len(package.selected_files)}, confidence={package.selection_confidence}"
+
+    def _summarize_scope(self, contract) -> str:
+        if not contract:
+            return "no_scope"
+        return f"class={contract.scope_class}, confidence={contract.scope_confidence}, editable={len(contract.editable_files)}, policy={contract.scope_policy_result}"
 
     def _handle_run(self, task: Task) -> TaskResult:
         if self.cmd_executor:
@@ -612,6 +667,14 @@ class TaskExecutorService:
         context_dir.mkdir(parents=True, exist_ok=True)
         payload = self.context_builder.to_dict(context_package)
         (context_dir / f"{task_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def write_scope_artifact(self, task_id: str, scope_contract) -> None:
+        if not self.run_folder or scope_contract is None:
+            return
+        scope_dir = self.run_folder / "targeting"
+        scope_dir.mkdir(parents=True, exist_ok=True)
+        payload = self.scope_builder.to_dict(scope_contract)
+        (scope_dir / f"{task_id}.json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def _now(self) -> str:
         return time.strftime("%Y-%m-%dT%H:%M:%S")

@@ -1726,6 +1726,37 @@ class AgentWorkbenchApp:
         else:
             self.slot_detail_view.insert("end", "No context artifacts available.\n", "dim")
 
+        # 4.4 Targeting
+        add_section("TARGETING")
+        targeting_dir = None
+        if slot.current_run_id:
+            metadata = self.ledger_service.get_run_metadata(slot.current_run_id)
+            if metadata and metadata.execution_workspace:
+                targeting_dir = Path(metadata.execution_workspace).parent / "targeting"
+        if targeting_dir and targeting_dir.exists():
+            targeting_files = sorted(targeting_dir.glob("*.json"))
+            if targeting_files:
+                for artifact in targeting_files:
+                    try:
+                        with artifact.open("r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        add_field(f"Targeting Artifact {artifact.stem}", data.get("scope_policy_result", "-"))
+                        add_field("Scope Class", data.get("scope_class", "-"))
+                        add_field("Scope Confidence", data.get("scope_confidence", "-"))
+                        self.slot_detail_view.insert("end", f"  primary editable: {data.get('primary_target_files', [])}\n", "value")
+                        self.slot_detail_view.insert("end", f"  secondary editable: {data.get('secondary_edit_files', [])}\n", "value")
+                        self.slot_detail_view.insert("end", f"  read-only context: {data.get('read_only_context_files', [])}\n", "dim")
+                        for symbol in data.get("target_symbols", []):
+                            self.slot_detail_view.insert("end", f"  symbol: {symbol.get('symbol_name')} [{symbol.get('resolution_status')}] {symbol.get('file_candidates', [])}\n", "value")
+                        for warning in data.get("warnings", []):
+                            self.slot_detail_view.insert("end", f"  warning: {warning}\n", "dim")
+                    except Exception as exc:
+                        self.slot_detail_view.insert("end", f"  Failed to read {artifact.name}: {exc}\n", "error")
+            else:
+                self.slot_detail_view.insert("end", "No targeting artifacts available.\n", "dim")
+        else:
+            self.slot_detail_view.insert("end", "No targeting artifacts available.\n", "dim")
+
         # 5. LLM / Edit Result
         add_section("LLM EDIT RESULT")
         if slot.llm_edit_run:
