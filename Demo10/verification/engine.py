@@ -5,8 +5,8 @@ from .models import CheckStatus, VerificationReport, CheckResult
 from .checks import VerificationExecutor
 
 class VerificationEngine:
-    def __init__(self, project_root: Path):
-        self.executor = VerificationExecutor(project_root)
+    def __init__(self, project_root: Path, cmd_executor: Optional[Any] = None):
+        self.executor = VerificationExecutor(project_root, cmd_executor=cmd_executor)
 
     def run(self, verification_data: Dict[str, Any], task_results: List[Any]) -> VerificationReport:
         checks_data = verification_data.get("checks", [])

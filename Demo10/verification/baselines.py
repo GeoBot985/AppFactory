@@ -5,7 +5,7 @@ from typing import Any, Dict, List
 class BaselineComparator:
     def compare(self, actual: Dict[str, Any], expected: Dict[str, Any]) -> Dict[str, Any]:
         # Stable fields to compare
-        fields_to_compare = ["final_status", "verification", "regression"]
+        fields_to_compare = ["final_status", "verification", "regression", "runtime"]
 
         mismatches = []
         for field in fields_to_compare:

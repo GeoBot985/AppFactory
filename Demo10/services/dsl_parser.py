@@ -16,7 +16,7 @@ class DSLParser:
             "insert_before", "insert_after", "append_if_missing", "delete_block",
             "run_command", "validate", "create_file", "update_file", "delete_file"
         }
-        self.root_allowed_keys = {"spec_version", "spec_id", "metadata", "settings", "tasks", "verification", "execution", "promotion", "retention"}
+        self.root_allowed_keys = {"spec_version", "spec_id", "metadata", "settings", "tasks", "verification", "execution", "promotion", "retention", "runtime"}
         self.settings_allowed_keys = {"fail_fast", "stop_on_error", "allow_legacy_fallback"}
         self.execution_allowed_keys = {"mode", "source_policy"}
         self.promotion_allowed_keys = {"enabled", "allow_on_status"}
@@ -120,6 +120,11 @@ class DSLParser:
                 for key in data["retention"]:
                     if key not in self.retention_allowed_keys:
                         errors.append({"field": f"retention.{key}", "error": f"Unknown retention field: {key}"})
+
+        # Runtime validation
+        if "runtime" in data:
+            r_errors = self._validate_runtime(data["runtime"])
+            errors.extend(r_errors)
 
         # Verification validation
         if "verification" in data:
@@ -287,6 +292,19 @@ class DSLParser:
 
         if c_type == "task_status":
              self._require(check, prefix, ["task_id", "expected"], errors)
+
+        return errors
+
+    def _validate_runtime(self, r_data: Any) -> List[Dict[str, str]]:
+        errors = []
+        if not isinstance(r_data, dict):
+            errors.append({"field": "runtime", "error": "Must be a dictionary"})
+            return errors
+
+        allowed_keys = {"profile", "python_version", "env", "dependency_fingerprint", "command_policy", "drift_policy"}
+        for key in r_data:
+            if key not in allowed_keys:
+                errors.append({"field": f"runtime.{key}", "error": f"Unknown field: {key}"})
 
         return errors
 
