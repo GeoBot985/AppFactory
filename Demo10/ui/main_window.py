@@ -1331,13 +1331,16 @@ class AgentWorkbenchApp:
                 update_stage("Spec Parsing", "completed", f"tasks={len(tasks)}")
                 check_stop()
 
+                # Pre-Execution: Create run folder for backups and artifacts
+                run_folder = self.audit_log_service.create_run_folder(slot.slot_index + 1)
+
                 # 3. Task Execution
                 update_stage("Task Execution", "running")
                 if not self.current_folder:
                     raise RuntimeError("no project folder")
 
                 file_ops = FileOpsService(self.current_folder)
-                executor = TaskExecutorService(file_ops, self.ollama_service, self.process_service, model_name)
+                executor = TaskExecutorService(file_ops, self.ollama_service, self.process_service, model_name, run_folder=run_folder)
 
                 all_changes = []
                 for task in tasks:
@@ -1367,7 +1370,6 @@ class AgentWorkbenchApp:
 
                 # 5. Logging / Audit
                 update_stage("Logging / Audit", "running")
-                run_folder = self.audit_log_service.create_run_folder(slot.slot_index + 1)
                 self.audit_log_service.log_artifact(run_folder, "spec.txt", slot.spec_text)
                 self.audit_log_service.log_artifact(run_folder, "tasks.json", [{"id": t.id, "type": t.type.value, "target": t.target, "status": t.status.value} for t in tasks])
 
@@ -1376,6 +1378,7 @@ class AgentWorkbenchApp:
                 self.audit_log_service.log_artifact(run_folder, "execution.log", "\n".join(execution_log))
 
                 for change in all_changes:
+                    # This captures the FINAL state of the file
                     self.audit_log_service.capture_file_change(run_folder, self.current_folder, change)
 
                 self.ui_queue.put(("queue_log", f"Audit logs saved to: {run_folder}"))
