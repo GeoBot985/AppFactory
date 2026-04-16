@@ -34,7 +34,8 @@ class LedgerService:
     def record_event(self, entity_type: str, entity_id: str, event_type: str,
                      new_state: str, previous_state: Optional[str] = None,
                      run_id: Optional[str] = None, queue_id: Optional[str] = None,
-                     slot_id: Optional[str] = None, payload: Optional[dict] = None) -> LedgerEvent:
+                     slot_id: Optional[str] = None, payload: Optional[dict] = None,
+                     trigger_ops_update: bool = True) -> LedgerEvent:
         self._seq_no += 1
         event = LedgerEvent(
             event_id=f"evt_{uuid.uuid4().hex[:8]}",
@@ -56,6 +57,21 @@ class LedgerService:
             f.write(json.dumps(event.to_dict()) + "\n")
             f.flush()
             os.fsync(f.fileno())
+
+        # 2. Trigger incremental ops update (SPEC 018 Mode A)
+        if trigger_ops_update:
+            try:
+                from Demo10.ops.ops_service import OpsService
+                from Demo10.ops.health import HealthEvaluator
+                ops = OpsService(self.storage_root)
+                # For now, simple rebuild of relevant indices on any event
+                # In production this would be more granular
+                ops.rebuild_all_indices()
+                health = HealthEvaluator(self.storage_root)
+                health.evaluate()
+            except Exception as e:
+                # Ops failure must not corrupt ledger truth
+                print(f"Ops update failed: {e}")
 
         return event
 
