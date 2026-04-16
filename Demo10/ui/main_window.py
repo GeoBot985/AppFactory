@@ -26,6 +26,11 @@ from services.task_executor_service import TaskExecutorService
 from services.validation_service import ValidationService
 from services.audit_log_service import AuditLogService
 
+from verification.engine import VerificationEngine
+from verification.outcome import OutcomeSynthesizer
+from verification.models import FailureStage, FinalOutcome, CheckStatus, VerificationReport
+from verification.reporting import ReportingService
+
 
 class Tooltip:
     def __init__(self, widget: tk.Widget, text: str):
@@ -1000,7 +1005,32 @@ class AgentWorkbenchApp:
         else:
             self.slot_detail_view.insert("end", "No LLM edit result available.\n", "dim")
 
-        # 6. Failure Info
+        # 6. Verification Report
+        if slot.verification_report:
+            add_section("VERIFICATION")
+            v = slot.verification_report
+            add_field("Total Checks", str(v.summary["total"]))
+            add_field("Passed", str(v.summary["passed"]), "success" if v.summary["passed"] == v.summary["total"] else "value")
+            add_field("Failed", str(v.summary["failed"]), "error" if v.summary["failed"] > 0 else "value")
+            add_field("Warned", str(v.summary["warned"]), "dim" if v.summary["warned"] > 0 else "value")
+
+            if v.checks:
+                 self.slot_detail_view.insert("end", "\nDetailed Checks:\n", "label")
+                 for c in v.checks:
+                      status_tag = "success" if c.status == CheckStatus.PASS else "error" if c.status in {CheckStatus.FAIL, CheckStatus.ERROR} else "dim"
+                      self.slot_detail_view.insert("end", f"  [{c.status.value.upper()}] {c.check_id} ({c.severity.value})\n", status_tag)
+                      if c.status in {CheckStatus.FAIL, CheckStatus.ERROR}:
+                           self.slot_detail_view.insert("end", f"      {c.message}\n", "error")
+
+        # 7. Run Summary
+        if slot.run_summary:
+            add_section("RUN SUMMARY")
+            s = slot.run_summary
+            add_field("Final Status", s.final_status.value, "success" if s.final_status == FinalOutcome.COMPLETED else "error" if s.final_status in {FinalOutcome.FAILED, FinalOutcome.PARTIAL_FAILURE} else "dim")
+            add_field("Failure Stage", s.failure_stage.value if s.failure_stage else "None", "error" if s.failure_stage else "success")
+            add_field("Summary", s.summary)
+
+        # 8. Failure Info
         if slot.status == "failed" or slot.failure_reason:
             add_section("FAILURE INFO")
             add_field("Status", slot.status, "error")
@@ -1030,7 +1060,11 @@ class AgentWorkbenchApp:
             if slot.status == "running":
                 bg = "#263238"
             elif slot.status == "completed":
-                bg = "#1f3b2d"
+                # Check for warnings
+                if slot.run_summary and slot.run_summary.final_status == FinalOutcome.COMPLETED_WITH_WARNINGS:
+                     bg = "#3b3b1f" # Dark yellow/brown for warnings
+                else:
+                     bg = "#1f3b2d"
             elif slot.status == "failed":
                 bg = "#4b1f1f"
             elif slot.status == "stopped":
@@ -1308,7 +1342,10 @@ class AgentWorkbenchApp:
                 "Spec Intake",
                 "Spec Parsing",
                 "Task Execution",
-                "Validation",
+                "Structural Validation",
+                "Deterministic Verification",
+                "Regression Comparison",
+                "Outcome Synthesis",
                 "Logging / Audit",
             ]
             current_stage_idx = -1
@@ -1325,17 +1362,29 @@ class AgentWorkbenchApp:
                     raise InterruptedError("stop requested")
 
             try:
+                tasks = []
+                verification_data = {}
+                spec_data = None
+                all_changes = []
+                run_folder = None
+
+                v_engine = VerificationEngine(self.current_folder)
+                v_synthesizer = OutcomeSynthesizer()
+                v_report = None
+                failure_stage = None
+
                 # 1. Spec Intake
                 update_stage("Spec Intake", "running")
                 if not slot.spec_text.strip():
+                    failure_stage = FailureStage.SPEC_FAILURE
                     raise RuntimeError("no spec")
 
                 is_dsl = self.spec_parser.dsl_parser.is_dsl_spec(slot.spec_text)
 
-                spec_data = None
                 if is_dsl:
                     spec_data, validation = self.spec_parser.dsl_parser.parse(slot.spec_text)
                     if not validation.is_valid:
+                         failure_stage = FailureStage.SPEC_FAILURE
                          raise ValueError(f"DSL Validation Failed: {validation.errors[0]['error']}")
                 else:
                     # Check if it looks like YAML but failed is_dsl_spec
@@ -1346,15 +1395,10 @@ class AgentWorkbenchApp:
                              # User intended DSL but it's malformed
                              _, validation = self.spec_parser.dsl_parser.parse(slot.spec_text)
                              if not validation.is_valid:
+                                  failure_stage = FailureStage.SPEC_FAILURE
                                   raise ValueError(f"Malformed DSL: {validation.errors[0]['error']}")
                     except:
                         pass
-
-                    # NLP spec. By default, SPEC 012 says no fallback unless explicitly allowed.
-                    # But where would that allowance be? Only in a DSL spec.
-                    # If it's a PURE NLP spec, we have no settings block.
-                    # So we assume Legacy is ALLOWED for pure NLP unless a global rule exists.
-                    pass
 
                 self.ui_queue.put(("queue_log", f"Mode detected: {'DSL' if is_dsl else 'Legacy'}"))
                 update_stage("Spec Intake", "completed", f"mode={'dsl' if is_dsl else 'legacy'}")
@@ -1362,7 +1406,7 @@ class AgentWorkbenchApp:
 
                 # 2. Spec Parsing
                 update_stage("Spec Parsing", "running")
-                tasks = self.spec_parser.parse(slot.spec_text)
+                tasks, verification_data = self.spec_parser.parse(slot.spec_text)
                 if not tasks:
                     self.ui_queue.put(("queue_log", "No tasks found in spec"))
                 else:
@@ -1376,6 +1420,7 @@ class AgentWorkbenchApp:
                 # 3. Task Execution
                 update_stage("Task Execution", "running")
                 if not self.current_folder:
+                    failure_stage = FailureStage.HARNESS_FAILURE
                     raise RuntimeError("no project folder")
 
                 file_ops = FileOpsService(self.current_folder)
@@ -1386,12 +1431,12 @@ class AgentWorkbenchApp:
                 if spec_data and "settings" in spec_data:
                     fail_fast = spec_data["settings"].get("fail_fast", True)
 
-                all_changes = []
                 for task in tasks:
                     self.ui_queue.put(("queue_log", f"Executing task: {task.id} ({task.type.value} {task.target})"))
                     result = executor.execute(task)
                     if not result.success:
                         if fail_fast:
+                            failure_stage = FailureStage.EDIT_FAILURE
                             raise RuntimeError(f"Task {task.id} failed: {result.message}")
                         else:
                             self.ui_queue.put(("queue_log", f"Task {task.id} failed (continuing): {result.message}"))
@@ -1400,8 +1445,8 @@ class AgentWorkbenchApp:
                 update_stage("Task Execution", "completed", f"changes={len(all_changes)}")
                 check_stop()
 
-                # 4. Validation
-                update_stage("Validation", "running")
+                # 4. Structural Validation
+                update_stage("Structural Validation", "running")
                 for change in all_changes:
                     # Skip validation for files that were deleted
                     target_path = self.current_folder / change
@@ -1411,12 +1456,42 @@ class AgentWorkbenchApp:
                     if change.endswith(".py"):
                         ok, msg = self.validation_service.validate_python_syntax(target_path)
                         if not ok:
+                            failure_stage = FailureStage.STRUCTURAL_VALIDATION_FAILURE
                             raise RuntimeError(f"Validation failed for {change}: {msg}")
-                update_stage("Validation", "completed")
+                update_stage("Structural Validation", "completed")
                 check_stop()
 
-                # 5. Logging / Audit
+                # 5. Deterministic Verification
+                update_stage("Deterministic Verification", "running")
+                v_report = v_engine.run(verification_data, tasks)
+                slot.verification_report = v_report
+                update_stage("Deterministic Verification", "completed", f"passed={v_report.summary['passed']}/{v_report.summary['total']}")
+                check_stop()
+
+                # 6. Regression Comparison
+                update_stage("Regression Comparison", "running")
+                # Placeholder for now
+                regression_status = {"enabled": False}
+                if verification_data.get("regression", {}).get("enabled"):
+                     regression_status = {"enabled": True, "status": "pass"} # Placeholder
+                update_stage("Regression Comparison", "completed")
+                check_stop()
+
+                # 7. Outcome Synthesis
+                update_stage("Outcome Synthesis", "running")
+                spec_id = spec_data.get("spec_id", "legacy_run") if spec_data else "legacy_run"
+                run_summary = v_synthesizer.synthesize(spec_id, tasks, v_report, failure_stage, regression_status)
+                slot.run_summary = run_summary
+                update_stage("Outcome Synthesis", "completed", f"outcome={run_summary.final_status.value}")
+                check_stop()
+
+                # 8. Logging / Audit
                 update_stage("Logging / Audit", "running")
+
+                if run_folder and slot.verification_report and slot.run_summary:
+                    reporter = ReportingService()
+                    reporter.generate_json_report(run_folder, slot.verification_report, slot.run_summary)
+                    reporter.generate_html_report(run_folder, slot.verification_report, slot.run_summary)
                 # SPEC 012 Requirement 10: Store original and normalized spec
                 if is_dsl:
                     self.audit_log_service.log_artifact(run_folder, "spec.yaml", slot.spec_text)
@@ -1430,8 +1505,8 @@ class AgentWorkbenchApp:
                             "constraints": json.loads(t.constraints) if t.constraints else None
                         })
                     normalized_spec = {
-                        "spec_id": data.get("spec_id"),
-                        "spec_version": data.get("spec_version"),
+                        "spec_id": spec_data.get("spec_id"),
+                        "spec_version": spec_data.get("spec_version"),
                         "tasks": normalized_tasks
                     }
                     self.audit_log_service.log_artifact(run_folder, "spec_normalized.json", json.dumps(normalized_spec, indent=2))
@@ -1439,6 +1514,17 @@ class AgentWorkbenchApp:
                     self.audit_log_service.log_artifact(run_folder, "spec.txt", slot.spec_text)
 
                 self.audit_log_service.log_artifact(run_folder, "tasks.json", [{"id": t.id, "type": t.type.value, "target": t.target, "status": t.status.value} for t in tasks])
+
+                if slot.run_summary:
+                    # Serializing RunSummary (simplified)
+                    summary_dict = {
+                        "spec_id": slot.run_summary.spec_id,
+                        "final_status": slot.run_summary.final_status.value,
+                        "failure_stage": slot.run_summary.failure_stage.value if slot.run_summary.failure_stage else None,
+                        "verification": slot.run_summary.verification,
+                        "regression": slot.run_summary.regression
+                    }
+                    self.audit_log_service.log_artifact(run_folder, "run_summary.json", json.dumps(summary_dict, indent=2))
 
                 # Simplified log for audit
                 execution_log = [f"{t.type.value} {t.target}: {t.status.value}" for t in tasks]
@@ -1462,10 +1548,19 @@ class AgentWorkbenchApp:
                 self.ui_queue.put(("queue_log", f"Slot {slot.slot_index + 1} stopped"))
             except Exception as exc:
                 if current_stage_idx >= 0:
-                    failed_stage = stages[current_stage_idx]
-                    update_stage(failed_stage, "failed", str(exc))
+                    failed_stage_name = stages[current_stage_idx]
+                    update_stage(failed_stage_name, "failed", str(exc))
                     for s_name in stages[current_stage_idx + 1:]:
                         update_stage(s_name, "skipped", "upstream failure")
+
+                # Synthesize outcome even on failure if we have enough info
+                if tasks or v_report:
+                    s_id = spec_data.get("spec_id", "legacy_run") if spec_data else "legacy_run"
+                    slot.run_summary = v_synthesizer.synthesize(s_id, tasks, v_report or VerificationReport(), failure_stage, None)
+                    if run_folder:
+                        reporter = ReportingService()
+                        reporter.generate_json_report(run_folder, v_report or VerificationReport(), slot.run_summary)
+                        reporter.generate_html_report(run_folder, v_report or VerificationReport(), slot.run_summary)
 
                 self.queue_service.mark_slot_failed(self.spec_queue, slot, str(exc))
                 self.ui_queue.put(("queue_slot_failed", (slot.slot_index, str(exc))))

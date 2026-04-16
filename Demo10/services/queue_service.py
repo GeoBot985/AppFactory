@@ -7,6 +7,7 @@ from services.bundle_service import WorkingSetBundle
 from services.selection_service import SelectionResult
 from services.restore_service import RestoreResult
 from services.bundle_edit_service import BundleEditRun
+from verification.models import VerificationReport, RunSummary
 
 
 QUEUE_SIZE = 10
@@ -33,6 +34,8 @@ class QueueSlot:
     bundle_result: WorkingSetBundle | None = None
     restore_result: RestoreResult | None = None
     llm_edit_run: BundleEditRun | None = None
+    verification_report: VerificationReport | None = None
+    run_summary: RunSummary | None = None
     notes_log_summary: list[str] = field(default_factory=list)
     pipeline_stages: list[PipelineStage] = field(default_factory=list)
 
@@ -62,7 +65,10 @@ class QueueService:
             PipelineStage(name="Spec Intake"),
             PipelineStage(name="Spec Parsing"),
             PipelineStage(name="Task Execution"),
-            PipelineStage(name="Validation"),
+            PipelineStage(name="Structural Validation"),
+            PipelineStage(name="Deterministic Verification"),
+            PipelineStage(name="Regression Comparison"),
+            PipelineStage(name="Outcome Synthesis"),
             PipelineStage(name="Logging / Audit"),
         ]
 
@@ -79,6 +85,8 @@ class QueueService:
             slot.bundle_result = None
             slot.restore_result = None
             slot.llm_edit_run = None
+            slot.verification_report = None
+            slot.run_summary = None
             slot.started_at = ""
             slot.completed_at = ""
             slot.notes_log_summary = []
@@ -98,6 +106,8 @@ class QueueService:
             slot.bundle_result = None
             slot.restore_result = None
             slot.llm_edit_run = None
+            slot.verification_report = None
+            slot.run_summary = None
             slot.failure_reason = ""
             slot.started_at = ""
             slot.completed_at = ""

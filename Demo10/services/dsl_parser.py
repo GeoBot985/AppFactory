@@ -16,9 +16,15 @@ class DSLParser:
             "insert_before", "insert_after", "append_if_missing", "delete_block",
             "run_command", "validate", "create_file", "update_file", "delete_file"
         }
-        self.root_allowed_keys = {"spec_version", "spec_id", "metadata", "settings", "tasks"}
+        self.root_allowed_keys = {"spec_version", "spec_id", "metadata", "settings", "tasks", "verification"}
         self.settings_allowed_keys = {"fail_fast", "stop_on_error", "allow_legacy_fallback"}
         self.task_base_allowed_keys = {"id", "type", "depends_on", "file", "content", "mode", "import", "function_name", "class_name", "target", "command"}
+        self.supported_check_types = {
+            "file_exists", "file_not_exists", "contains_text", "not_contains_text",
+            "contains_regex", "symbol_exists", "symbol_not_exists", "import_exists",
+            "command_exit_code", "command_stdout_contains", "json_value_equals",
+            "line_count_range", "diff_contains", "task_status"
+        }
 
     def is_dsl_spec(self, spec_text: str) -> bool:
         try:
@@ -72,6 +78,11 @@ class DSLParser:
                 for key in data["settings"]:
                     if key not in self.settings_allowed_keys:
                         errors.append({"field": f"settings.{key}", "error": f"Unknown setting: {key}"})
+
+        # Verification validation
+        if "verification" in data:
+            v_errors = self._validate_verification(data["verification"])
+            errors.extend(v_errors)
 
         # Dependency validation (IDs must exist)
         if not errors:
@@ -148,6 +159,92 @@ class DSLParser:
 
         elif t_type == "create_file":
             self._require(task, prefix, ["content"], errors)
+
+        return errors
+
+    def _validate_verification(self, v_data: Any) -> List[Dict[str, str]]:
+        errors = []
+        if not isinstance(v_data, dict):
+            errors.append({"field": "verification", "error": "Must be a dictionary"})
+            return errors
+
+        allowed_root = {"mode", "checks", "regression"}
+        for key in v_data:
+            if key not in allowed_root:
+                errors.append({"field": f"verification.{key}", "error": f"Unknown field: {key}"})
+
+        if "mode" in v_data and v_data["mode"] not in {"strict", "permissive"}:
+             errors.append({"field": "verification.mode", "error": "Must be strict or permissive"})
+
+        if "checks" in v_data:
+            if not isinstance(v_data["checks"], list):
+                errors.append({"field": "verification.checks", "error": "Must be a list"})
+            else:
+                for i, check in enumerate(v_data["checks"]):
+                    errors.extend(self._validate_check(i, check))
+
+        if "regression" in v_data:
+            if not isinstance(v_data["regression"], dict):
+                errors.append({"field": "verification.regression", "error": "Must be a dictionary"})
+            else:
+                reg = v_data["regression"]
+                allowed_reg = {"enabled", "suite", "update_baseline"}
+                for k in reg:
+                    if k not in allowed_reg:
+                        errors.append({"field": f"verification.regression.{k}", "error": f"Unknown field: {k}"})
+                if reg.get("enabled") is True and not reg.get("suite"):
+                    errors.append({"field": "verification.regression.suite", "error": "Suite name required when enabled"})
+
+        return errors
+
+    def _validate_check(self, index: int, check: Any) -> List[Dict[str, str]]:
+        errors = []
+        if not isinstance(check, dict):
+            errors.append({"field": f"verification.checks[{index}]", "error": "Check must be a dictionary"})
+            return errors
+
+        prefix = f"verification.checks[{index}]"
+        c_type = check.get("type")
+        if not c_type:
+            errors.append({"field": f"{prefix}.type", "error": "Missing required field"})
+            return errors
+
+        if c_type not in self.supported_check_types:
+            errors.append({"field": f"{prefix}.type", "error": f"Unsupported check type: {c_type}"})
+            return errors
+
+        if "severity" in check and check["severity"] not in {"hard", "soft"}:
+             errors.append({"field": f"{prefix}.severity", "error": "Must be hard or soft"})
+
+        # Check-specific fields
+        if c_type in {"file_exists", "file_not_exists", "contains_text", "not_contains_text", "contains_regex", "import_exists", "json_value_equals", "line_count_range", "diff_contains"}:
+            self._require(check, prefix, ["path"], errors)
+
+        if c_type in {"contains_text", "not_contains_text", "diff_contains"}:
+             self._require(check, prefix, ["text"], errors)
+
+        if c_type == "contains_regex":
+             self._require(check, prefix, ["pattern"], errors)
+
+        if c_type == "symbol_exists" or c_type == "symbol_not_exists":
+             self._require(check, prefix, ["path", "symbol_type", "symbol_name"], errors)
+             if check.get("symbol_type") not in {"function", "class"}:
+                  errors.append({"field": f"{prefix}.symbol_type", "error": "Must be function or class"})
+
+        if c_type == "import_exists":
+             self._require(check, prefix, ["import"], errors)
+
+        if c_type in {"command_exit_code", "command_stdout_contains"}:
+             self._require(check, prefix, ["command"], errors)
+
+        if c_type == "command_stdout_contains":
+             self._require(check, prefix, ["text"], errors)
+
+        if c_type == "json_value_equals":
+             self._require(check, prefix, ["json_path", "expected"], errors)
+
+        if c_type == "task_status":
+             self._require(check, prefix, ["task_id", "expected"], errors)
 
         return errors
 
