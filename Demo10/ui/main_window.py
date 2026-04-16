@@ -56,6 +56,9 @@ from services.policy.evaluator import PolicyEvaluator
 from services.policy.approvals import ApprovalService
 
 from services.draft_spec.models import DraftSpec, UncertaintySeverity
+from services.planning.planning_models import PlanningSkeleton, NormalizedRequest, IntentType, ComplexityClass, SkeletonStep
+from services.planning.request_normalizer import RequestNormalizer
+from services.planning.planning_skeleton_builder import SkeletonBuilder
 from services.draft_spec.translator import DraftSpecTranslator
 from services.draft_spec.validator import DraftSpecValidator
 from services.draft_spec.session_state import DraftSpecSessionState
@@ -167,9 +170,13 @@ class AgentWorkbenchApp:
         self.policy_evaluator = PolicyEvaluator(self.policy_config)
         self.approval_service = ApprovalService(Path.cwd())
 
+        self.request_normalizer = RequestNormalizer(self.ollama_service)
+        self.skeleton_builder = SkeletonBuilder()
         self.draft_translator = DraftSpecTranslator(self.ollama_service)
         self.draft_validator = DraftSpecValidator()
         self.draft_session = DraftSpecSessionState()
+        self.current_normalized_request: Optional[NormalizedRequest] = None
+        self.current_planning_skeleton: Optional[PlanningSkeleton] = None
 
         self.session_manager = SessionManager()
         self.working_set_manager = WorkingSetManager()
@@ -517,9 +524,13 @@ class AgentWorkbenchApp:
             slot_text.bind("<Button-1>", lambda e, i=idx: self.select_slot(i))
         action_row = ttk.Frame(top, style="Panel.TFrame")
         action_row.grid(row=3, column=1, columnspan=7, sticky="ew", pady=(8, 0))
-        self.translate_button = ttk.Button(action_row, text="Translate Request", command=self.translate_request)
+        self.decompose_button = ttk.Button(action_row, text="Decompose Request", command=self.decompose_request)
+        self.decompose_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.decompose_button, "Decompose the natural language request into sub-intents and a planning skeleton.")
+
+        self.translate_button = ttk.Button(action_row, text="Translate Plan", command=self.translate_request)
         self.translate_button.pack(side="left", padx=(0, 8))
-        Tooltip(self.translate_button, "Translate the natural language request into a Draft Spec.")
+        Tooltip(self.translate_button, "Translate the current planning skeleton into a Draft Spec.")
 
         self.compile_button = ttk.Button(action_row, text="Compile Draft", command=self.compile_draft)
         self.compile_button.pack(side="left", padx=(0, 8))
@@ -621,6 +632,7 @@ class AgentWorkbenchApp:
         viewer_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         prompt_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         response_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        planning_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         draft_details_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         compile_report_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         index_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
@@ -637,6 +649,7 @@ class AgentWorkbenchApp:
         notebook.add(viewer_frame, text="File Viewer")
         notebook.add(prompt_frame, text="Prompt Preview")
         notebook.add(response_frame, text="Latest Response")
+        notebook.add(planning_frame, text="Planning")
         notebook.add(draft_details_frame, text="Draft Translation")
         notebook.add(compile_report_frame, text="Compile Report")
         notebook.add(index_frame, text="Architecture Index")
@@ -652,7 +665,7 @@ class AgentWorkbenchApp:
         notebook.add(ops_console_frame, text="Operations Console")
         self.notebook = notebook
 
-        for frame in (viewer_frame, prompt_frame, response_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, session_memory_frame, ops_console_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, planning_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, session_memory_frame, ops_console_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -703,6 +716,27 @@ class AgentWorkbenchApp:
         self.response_view.grid(row=0, column=0, sticky="nsew")
         response_scroll.grid(row=0, column=1, sticky="ns")
         self.response_view.configure(state="disabled")
+
+        self.planning_view = tk.Text(
+            planning_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        planning_scroll = ttk.Scrollbar(planning_frame, orient="vertical", command=self.planning_view.yview)
+        self.planning_view.configure(yscrollcommand=planning_scroll.set)
+        self.planning_view.grid(row=0, column=0, sticky="nsew")
+        planning_scroll.grid(row=0, column=1, sticky="ns")
+        self.planning_view.configure(state="disabled")
+
+        self.planning_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 11, "bold"))
+        self.planning_view.tag_configure("intent", foreground="#9cdcfe")
+        self.planning_view.tag_configure("step", foreground="#ce9178")
+        self.planning_view.tag_configure("warn", foreground="#f44747")
+        self.planning_view.tag_configure("complexity", foreground="#d7ba7d", font=("Consolas", 10, "bold"))
 
         self.draft_details_view = tk.Text(
             draft_details_frame,
@@ -1600,6 +1634,31 @@ class AgentWorkbenchApp:
                 # For now, just logging is fine.
                 break
 
+    def decompose_request(self) -> None:
+        model = self.model_var.get().strip()
+        if not model:
+            self.log_event("Decompose blocked: no model selected.")
+            return
+        request = self.request_text.get("1.0", "end-1c").strip()
+        if not request:
+            self.log_event("Decompose blocked: request is empty.")
+            return
+
+        self.log_event("Intent decomposition started...")
+        self.decompose_button.state(["disabled"])
+
+        def worker():
+            try:
+                normalized = self.request_normalizer.normalize(model, request)
+                skeleton = self.skeleton_builder.build(normalized)
+                self.ui_queue.put(("planning_ready", (normalized, skeleton)))
+            except Exception as e:
+                self.ui_queue.put(("queue_log", f"Decomposition failed: {e}"))
+            finally:
+                self.ui_queue.put(("decompose_done", None))
+
+        threading.Thread(target=worker, daemon=True).start()
+
     def translate_request(self) -> None:
         if self.translation_active:
             return
@@ -1612,6 +1671,11 @@ class AgentWorkbenchApp:
             self.log_event("Translate blocked: request is empty.")
             return
 
+        if not self.current_planning_skeleton:
+            self.log_event("No planning skeleton available. Running decomposition first.")
+            self.decompose_request()
+            return
+
         self.translation_active = True
         self.translate_button.state(["disabled"])
         self.log_event("Draft translation started...")
@@ -1622,15 +1686,18 @@ class AgentWorkbenchApp:
             adapter = SessionContextAdapter(self.session_manager.current_session)
             session_context = adapter.get_context_for_translation()
 
-        # Spec 032: Translation metrics (standalone)
         from metrics.metrics_service import MetricsService
         m = MetricsService()
         m.start_run("translation_task")
-        m.start_high_level_stage("translation")
 
         def worker():
             try:
-                draft = self.draft_translator.translate_request_to_draft_spec(model, request, session_context)
+                m.start_high_level_stage("translation")
+                draft = self.draft_translator.translate_request_to_draft_spec(
+                    model, request, session_context,
+                    planning_skeleton=self.current_planning_skeleton,
+                    normalized_request=self.current_normalized_request
+                )
 
                 # Record template usage if applicable
                 if draft.origin_metadata.get("origin_type") == "template":
@@ -4560,6 +4627,15 @@ class AgentWorkbenchApp:
                 self.spec_queue.queue_slots[edit_run.slot_index].llm_edit_run = edit_run
                 self._refresh_queue_view()
             return
+        if message == "decompose_done":
+            self.decompose_button.state(["!disabled"])
+            return
+        if message == "planning_ready":
+            normalized, skeleton = payload
+            self.current_normalized_request = normalized
+            self.current_planning_skeleton = skeleton
+            self._refresh_planning_view(normalized, skeleton)
+            return
         if message == "translation_done":
             draft = payload
             if not isinstance(draft, DraftSpec):
@@ -4634,3 +4710,51 @@ class AgentWorkbenchApp:
             self.draft_details_view.insert("end", f"- {q}\n")
 
         self.draft_details_view.configure(state="disabled")
+
+    def _refresh_planning_view(self, normalized: NormalizedRequest, skeleton: PlanningSkeleton) -> None:
+        self.planning_view.configure(state="normal")
+        self.planning_view.delete("1.0", "end")
+
+        def add_header(text: str):
+            self.planning_view.insert("end", f"\n=== {text} ===\n", "header")
+
+        def add_field(label: str, value: str):
+            self.planning_view.insert("end", f"{label:20}: ", "step")
+            self.planning_view.insert("end", f"{value}\n")
+
+        add_header("NORMALIZED REQUEST")
+        add_field("Summary", normalized.cleaned_summary)
+        add_field("Complexity", skeleton.complexity_class.value.upper())
+
+        if normalized.action_phrases:
+            add_field("Actions", ", ".join(normalized.action_phrases))
+        if normalized.entities:
+            add_field("Entities", ", ".join(normalized.entities))
+
+        add_header("DECOMPOSED INTENTS")
+        for i, intent in enumerate(normalized.intents):
+            self.planning_view.insert("end", f"Intent {i+1}: {intent.summary}\n", "intent")
+            self.planning_view.insert("end", f"  Type: {intent.intent_type.value}\n", "step")
+            if intent.entities:
+                self.planning_view.insert("end", f"  Entities: {', '.join(intent.entities)}\n", "step")
+            if intent.dependency_hints:
+                self.planning_view.insert("end", f"  Hints: {', '.join(intent.dependency_hints)}\n", "step")
+
+        add_header("PLANNING SKELETON")
+        for step in skeleton.steps:
+            self.planning_view.insert("end", f"Step {step.step_id}: {step.summary}\n", "step")
+            self.planning_view.insert("end", f"  Condition: {step.condition.value}\n")
+            if step.depends_on:
+                self.planning_view.insert("end", f"  Depends on: {', '.join(step.depends_on)}\n")
+
+        if skeleton.planning_warnings:
+            add_header("PLANNING WARNINGS")
+            for w in skeleton.planning_warnings:
+                self.planning_view.insert("end", f"- {w}\n", "warn")
+
+        self.planning_view.configure(state="disabled")
+        # Switch to planning tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Planning" in self.notebook.tab(tabid, "text"):
+                self.notebook.select(i)
+                break

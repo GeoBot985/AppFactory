@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional
 from services.ollama_service import OllamaService, OllamaRunSnapshot
 from .models import DraftSpec, DraftTask, DraftIntent, DraftTargets, UncertaintyRecord, UncertaintySeverity, Certainty
+from services.planning.planning_models import PlanningSkeleton, NormalizedRequest
 from templates.registry import TemplateRegistry
 from templates.selector import TemplateSelector
 from templates.fill import TemplateFiller
@@ -19,7 +20,7 @@ class DraftSpecTranslator:
         self.template_filler = TemplateFiller()
         self.template_validator = TemplateValidator()
 
-    def translate_request_to_draft_spec(self, model_name: str, request_text: str, session_context: Optional[Dict[str, Any]] = None) -> DraftSpec:
+    def translate_request_to_draft_spec(self, model_name: str, request_text: str, session_context: Optional[Dict[str, Any]] = None, planning_skeleton: Optional[PlanningSkeleton] = None, normalized_request: Optional[NormalizedRequest] = None) -> DraftSpec:
         # Step 0: Try template matching
         selection = self.template_selector.select_template(request_text)
         if selection.strength in [MatchStrength.EXACT, MatchStrength.STRONG]:
@@ -59,7 +60,7 @@ class DraftSpecTranslator:
                         ))
                 return draft
 
-        prompt = self._build_translation_prompt(request_text, session_context)
+        prompt = self._build_translation_prompt(request_text, session_context, planning_skeleton, normalized_request)
         snapshot = self.ollama_service.create_snapshot(model_name, prompt)
 
         # In a real scenario, we would use streaming or wait for completion.
@@ -71,7 +72,7 @@ class DraftSpecTranslator:
 
         return self._parse_translator_response(full_response)
 
-    def _build_translation_prompt(self, request_text: str, session_context: Optional[Dict[str, Any]] = None) -> str:
+    def _build_translation_prompt(self, request_text: str, session_context: Optional[Dict[str, Any]] = None, planning_skeleton: Optional[PlanningSkeleton] = None, normalized_request: Optional[NormalizedRequest] = None) -> str:
         session_block = ""
         if session_context:
             session_block = f"""
@@ -82,11 +83,37 @@ Recent Failures: {", ".join(session_context.get('recent_failure_files', []))}
 Last Template: {session_context.get('last_template_id', 'None')}
 """
 
+        planning_block = ""
+        if planning_skeleton:
+            planning_block = f"""
+### PLANNING SKELETON
+Decomposed into {len(planning_skeleton.steps)} steps:
+"""
+            for step in planning_skeleton.steps:
+                planning_block += f"- Step {step.step_id}: {step.summary} (Depends on: {', '.join(step.depends_on) or 'none'})\n"
+
+            if planning_skeleton.planning_warnings:
+                planning_block += "\nPlanning Warnings:\n"
+                for w in planning_skeleton.planning_warnings:
+                    planning_block += f"- {w}\n"
+
+        normalized_block = ""
+        if normalized_request:
+            normalized_block = f"""
+### NORMALIZED REQUEST
+Summary: {normalized_request.cleaned_summary}
+Action Phrases: {", ".join(normalized_request.action_phrases)}
+Entities: {", ".join(normalized_request.entities)}
+"""
+
         return f"""
 Translate the following natural language request into a structured Draft Spec YAML.
+Use the provided planning skeleton and normalized request to ensure consistency.
 
 ### REQUEST
 {request_text}
+{normalized_block}
+{planning_block}
 {session_block}
 
 ### OUTPUT FORMAT
@@ -200,7 +227,7 @@ translation_notes:
                 suggested_resolution=u.get("suggested_resolution")
             ))
 
-        return DraftSpec(
+        draft = DraftSpec(
             draft_spec_version=data.get("draft_spec_version", 1),
             draft_id=data.get("draft_id", f"draft_{uuid.uuid4().hex[:8]}"),
             title=data.get("title", ""),
@@ -212,3 +239,7 @@ translation_notes:
             uncertainties=uncertainties,
             translation_notes=data.get("translation_notes", {"assumptions": [], "unresolved_questions": []})
         )
+        # Lineage
+        draft.origin_metadata["normalized_request_id"] = data.get("origin_metadata", {}).get("normalized_request_id")
+        draft.origin_metadata["planning_skeleton_id"] = data.get("origin_metadata", {}).get("planning_skeleton_id")
+        return draft
