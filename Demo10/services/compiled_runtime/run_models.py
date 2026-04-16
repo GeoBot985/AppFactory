@@ -18,6 +18,11 @@ class CompiledTaskStatus(Enum):
     FAILED = "failed"
     SKIPPED = "skipped"
     BLOCKED = "blocked"
+    INVALIDATED = "invalidated"
+    REUSED = "reused"
+    RERUN_PENDING = "rerun_pending"
+    RERUN_SUCCEEDED = "rerun_succeeded"
+    RERUN_FAILED = "rerun_failed"
 
 @dataclass
 class CompiledTaskState:
@@ -31,6 +36,7 @@ class CompiledTaskState:
     result_summary: str = ""
     failure_class: Optional[str] = None
     artifacts: Dict[str, Any] = field(default_factory=dict)
+    bundle: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -43,7 +49,8 @@ class CompiledTaskState:
             "attempt_count": self.attempt_count,
             "result_summary": self.result_summary,
             "failure_class": self.failure_class,
-            "artifacts": self.artifacts
+            "artifacts": self.artifacts,
+            "bundle": self.bundle
         }
 
 @dataclass
@@ -60,6 +67,8 @@ class CompiledPlanRun:
     started_at: Optional[str] = field(default_factory=lambda: datetime.now().isoformat())
     completed_at: Optional[str] = None
     fail_fast: bool = True
+    base_run_id: Optional[str] = None
+    rerun_lineage: Optional[Dict[str, Any]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -74,5 +83,7 @@ class CompiledPlanRun:
             "task_states": {tid: ts.to_dict() for tid, ts in self.task_states.items()},
             "started_at": self.started_at,
             "completed_at": self.completed_at,
-            "fail_fast": self.fail_fast
+            "fail_fast": self.fail_fast,
+            "base_run_id": self.base_run_id,
+            "rerun_lineage": self.rerun_lineage
         }

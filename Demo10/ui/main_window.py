@@ -59,7 +59,8 @@ from services.draft_spec.session_state import DraftSpecSessionState
 from services.compiler.compiler import DraftSpecCompiler
 from services.compiler.models import CompiledPlan, CompileStatus
 from services.compiled_runtime.run_controller import CompiledPlanRunController
-from services.compiled_runtime.run_models import CompiledPlanRun, CompiledRunStatus
+from services.compiled_runtime.run_models import CompiledPlanRun, CompiledRunStatus, CompiledTaskStatus
+from services.compiled_runtime.rerun_models import ReRunRequest, ReRunType
 
 from runtime_profiles.models import RuntimeProfile, DriftPolicyMode
 from runtime_profiles.registry import ProfileRegistry
@@ -854,9 +855,17 @@ class AgentWorkbenchApp:
         self.slot_detail_status_var = tk.StringVar(value="Status: -")
         ttk.Label(self.slot_detail_header, textvariable=self.slot_detail_status_var, style="Panel.TLabel").pack(side="left", padx=(0, 20))
 
-        load_spec_btn = ttk.Button(self.slot_detail_header, text="Load Spec to Editor", command=self.load_slot_to_editor)
-        load_spec_btn.pack(side="right")
-        Tooltip(load_spec_btn, "Load the spec from this slot back into the editor for refinement.")
+        load_spec_btn = ttk.Button(self.slot_detail_header, text="Load Spec", command=self.load_slot_to_editor)
+        load_spec_btn.pack(side="right", padx=(4, 0))
+        Tooltip(load_spec_btn, "Load the spec from this slot back into the editor.")
+
+        self.rerun_failed_btn = ttk.Button(self.slot_detail_header, text="Rerun Failed", command=self.rerun_failed_step)
+        self.rerun_failed_btn.pack(side="right", padx=(4, 0))
+        Tooltip(self.rerun_failed_btn, "Rerun the first failed task and all downstream dependents.")
+
+        self.rerun_from_btn = ttk.Button(self.slot_detail_header, text="Rerun From...", command=self.rerun_from_here)
+        self.rerun_from_btn.pack(side="right", padx=(4, 0))
+        Tooltip(self.rerun_from_btn, "Rerun starting from the currently selected task in the log.")
 
         self.slot_detail_view = tk.Text(
             slot_detail_frame,
@@ -1728,7 +1737,7 @@ class AgentWorkbenchApp:
                 prom_data = data.get("promotion", {})
                 add_field("Promotion Enabled", str(prom_data.get("enabled", True)))
 
-        # 0.5 Compiled Run Detail (SPEC 028)
+        # 0.5 Compiled Run Detail (SPEC 028 & 029)
         if slot.current_run_id:
              compiled_run_path = Path.cwd() / "runs" / slot.current_run_id / "compiled_plan_run.json"
              if compiled_run_path.exists():
@@ -1738,18 +1747,42 @@ class AgentWorkbenchApp:
                             cr = json.load(f)
                        add_field("Plan ID", cr.get("compiled_plan_id", "-"))
                        add_field("Overall Status", cr.get("overall_status", "-"))
+                       if cr.get("base_run_id"):
+                            add_field("Rerun Of", cr.get("base_run_id"), "success")
                        add_field("Tasks", f"{cr.get('tasks_succeeded')}/{cr.get('tasks_total')} succeeded")
 
                        self.slot_detail_view.insert("end", "\nTask Details:\n", "label")
                        ts_map = cr.get("task_states", {})
-                       # We might need the execution graph to show them in order
-                       # If not in cr, we just show them sorted by tid or something
-                       for tid, ts in ts_map.items():
+                       execution_graph = cr.get("execution_graph")
+                       if not execution_graph:
+                            execution_graph = sorted(ts_map.keys())
+
+                       for tid in execution_graph:
+                            ts = ts_map.get(tid)
+                            if not ts: continue
                             status = ts.get("status", "pending")
-                            tag = "success" if status == "succeeded" else "error" if status == "failed" else "dim"
-                            self.slot_detail_view.insert("end", f"  [{status.upper():<10}] {tid} ({ts.get('task_type')})\n", tag)
+
+                            # Status coloring
+                            if status in ["succeeded", "rerun_succeeded"]: tag = "success"
+                            elif status in ["failed", "rerun_failed"]: tag = "error"
+                            elif status == "invalidated": tag = "warn"
+                            elif status == "reused": tag = "success"
+                            else: tag = "dim"
+
+                            self.slot_detail_view.insert("end", f"  [{status.upper():<15}] {tid} ({ts.get('task_type')})\n", tag)
                             if ts.get("result_summary"):
-                                 self.slot_detail_view.insert("end", f"               > {ts.get('result_summary')}\n", "dim")
+                                 self.slot_detail_view.insert("end", f"                 > {ts.get('result_summary')}\n", "dim")
+
+                            # Show bundle info if available
+                            bundle = ts.get("bundle")
+                            if bundle:
+                                 if bundle.get("input_summary"):
+                                      self.slot_detail_view.insert("end", f"                 [IN]  {bundle.get('input_summary')[:80]}\n", "dim")
+                                 if bundle.get("output_summary"):
+                                      self.slot_detail_view.insert("end", f"                 [OUT] {bundle.get('output_summary')[:80]}\n", "dim")
+                                 artifacts = bundle.get("artifacts", {})
+                                 if artifacts:
+                                      self.slot_detail_view.insert("end", f"                 [ART] {', '.join(artifacts.keys())}\n", "dim")
                   except: pass
 
         # 1. Spec
@@ -2221,6 +2254,34 @@ class AgentWorkbenchApp:
         slot.current_run_id = ""
         self.log_event(f"Cleared slot {idx + 1}")
         self._refresh_queue_view()
+
+    def rerun_failed_step(self):
+        self._trigger_rerun(ReRunType.RERUN_FAILED_TASK)
+
+    def rerun_from_here(self):
+        # We'd need to know which task is 'here'.
+        # For now, let's just use the first failed or pending one.
+        self._trigger_rerun(ReRunType.RERUN_FROM_TASK)
+
+    def _trigger_rerun(self, rerun_type: ReRunType):
+        idx = self.selected_slot_index
+        slot = self.spec_queue.queue_slots[idx]
+        if not slot.current_run_id:
+            self.log_event("Rerun blocked: no run ID for selected slot.")
+            return
+
+        self.log_event(f"Requesting rerun ({rerun_type.value}) for slot {idx+1}...")
+
+        # We'll set a flag in the slot/queue to tell the worker to perform a rerun
+        # instead of a fresh execution.
+        slot.rerun_request = ReRunRequest(
+            base_run_id=slot.current_run_id,
+            rerun_type=rerun_type,
+            reason="User requested rerun via UI"
+        )
+        slot.status = "ready"
+        self._refresh_queue_view()
+        self.start_queue()
 
     def resume_run(self) -> None:
         idx = self.selected_slot_index
@@ -2807,7 +2868,36 @@ class AgentWorkbenchApp:
                 if is_compiled:
                     self.ui_queue.put(("queue_log", f"Executing COMPILED PLAN: {plan.plan_id}"))
                     controller = CompiledPlanRunController(executor)
-                    compiled_run = controller.execute_compiled_plan(plan, slot.current_run_id)
+
+                    if hasattr(slot, "rerun_request") and slot.rerun_request:
+                         self.ui_queue.put(("queue_log", f"PERFORMING RERUN: {slot.rerun_request.rerun_type.value}"))
+                         # Load base run from artifact
+                         base_run_path = Path.cwd() / "runs" / slot.rerun_request.base_run_id / "compiled_plan_run.json"
+                         if base_run_path.exists():
+                              with base_run_path.open("r") as f:
+                                   br_dict = json.load(f)
+                                   # We'd need to reconstruct base_run object.
+                                   # For now, let's assume we can pass the dict or a minimal object.
+                                   from services.compiled_runtime.run_models import CompiledPlanRun, CompiledTaskState, CompiledTaskStatus
+                                   base_run = CompiledPlanRun(
+                                        compiled_plan_id=br_dict["compiled_plan_id"],
+                                        run_id=br_dict["run_id"],
+                                        fail_fast=br_dict.get("fail_fast", True)
+                                   )
+                                   for tid, ts in br_dict["task_states"].items():
+                                        base_run.task_states[tid] = CompiledTaskState(
+                                             task_id=tid,
+                                             task_type=ts["task_type"],
+                                             status=CompiledTaskStatus(ts["status"]),
+                                             artifacts=ts.get("artifacts", {}),
+                                             bundle=ts.get("bundle")
+                                        )
+                              compiled_run = controller.request_rerun(plan, base_run, slot.rerun_request)
+                              slot.rerun_request = None # Clear after use
+                         else:
+                              raise RuntimeError(f"Base run artifact not found for rerun: {slot.rerun_request.base_run_id}")
+                    else:
+                         compiled_run = controller.execute_compiled_plan(plan, slot.current_run_id)
 
                     # Log run results
                     self.audit_log_service.log_artifact(run_folder, "compiled_plan_run.json", json.dumps(compiled_run.to_dict(), indent=2))

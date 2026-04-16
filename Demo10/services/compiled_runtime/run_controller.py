@@ -8,11 +8,15 @@ from .run_models import CompiledPlanRun, CompiledTaskState, CompiledRunStatus, C
 from .run_context import SharedRunContext
 from .task_dispatcher import CompiledTaskDispatcher
 from .task_adapters import ADAPTER_MAP
+from .rerun_models import ReRunRequest, ReRunPlan
+from .rerun_planner import plan_rerun
+from .rerun_controller import ReRunController
 
 class CompiledPlanRunController:
     def __init__(self, executor: TaskExecutorService):
         self.executor = executor
         self.dispatcher = CompiledTaskDispatcher(executor)
+        self.rerun_controller = ReRunController(executor)
 
     def execute_compiled_plan(self, plan: CompiledPlan, run_id: str) -> CompiledPlanRun:
         # 1. Initialize Run State
@@ -120,3 +124,7 @@ class CompiledPlanRunController:
                     tstate.status = CompiledTaskStatus.BLOCKED
                     tstate.result_summary = "Aborted due to fail-fast"
                     run.tasks_skipped += 1
+
+    def request_rerun(self, plan: CompiledPlan, base_run: CompiledPlanRun, request: ReRunRequest) -> CompiledPlanRun:
+        rerun_plan = plan_rerun(plan, base_run, request)
+        return self.rerun_controller.execute_rerun(plan, base_run, rerun_plan)

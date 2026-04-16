@@ -6,6 +6,7 @@ from services.task_executor_service import TaskExecutorService
 from .run_context import SharedRunContext
 from .run_models import CompiledTaskState, CompiledTaskStatus
 from .task_adapters import ADAPTER_MAP
+from .step_artifacts import StepArtifactBundle
 
 class CompiledTaskDispatcher:
     def __init__(self, executor: TaskExecutorService):
@@ -30,6 +31,29 @@ class CompiledTaskDispatcher:
             state.result_summary = result.message
             state.failure_class = result.error if not result.success else None
             state.artifacts.update(result.details)
+
+            # Build artifact bundle
+            bundle = StepArtifactBundle(
+                run_id="unknown", # Should be passed in or set by controller
+                task_id=task.id,
+                task_type=task.type.value,
+                status=state.status.value,
+                input_summary=str(task.constraints),
+                output_summary=result.message,
+                artifacts=result.details.copy(),
+                started_at=state.started_at,
+                completed_at=time.strftime("%Y-%m-%dT%H:%M:%S")
+            )
+
+            # Add specific refs
+            if "mutation_batch" in result.details:
+                bundle.mutation_refs.append("last_mutation_batch")
+            if task.type.value == "RUN_TESTS":
+                bundle.test_refs.append(task.id)
+            if "validation" in task.type.value.lower():
+                bundle.validation_refs.append(task.id)
+
+            state.bundle = bundle.to_dict()
 
             # Sync back to original task for legacy UI compatibility
             task.status = TaskStatus.COMPLETED if result.success else TaskStatus.FAILED
