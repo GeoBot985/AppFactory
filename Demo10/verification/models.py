@@ -1,7 +1,7 @@
 from __future__ import annotations
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Literal
 
 class CheckStatus(Enum):
     PASS = "pass"
@@ -68,3 +68,43 @@ class RunSummary:
     final_status: FinalOutcome
     failure_stage: Optional[FailureStage]
     summary: str = ""
+
+# --- SPEC 049 Models ---
+
+@dataclass
+class VerificationSuite:
+    suite_id: str
+    golden_runs: List[str]  # list of golden_run_ids
+    description: str
+
+@dataclass
+class GoldenRunMetadata:
+    golden_run_id: str
+    source_run_id: str
+    created_at: str  # ISO format
+    system_version: str
+    notes: Optional[str] = None
+
+@dataclass
+class GoldenRunResult:
+    golden_run_id: str
+    replay_result: Any  # ReplayResult
+    verdict: Literal["exact_match", "structural_match", "outcome_match", "fail"]
+    classification: Literal["pass", "warn", "fail"]
+    drift_categories: List[str] = field(default_factory=list)
+
+@dataclass
+class VerificationResult:
+    suite_id: str
+    run_results: List[GoldenRunResult]
+    overall_verdict: Literal["pass", "pass_with_warnings", "fail"]
+    summary: Dict[str, Any]
+
+DriftCategory = Literal[
+    "plan_drift",
+    "execution_drift",
+    "retry_drift",
+    "rollback_drift",
+    "output_drift",
+    "environment_drift"
+]
