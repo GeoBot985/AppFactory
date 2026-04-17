@@ -15,7 +15,8 @@ from .rules import (
     DeniedExecutableRule,
     RetryLimitRule,
     RestoreDriftRule,
-    RerunDepthRule
+    RerunDepthRule,
+    ApplyConflictRule
 )
 import logging
 from pathlib import Path
@@ -34,7 +35,8 @@ class PolicyEngine:
             DeniedExecutableRule(),
             RetryLimitRule(),
             RestoreDriftRule(),
-            RerunDepthRule()
+            RerunDepthRule(),
+            ApplyConflictRule()
         ]
 
     def evaluate(self, domain: PolicyDomain, entity_id: str, context: Dict[str, Any]) -> PolicyEvaluationResult:

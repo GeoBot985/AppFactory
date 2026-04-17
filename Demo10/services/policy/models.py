@@ -55,6 +55,8 @@ class PolicyDomain(Enum):
     RERUN = "RERUN"
     RESTORE = "RESTORE"
     PROMOTION = "PROMOTION"
+    SPEC_INTAKE = "SPEC_INTAKE"
+    APPLY = "APPLY"
 
 class ApprovalStatus(Enum):
     PENDING = "pending"
@@ -108,10 +110,13 @@ class ApprovalRecord:
 class PolicyEvaluationResult:
     policy_domain: str
     entity_id: str
-    decision: str
     risk_class: Optional[str] = None
+    decision: str = ""
     reasons: List[str] = field(default_factory=list)
     policy_rules_triggered: List[str] = field(default_factory=list)
+    # Compatibility aliases
+    reason_codes: List[str] = field(default_factory=list)
+    matched_rules: List[str] = field(default_factory=list)
     facts: Dict[str, Any] = field(default_factory=dict)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
 
@@ -155,8 +160,8 @@ class RiskPolicy:
     require_approval_above: str = RiskClass.R1_MODERATE.value
     denied_executables: List[str] = field(default_factory=lambda: ["rm", "del", "format"])
     protected_paths: Dict[str, List[str]] = field(default_factory=lambda: {
-        "high_risk": ["Demo10/services/policy/**", "Demo10/services/run_ledger/**"],
-        "critical": ["Demo10/workspace/**", "Demo10/services/compiled_runtime/**"]
+        "high_risk": ["src/policy/**", "Demo10/services/policy/**", "Demo10/services/run_ledger/**"],
+        "critical": ["config/**", "Demo10/workspace/**", "Demo10/services/compiled_runtime/**"]
     })
 
 @dataclass
