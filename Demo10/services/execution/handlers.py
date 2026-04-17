@@ -76,6 +76,15 @@ class StepHandlers:
             text=True
         )
 
+        if result.returncode != 0:
+            # We use a custom exception or just return metadata if we want the engine to handle it.
+            # The Spec says handlers MUST optionally return richer failure metadata.
+            # But the current engine expects handler to return outputs and raises exception on error.
+            # Let's adjust the engine to look at outputs if we want.
+            # Actually, let's keep it simple: if returncode != 0, it's a COMMAND_FAILED error.
+            # I'll raise an exception with the error code.
+            raise RuntimeError(f"COMMAND_FAILED: {result.stderr}")
+
         return {
             "stdout": result.stdout,
             "stderr": result.stderr,
