@@ -10,6 +10,7 @@ from .golden_store import GoldenStore
 from .classifier import VerificationClassifier
 from Demo10.services.replay.replay_runner import ReplayRunner
 from Demo10.services.replay.models import ReplayRequest
+from telemetry.events import TelemetryEmitter
 
 class SuiteRunner:
     def __init__(self, workspace_root: Path):
@@ -17,6 +18,7 @@ class SuiteRunner:
         self.golden_store = GoldenStore(workspace_root)
         self.classifier = VerificationClassifier()
         self.replay_runner = ReplayRunner(workspace_root)
+        self.telemetry = TelemetryEmitter(workspace_root)
         self.suites_dir = workspace_root / "runtime_data" / "verification_suites"
         self.suites_dir.mkdir(parents=True, exist_ok=True)
 
@@ -38,6 +40,8 @@ class SuiteRunner:
     def run_verification_suite(self, suite_id: str, mode: Literal["strict", "tolerant"] = "strict") -> VerificationResult:
         suite = self.load_suite(suite_id)
         run_results = []
+
+        self.telemetry.emit("verification_run", {"suite_id": suite_id, "mode": mode, "total_goldens": len(suite.golden_runs)})
 
         for golden_run_id in suite.golden_runs:
             print(f"Verifying Golden Run: {golden_run_id}")
@@ -101,12 +105,21 @@ class SuiteRunner:
             "mode": mode
         }
 
-        return VerificationResult(
+        result = VerificationResult(
             suite_id=suite_id,
             run_results=run_results,
             overall_verdict=overall_verdict,
             summary=summary
         )
+        self.telemetry.emit("verification_result", {
+            "suite_id": suite_id,
+            "overall_verdict": overall_verdict,
+            "pass": summary["pass"],
+            "warn": summary["warn"],
+            "fail": summary["fail"],
+            "drift_events": sum(len(r.drift_categories) for r in run_results)
+        })
+        return result
 
     def _prepare_for_replay(self, golden_run_id: str) -> str:
         golden_dir = self.golden_store.golden_runs_dir / golden_run_id

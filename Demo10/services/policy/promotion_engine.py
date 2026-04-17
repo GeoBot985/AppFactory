@@ -10,11 +10,14 @@ from .models import (
 from .audit import PromotionAuditService
 from Demo10.verification.models import VerificationResult, GoldenRunResult
 import dataclasses
+from telemetry.events import TelemetryEmitter
+from pathlib import Path
 
 class PromotionEngine:
-    def __init__(self, policy: PromotionPolicy, audit_service: PromotionAuditService):
+    def __init__(self, policy: PromotionPolicy, audit_service: PromotionAuditService, workspace_root: Optional[Path] = None):
         self.policy = policy
         self.audit_service = audit_service
+        self.telemetry = TelemetryEmitter(workspace_root) if workspace_root else None
 
     def evaluate_promotion(self, candidate: PromotionCandidate, verification_result: VerificationResult) -> PromotionDecision:
         env_policy = self.policy.environment_rules.get(candidate.target_environment)
@@ -93,6 +96,14 @@ class PromotionEngine:
     def promote(self, candidate: PromotionCandidate, verification_result: VerificationResult) -> PromotionDecision:
         decision = self.evaluate_promotion(candidate, verification_result)
 
+        if self.telemetry:
+             self.telemetry.emit("promotion_decision", {
+                 "candidate_id": candidate.candidate_id,
+                 "target_environment": candidate.target_environment,
+                 "decision": decision.decision,
+                 "system_version": candidate.system_version
+             })
+
         candidate_info = {
             "source_environment": candidate.source_environment,
             "target_environment": candidate.target_environment,
@@ -115,6 +126,15 @@ class PromotionEngine:
             policy_snapshot=original_decision.policy_snapshot,
             evaluated_at=datetime.now()
         )
+
+        if self.telemetry:
+            self.telemetry.emit("promotion_decision", {
+                "candidate_id": candidate.candidate_id,
+                "target_environment": candidate.target_environment,
+                "decision": override_decision.decision,
+                "system_version": candidate.system_version,
+                "is_override": True
+            })
 
         candidate_info = {
             "source_environment": candidate.source_environment,
