@@ -12,18 +12,21 @@ from services.execution.handlers import StepHandlers
 from services.execution.retry_policy import get_retry_policy
 from services.execution.retry_classifier import classify_failure
 from services.execution.rollback import RollbackPlanner, RollbackEngine
+from telemetry.events import TelemetryEmitter
 
 class ExecutionEngine:
     def __init__(self, workspace_root: Path):
         self.workspace_root = workspace_root
         self.logger = ExecutionLogger(workspace_root)
         self.contracts = ContractEvaluator(workspace_root)
+        self.telemetry = TelemetryEmitter(workspace_root)
 
     def execute(self, plan: ExecutionPlan) -> Run:
         print("RUN START")
         run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         run = Run(run_id=run_id, plan_id=plan.plan_id, status="running")
         self.logger.log_run(run)
+        self.telemetry.emit("run_started", {"run_id": run_id, "plan_id": plan.plan_id})
 
         self.handlers = StepHandlers(self.workspace_root, run_id=run_id)
 
@@ -53,6 +56,12 @@ class ExecutionEngine:
 
         run.ended_at = datetime.now()
         self.logger.log_run(run)
+        self.telemetry.emit("run_completed", {
+            "run_id": run.run_id,
+            "status": run.status,
+            "consistency_outcome": run.consistency_outcome,
+            "duration_ms": (run.ended_at - run.started_at).total_seconds() * 1000 if run.started_at else 0
+        })
         print(f"RUN {'FAILED' if failed else 'COMPLETED'}")
         if failed:
             print(f"CONSISTENCY OUTCOME: {run.consistency_outcome}")
@@ -83,9 +92,14 @@ class ExecutionEngine:
         rollback_plan = planner.build_rollback_plan(run, ordered_step_ids)
         self.logger.log_rollback_plan(run.run_id, rollback_plan)
 
+        self.telemetry.emit("rollback_started", {"run_id": run.run_id})
         engine = RollbackEngine(self.workspace_root)
         engine.execute(rollback_plan, run, self.logger)
         self.logger.log_rollback_plan(run.run_id, rollback_plan)
+        self.telemetry.emit("rollback_completed", {
+            "run_id": run.run_id,
+            "status": rollback_plan.status
+        })
 
         # Update consistency outcome
         all_reversible_undone = True
@@ -151,6 +165,7 @@ class ExecutionEngine:
         result = StepResult(step_id=step.step_id, status="running", started_at=datetime.now(), inputs=step.inputs)
         run.step_results[step.step_id] = result
         self.logger.log_step(run.run_id, result)
+        self.telemetry.emit("step_started", {"run_id": run.run_id, "step_id": step.step_id, "step_type": step.step_type})
 
         attempt_index = 1
         while attempt_index <= policy.max_attempts:
@@ -226,12 +241,30 @@ class ExecutionEngine:
                     run.recovered_steps += 1
 
                 self.logger.log_step(run.run_id, result)
+                self.telemetry.emit("step_completed", {
+                    "run_id": run.run_id,
+                    "step_id": step.step_id,
+                    "step_type": step.step_type,
+                    "attempts": attempt_index,
+                    "duration_ms": (result.ended_at - result.started_at).total_seconds() * 1000
+                })
                 print(f"[{step_index}/{total_steps}] {step.step_type} → {result.status}" + (f" on attempt {attempt_index}" if attempt_index > 1 else ""))
                 return result
 
             # Failure handling
             classification = classify_failure(attempt.error_code, step.step_type, is_transient=is_transient)
-            if classification == "terminal" or attempt_index == policy.max_attempts:
+            is_terminal = (classification == "terminal" or attempt_index == policy.max_attempts)
+            self.telemetry.emit("step_failed", {
+                "run_id": run.run_id,
+                "step_id": step.step_id,
+                "step_type": step.step_type,
+                "error_code": attempt.error_code,
+                "attempt_index": attempt_index,
+                "classification": classification,
+                "is_terminal": is_terminal
+            })
+
+            if is_terminal:
                 self._finalize_step_failure(run, result, attempt.error_code, attempt.error_message)
                 if attempt_index == policy.max_attempts and classification == "retryable":
                     result.retry_exhausted = True
@@ -245,6 +278,12 @@ class ExecutionEngine:
 
             delay = self._calculate_delay(policy, attempt_index)
             print(f"[{step_index}/{total_steps}] {step.step_type} → retrying in {delay}ms")
+            self.telemetry.emit("retry_attempt", {
+                "run_id": run.run_id,
+                "step_id": step.step_id,
+                "attempt_index": attempt_index + 1,
+                "delay_ms": delay
+            })
             time.sleep(delay / 1000.0)
             run.total_retries += 1
 
