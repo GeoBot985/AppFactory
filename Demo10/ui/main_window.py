@@ -89,6 +89,8 @@ from services.preview.impact_model import ImpactPreview, ApprovalState, Approval
 
 from services.input_compiler.compiler import NaturalInputCompiler
 from services.input_compiler.models import CompiledSpecIR, CompileStatus as InputCompileStatus
+from services.input_compiler.issues import CompileIssue
+from services.input_compiler.repair_models import RepairAction, RepairIteration, RepairSession
 
 from runtime_profiles.models import RuntimeProfile, DriftPolicyMode
 from runtime_profiles.registry import ProfileRegistry
@@ -189,6 +191,9 @@ class AgentWorkbenchApp:
         self.current_planning_skeleton: Optional[PlanningSkeleton] = None
         self.current_clarification_session: Optional[ClarificationSession] = None
         self.current_input_ir: Optional[CompiledSpecIR] = None
+        self.current_input_issues: List[CompileIssue] = []
+        self.current_repair_session: Optional[RepairSession] = None
+        self.active_repair_actions: List[RepairAction] = []
 
         self.session_manager = SessionManager()
         self.working_set_manager = WorkingSetManager()
@@ -793,6 +798,10 @@ class AgentWorkbenchApp:
         self.input_preview_ir_view.tag_configure("clean", foreground="#6a9955", font=("Consolas", 11, "bold"))
         self.input_preview_ir_view.tag_configure("warning", foreground="#d7ba7d")
         self.input_preview_ir_view.tag_configure("label", foreground="#9cdcfe")
+
+        # Repair Suggestions Section in Input Preview
+        self.repair_panel = ttk.Frame(input_preview_ir_frame, style="Panel.TFrame")
+        self.repair_panel.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
 
         self.draft_details_view = tk.Text(
             draft_details_frame,
@@ -1891,6 +1900,12 @@ class AgentWorkbenchApp:
         self.log_event("Natural input compiler pass started...")
         self.compile_input_button.state(["disabled"])
 
+        # Reset repair session
+        self.current_repair_session = RepairSession(
+            session_id=f"rep_{uuid.uuid4().hex[:8]}",
+            original_input=raw_input
+        )
+
         def worker():
             try:
                 ir, issues = self.natural_compiler.compile(model, raw_input)
@@ -1905,6 +1920,9 @@ class AgentWorkbenchApp:
     def _refresh_input_preview_ir(self, ir: CompiledSpecIR, issues: List[CompileIssue]):
         self.input_preview_ir_view.configure(state="normal")
         self.input_preview_ir_view.delete("1.0", "end")
+
+        for widget in self.repair_panel.winfo_children():
+            widget.destroy()
 
         status_tag = "blocked" if ir.compile_status == InputCompileStatus.BLOCKED else "clean"
         self.input_preview_ir_view.insert("end", f"COMPILE STATUS: {ir.compile_status.value.upper()}\n\n", status_tag)
@@ -1932,11 +1950,45 @@ class AgentWorkbenchApp:
                 tag = "blocked" if issue.severity == "error" else "warning"
                 self.input_preview_ir_view.insert("end", f"- [{issue.code}] {issue.message}\n", tag)
 
+            # Generate Repair Suggestions
+            repairs = self.natural_compiler.generate_repairs(issues)
+            if repairs:
+                self.input_preview_ir_view.insert("end", "\n[ REPAIR SUGGESTIONS ]\n", "header")
+                self.active_repair_actions = repairs
+
+                for i, action in enumerate(repairs):
+                    self.input_preview_ir_view.insert("end", f"{i+1}. {action.description}\n", "warning")
+
+                    row = ttk.Frame(self.repair_panel, style="Panel.TFrame")
+                    row.pack(fill="x", pady=2)
+                    ttk.Label(row, text=f"Fix {i+1}:", style="Panel.TLabel", width=8).pack(side="left")
+
+                    if action.action_type == "select_from_candidates":
+                        var = tk.StringVar()
+                        combo = ttk.Combobox(row, textvariable=var, values=action.candidates, state="readonly")
+                        combo.pack(side="left", fill="x", expand=True, padx=5)
+                        btn = ttk.Button(row, text="Apply", command=lambda a=action, v=var: self.apply_input_repair(a, v.get()))
+                        btn.pack(side="left")
+                    elif action.action_type == "add_missing_field":
+                        ent = ttk.Entry(row)
+                        ent.pack(side="left", fill="x", expand=True, padx=5)
+                        btn = ttk.Button(row, text="Apply", command=lambda a=action, e=ent: self.apply_input_repair(a, e.get()))
+                        btn.pack(side="left")
+                    elif action.action_type == "remove_operation":
+                         btn = ttk.Button(row, text="Remove Instruction", command=lambda a=action: self.apply_input_repair(a, None))
+                         btn.pack(side="left")
+                    elif action.action_type == "replace_operation":
+                        var = tk.StringVar()
+                        combo = ttk.Combobox(row, textvariable=var, values=action.candidates, state="readonly")
+                        combo.pack(side="left", fill="x", expand=True, padx=5)
+                        btn = ttk.Button(row, text="Replace", command=lambda a=action, v=var: self.apply_input_repair(a, v.get()))
+                        btn.pack(side="left")
+
         self.input_preview_ir_view.configure(state="disabled")
 
         # Update gate logic
         if ir.compile_status == InputCompileStatus.BLOCKED:
-            self.log_event("Input is BLOCKED. Cannot add to queue.")
+            self.log_event("Input is BLOCKED. Resolve issues via repairs or rewrite request.")
             self.submit_spec_button.state(["disabled"])
         else:
             self.submit_spec_button.state(["!disabled"])
@@ -1946,6 +1998,37 @@ class AgentWorkbenchApp:
             if "Input Compiler Preview" in self.notebook.tab(tabid, "text"):
                 self.notebook.select(i)
                 break
+
+    def apply_input_repair(self, action: RepairAction, value: Any):
+        if not self.current_input_ir:
+            return
+
+        self.log_event(f"Applying repair: {action.action_type} on {action.target_field} with value {value}")
+
+        # Patch the action with value
+        action.value = value
+
+        # Apply repair
+        updated_ir = self.natural_compiler.apply_repairs(self.current_input_ir, [action])
+
+        # Revalidate
+        ir, issues = self.natural_compiler.revalidate(updated_ir)
+
+        # Update session history
+        if self.current_repair_session:
+            iteration = RepairIteration(
+                iteration_id=len(self.current_repair_session.iterations) + 1,
+                issues_before=self.current_input_issues,
+                applied_repairs=[action],
+                resulting_ir=ir,
+                compile_status=ir.compile_status.value
+            )
+            self.current_repair_session.iterations.append(iteration)
+            self.natural_compiler.repair_store.save_session(self.current_repair_session)
+
+        self.current_input_ir = ir
+        self.current_input_issues = issues
+        self._refresh_input_preview_ir(ir, issues)
 
     def _refresh_approvals_view(self) -> None:
         self.approvals_list.delete(*self.approvals_list.get_children())
@@ -4868,6 +4951,7 @@ class AgentWorkbenchApp:
         if message == "input_ir_ready":
             ir, issues = payload
             self.current_input_ir = ir
+            self.current_input_issues = issues
             self._refresh_input_preview_ir(ir, issues)
             return
         if message == "planning_ready":
