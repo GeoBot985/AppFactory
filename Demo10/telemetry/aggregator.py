@@ -5,6 +5,8 @@ from datetime import datetime, date
 import statistics
 from typing import List, Dict, Any, Optional
 from .models import TelemetryEvent, Metric, DailyAggregate
+from diagnostics.patterns import PatternManager
+from diagnostics.reports import DiagnosticsReporter
 
 class TelemetryAggregator:
     def __init__(self, workspace_root: Path):
@@ -16,6 +18,9 @@ class TelemetryAggregator:
 
         self.metrics_dir.mkdir(parents=True, exist_ok=True)
         self.aggregates_dir.mkdir(parents=True, exist_ok=True)
+
+        self.pattern_manager = PatternManager(workspace_root)
+        self.reporter = DiagnosticsReporter(workspace_root)
 
     def aggregate_day(self, target_date: date) -> DailyAggregate:
         date_str = target_date.strftime("%Y-%m-%d")
@@ -30,7 +35,10 @@ class TelemetryAggregator:
         with open(event_file, "r") as f:
             for line in f:
                 try:
-                    events.append(TelemetryEvent.model_validate_json(line))
+                    event = TelemetryEvent.model_validate_json(line)
+                    events.append(event)
+                    # Process for diagnostics
+                    self.pattern_manager.process_failure(event)
                 except Exception:
                     continue
 
@@ -100,6 +108,7 @@ class TelemetryAggregator:
         agg.reliability_index = (1 - agg.failure_rate) * agg.retry_success_rate if agg.retry_success_rate > 0 else (1 - agg.failure_rate)
 
         self._store_aggregate(agg)
+        self.reporter.generate_daily_report(target_date)
         self._generate_metrics(agg, target_date)
 
         return agg
