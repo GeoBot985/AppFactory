@@ -1,0 +1,4 @@
+{"event_id":"d9ff0cf3-1b48-437f-b0cc-4b9d6e42c55f","timestamp":"2026-04-17T13:32:43.932377","event_type":"macro_verified","payload":{"macro_id":"test_macro:v1"}}
+{"event_id":"d15776b5-dfb5-49e7-a8f3-d76630a72b9f","timestamp":"2026-04-17T13:32:44.612356","event_type":"macro_activated","payload":{"macro_id":"test_macro:v1"}}
+{"event_id":"9de1d5bf-7972-4b11-9bb8-bf35c20b234f","timestamp":"2026-04-17T13:32:45.905997","event_type":"macro_expanded","payload":{"macro_id":"test_macro:v1","expansion_id":"exp_f41c397b"}}
+{"event_id":"42f38852-d0f4-4ad1-b597-85df2d670b6b","timestamp":"2026-04-17T13:34:40.866287","event_type":"macro_expanded","payload":{"macro_id":"create_file:v1","expansion_id":"exp_38ae28fb"}}

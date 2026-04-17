@@ -1,17 +1,24 @@
 from __future__ import annotations
 import uuid
+import os
 from datetime import datetime
+from pathlib import Path
 from typing import List, Dict, Any, Optional
 from services.input_compiler.models import CompiledSpecIR, OperationIR
 from services.planner.models import ExecutionPlan, Step, StepContract, PlanIssue
 from services.planner.step_templates import get_template
+from Demo10.macros.library import MacroLibraryManager
+from Demo10.macros.expansion import MacroExpansionEngine
 from services.planner.dependency_resolver import DependencyResolver
 from services.planner.plan_validator import PlanValidator
 
 class PlanBuilder:
-    def __init__(self):
+    def __init__(self, workspace_root: Optional[Path] = None):
         self.resolver = DependencyResolver()
         self.validator = PlanValidator()
+        self.workspace_root = workspace_root or Path(".")
+        self.macro_library = MacroLibraryManager(self.workspace_root)
+        self.macro_expander = MacroExpansionEngine(self.macro_library)
 
     def build_plan(self, ir: CompiledSpecIR) -> ExecutionPlan:
         plan_id = f"plan_{uuid.uuid4().hex[:8]}"
@@ -73,6 +80,34 @@ class PlanBuilder:
         return plan
 
     def _expand_operation(self, op: OperationIR, op_id: str) -> List[Step]:
+        # Macro selection logic: check if there's an active macro matching the operation type
+        active_macro = self.macro_library.get_active_macro(op.op_type.value)
+
+        if active_macro:
+            # Expand macro
+            bound_inputs = {"instruction": op.instruction, "target": op.target}
+            res = self.macro_expander.expand_macro(active_macro.macro_id, bound_inputs)
+            if res.status == "expanded":
+                steps = []
+                for i, step_def in enumerate(res.expanded_steps):
+                    step_id = f"{op_id}_m_{i}"
+                    contract_def = step_def.get("contract", {})
+                    contract = StepContract(
+                        preconditions=contract_def.get("preconditions", []),
+                        postconditions=contract_def.get("postconditions", []),
+                        failure_modes=contract_def.get("failure_modes", [])
+                    )
+                    step = Step(
+                        step_id=step_id,
+                        step_type=step_def["step_type"],
+                        target=step_def.get("target", op.target),
+                        inputs=step_def.get("inputs", {}),
+                        contract=contract,
+                        operation_id=op_id
+                    )
+                    steps.append(step)
+                return steps
+
         template = get_template(op.op_type.value)
         steps = []
 
