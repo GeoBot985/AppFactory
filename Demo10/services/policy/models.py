@@ -1,7 +1,9 @@
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from datetime import datetime
+
+Environment = Literal["dev", "staging", "prod"]
 
 class RiskClass(Enum):
     R0_LOW = "R0_LOW"
@@ -182,6 +184,44 @@ class RerunPolicy:
     allowed_rerun_range: str = "all" # all | task_only
 
 @dataclass
+class PromotionCandidate:
+    candidate_id: str
+    source_environment: Environment
+    target_environment: Environment
+    system_version: str
+    verification_suite_id: str
+    verification_result_id: str
+    timestamp: datetime
+
+@dataclass
+class PromotionDecision:
+    candidate_id: str
+    decision: Literal["approved", "approved_with_warnings", "rejected", "approved_with_override"]
+    reasons: List[str]
+    policy_snapshot: Dict[str, Any]
+    evaluated_at: datetime
+
+@dataclass
+class EnvironmentPolicy:
+    allow_warn: bool
+    allow_not_comparable: bool
+    required_verdict: Literal["pass", "pass_with_warnings"]
+    blocked_drift_categories: List[str]
+    max_failures: int
+    require_exact_match: bool
+
+@dataclass
+class PromotionPolicy:
+    policy_id: str
+    environment_rules: Dict[Environment, EnvironmentPolicy]
+
+@dataclass
+class PromotionHistory:
+    system_version: str
+    environments_reached: List[Environment]
+    decisions: List[PromotionDecision]
+
+@dataclass
 class PolicyConfig:
     version: int = 1
     scope: ScopePolicy = field(default_factory=ScopePolicy)
@@ -189,6 +229,7 @@ class PolicyConfig:
     execution: ExecutionPolicy = field(default_factory=ExecutionPolicy)
     restore: RestorePolicy = field(default_factory=RestorePolicy)
     rerun: RerunPolicy = field(default_factory=RerunPolicy)
+    promotion: Optional[PromotionPolicy] = None
 
     # Legacy mappings for backward compatibility during transition
     @property
