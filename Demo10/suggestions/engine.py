@@ -9,13 +9,15 @@ from .context import enrich_suggestion
 from .tracking import SuggestionTracker
 from Demo10.diagnostics.models import RootCause
 from Demo10.services.input_compiler.repair_models import RepairAction
+from Demo10.knowledge.query import KnowledgeQuery
 
 class SuggestionEngine:
     def __init__(self, workspace_root: Path):
         self.workspace_root = workspace_root
         self.tracker = SuggestionTracker(workspace_root)
+        self.kb_query = KnowledgeQuery(workspace_root)
 
-    def generate_suggestions(self, root_cause: RootCause, context_data: Optional[Dict[str, Any]] = None) -> List[RepairSuggestion]:
+    def generate_suggestions(self, root_cause: RootCause, context_data: Optional[Dict[str, Any]] = None, signature_id: Optional[str] = None) -> List[RepairSuggestion]:
         """Generates and ranks suggestions for a given root cause."""
         templates = get_mapping(root_cause.root_cause_id)
 
@@ -26,8 +28,49 @@ class SuggestionEngine:
         for sug in suggestions:
             enrich_suggestion(sug, self.workspace_root, context_data)
 
-        # Rank suggestions
-        ranked = rank_suggestions(suggestions)
+        # Enrich with KB if signature_id is provided
+        kb_solutions = []
+        if signature_id:
+            kb_solutions = self.kb_query.get_solutions(signature_id)
+
+        # If no signature_id but we have root_cause, we can get general successful fixes
+        if not kb_solutions:
+            kb_solutions = self.kb_query.get_successful_fixes(root_cause.root_cause_id)
+
+        # Update confidence and rankings based on KB
+        if kb_solutions:
+            kb_map = {sol.suggestion_id: sol for sol in kb_solutions}
+            for sug in suggestions:
+                if sug.suggestion_id in kb_map:
+                    sol = kb_map[sug.suggestion_id]
+                    # Confidence adjustment
+                    if sol.success_rate > 0.8 and sol.usage_count > 2:
+                        sug.confidence = "high"
+                    elif sol.success_rate > 0.5:
+                        sug.confidence = "medium"
+                    else:
+                        sug.confidence = "low"
+
+                    # Store success rate in a temporary attribute for ranking if needed
+                    # or just rely on confidence adjustment for rank_suggestions
+                    setattr(sug, "_kb_success_rate", sol.success_rate)
+                else:
+                    setattr(sug, "_kb_success_rate", 0.0)
+        else:
+            for sug in suggestions:
+                setattr(sug, "_kb_success_rate", 0.0)
+
+        # Rank suggestions (modified to account for KB)
+        def custom_rank(s: RepairSuggestion):
+            confidence_map = {"high": 0, "medium": 1, "low": 2}
+            return (
+                confidence_map.get(s.confidence, 3),
+                -getattr(s, "_kb_success_rate", 0.0), # Higher success rate first
+                len(s.actions),
+                s.suggestion_id
+            )
+
+        ranked = sorted(suggestions, key=custom_rank)
 
         return ranked
 
