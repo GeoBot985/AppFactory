@@ -1,0 +1,20 @@
+{
+  "adopted_optimizations": [
+    {
+      "variant_id": "var_02616d01",
+      "source_plan_id": "plan_test",
+      "candidate_ids": [
+        "cand_97b01b8b"
+      ],
+      "adopted_at": "2026-04-17T12:36:45.201453"
+    },
+    {
+      "variant_id": "var_02616d01",
+      "source_plan_id": "plan_test",
+      "candidate_ids": [
+        "cand_97b01b8b"
+      ],
+      "adopted_at": "2026-04-17T12:39:39.422926"
+    }
+  ]
+}
