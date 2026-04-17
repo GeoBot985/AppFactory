@@ -20,7 +20,12 @@ TelemetryEventType = Literal[
     "macro_activated",
     "macro_deprecated",
     "macro_expanded",
-    "macro_expansion_failed"
+    "macro_expansion_failed",
+    "routing_started",
+    "routing_matched",
+    "routing_selected",
+    "routing_fallback",
+    "routing_failed"
 ]
 
 class TelemetryEvent(BaseModel):

@@ -9,6 +9,9 @@ from services.planner.models import ExecutionPlan, Step, StepContract, PlanIssue
 from services.planner.step_templates import get_template
 from Demo10.macros.library import MacroLibraryManager
 from Demo10.macros.expansion import MacroExpansionEngine
+from Demo10.routing.engine import RoutingEngine
+from Demo10.telemetry.events import TelemetryEmitter
+from Demo10.telemetry.models import TelemetryEventType
 from services.planner.dependency_resolver import DependencyResolver
 from services.planner.plan_validator import PlanValidator
 
@@ -19,6 +22,8 @@ class PlanBuilder:
         self.workspace_root = workspace_root or Path(".")
         self.macro_library = MacroLibraryManager(self.workspace_root)
         self.macro_expander = MacroExpansionEngine(self.macro_library)
+        self.routing_engine = RoutingEngine(self.workspace_root)
+        self.telemetry = TelemetryEmitter(self.workspace_root)
 
     def build_plan(self, ir: CompiledSpecIR) -> ExecutionPlan:
         plan_id = f"plan_{uuid.uuid4().hex[:8]}"
@@ -31,17 +36,61 @@ class PlanBuilder:
         all_steps: List[Step] = []
         op_dependencies: Dict[str, List[str]] = {}
 
-        # Map original operation index/ID to our internal op_id
-        # IR operations are sequential, but might have explicit depends_on
-        # OperationIR doesn't have an 'id' field, so we use their index.
+        # 0. Routing to Macros
+        self.telemetry.emit("routing_started", {"request_id": ir.request_id})
+        decision = self.routing_engine.route_to_macros(ir)
 
-        # 1. Operation -> Step Expansion
-        for i, op in enumerate(ir.operations):
-            op_id = f"op_{i}"
-            steps = self._expand_operation(op, op_id)
-            all_steps.extend(steps)
+        if not decision.fallback_used:
+            self.telemetry.emit("routing_selected", decision.to_dict())
 
-            # IR depends_on uses targets or some IDs?
+            macro_steps = []
+            expansion_failed = False
+
+            for m_idx, macro_id in enumerate(decision.selected_macros):
+                macro_obj = self.routing_engine.get_macro_by_id(macro_id)
+                if not macro_obj:
+                    expansion_failed = True
+                    break
+
+                inputs = self.routing_engine.binder.bind_inputs(macro_obj, ir)
+                res = self.macro_expander.expand_macro(macro_id, inputs)
+
+                if res.status == "expanded":
+                    for s_idx, step_def in enumerate(res.expanded_steps):
+                        step_id = f"m{m_idx}_{s_idx}"
+                        contract_def = step_def.get("contract", {})
+                        contract = StepContract(
+                            preconditions=contract_def.get("preconditions", []),
+                            postconditions=contract_def.get("postconditions", []),
+                            failure_modes=contract_def.get("failure_modes", [])
+                        )
+                        step = Step(
+                            step_id=step_id,
+                            step_type=step_def["step_type"],
+                            target=step_def.get("target"),
+                            inputs=step_def.get("inputs", {}),
+                            contract=contract
+                        )
+                        macro_steps.append(step)
+                else:
+                    self.telemetry.emit("routing_failed", {"reason": "expansion_failed", "macro_id": macro_id, "issues": res.issues})
+                    expansion_failed = True
+                    break
+
+            if not expansion_failed:
+                all_steps.extend(macro_steps)
+            else:
+                decision.fallback_used = True
+
+        if decision.fallback_used:
+            self.telemetry.emit("routing_fallback", {"reasons": decision.reasons})
+            # 1. Operation -> Step Expansion (Raw)
+            for i, op in enumerate(ir.operations):
+                op_id = f"op_{i}"
+                steps = self._expand_operation(op, op_id)
+                all_steps.extend(steps)
+
+                # IR depends_on uses targets or some IDs?
             # OperationIR.depends_on is List[str].
             # Let's assume they refer to other op targets or indices.
             # Spec says "if operation B depends on output of A: explicit dependency required (from IR or inferred)"
