@@ -1,0 +1,26 @@
+{
+  "session_id": "sess_30ce2c10",
+  "workspace_root": "/tmp/pytest-of-jules/pytest-2/test_clean_compile0",
+  "created_at": "2026-04-17T08:41:08.159791",
+  "updated_at": "2026-04-17T08:41:08.159811",
+  "status": "active",
+  "active_request_id": null,
+  "current_focus_summary": "",
+  "working_set": {
+    "working_set_id": "ws_11f8eb5a",
+    "primary_files": [],
+    "secondary_files": [],
+    "recent_symbols": [],
+    "recent_failure_files": [],
+    "recent_test_files": [],
+    "last_entrypoint_files": [],
+    "selection_reasons": {},
+    "source_run_ids": [],
+    "confidence": 1.0
+  },
+  "memory_entries": [],
+  "recent_draft_ids": [],
+  "recent_compiled_plan_ids": [],
+  "recent_run_ids": [],
+  "recent_restore_ids": []
+}

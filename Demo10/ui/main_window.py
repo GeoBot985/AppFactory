@@ -201,7 +201,7 @@ class AgentWorkbenchApp:
         self.session_evictor = SessionEvictor()
 
         self.compiler = DraftSpecCompiler()
-        self.natural_compiler = NaturalInputCompiler(self.ollama_service)
+        self.natural_compiler = NaturalInputCompiler(self.ollama_service, Path.cwd())
         self.approval_controller = ApprovalController()
 
         self.template_registry = TemplateRegistry()
@@ -797,6 +797,7 @@ class AgentWorkbenchApp:
         self.input_preview_ir_view.tag_configure("blocked", foreground="#f44747", font=("Consolas", 11, "bold"))
         self.input_preview_ir_view.tag_configure("clean", foreground="#6a9955", font=("Consolas", 11, "bold"))
         self.input_preview_ir_view.tag_configure("warning", foreground="#d7ba7d")
+        self.input_preview_ir_view.tag_configure("default", foreground="#4ec9b0")
         self.input_preview_ir_view.tag_configure("label", foreground="#9cdcfe")
 
         # Repair Suggestions Section in Input Preview
@@ -1938,6 +1939,11 @@ class AgentWorkbenchApp:
             self.input_preview_ir_view.insert("end", f"   Instruction: {op.instruction}\n")
             if op.depends_on:
                 self.input_preview_ir_view.insert("end", f"   Depends on: {', '.join(op.depends_on)}\n")
+
+        if ir.defaults_applied:
+            self.input_preview_ir_view.insert("end", "\n[ AUTO-FILLED DEFAULTS ]\n", "header")
+            for d in ir.defaults_applied:
+                self.input_preview_ir_view.insert("end", f"- {d}\n", "default")
 
         if ir.assumptions:
             self.input_preview_ir_view.insert("end", "\n[ ASSUMPTIONS ]\n", "header")

@@ -1,0 +1,26 @@
+{
+  "session_id": "sess_b8677b5b",
+  "workspace_root": "/tmp/pytest-of-jules/pytest-2/test_blocked_missing_target0",
+  "created_at": "2026-04-17T08:41:08.166403",
+  "updated_at": "2026-04-17T08:41:08.166425",
+  "status": "active",
+  "active_request_id": null,
+  "current_focus_summary": "",
+  "working_set": {
+    "working_set_id": "ws_1f562a8b",
+    "primary_files": [],
+    "secondary_files": [],
+    "recent_symbols": [],
+    "recent_failure_files": [],
+    "recent_test_files": [],
+    "last_entrypoint_files": [],
+    "selection_reasons": {},
+    "source_run_ids": [],
+    "confidence": 1.0
+  },
+  "memory_entries": [],
+  "recent_draft_ids": [],
+  "recent_compiled_plan_ids": [],
+  "recent_run_ids": [],
+  "recent_restore_ids": []
+}

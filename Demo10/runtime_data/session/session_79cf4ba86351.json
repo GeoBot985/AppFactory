@@ -1,0 +1,32 @@
+{
+  "session_id": "sess_d5a8d4d5",
+  "workspace_root": "/tmp/pytest-of-jules/pytest-2/test_rule_5_recent_file0",
+  "created_at": "2026-04-17T08:41:08.149061",
+  "updated_at": "2026-04-17T08:41:08.149297",
+  "status": "active",
+  "active_request_id": null,
+  "current_focus_summary": "",
+  "working_set": {
+    "working_set_id": "ws_f7222e0d",
+    "primary_files": [
+      "main.py"
+    ],
+    "secondary_files": [],
+    "recent_symbols": [],
+    "recent_failure_files": [],
+    "recent_test_files": [],
+    "last_entrypoint_files": [],
+    "selection_reasons": {
+      "main.py": "test"
+    },
+    "source_run_ids": [
+      "run_1"
+    ],
+    "confidence": 1.0
+  },
+  "memory_entries": [],
+  "recent_draft_ids": [],
+  "recent_compiled_plan_ids": [],
+  "recent_run_ids": [],
+  "recent_restore_ids": []
+}

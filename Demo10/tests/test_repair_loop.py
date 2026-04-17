@@ -17,7 +17,7 @@ class MockOllamaService:
 
 def test_ambiguous_target_repair():
     print("Testing AMBIGUOUS_TARGET_FILE repair...")
-    compiler = NaturalInputCompiler(MockOllamaService())
+    compiler = NaturalInputCompiler(MockOllamaService(), Path.cwd())
 
     # Create IR with ambiguous target issue
     ir = CompiledSpecIR(
@@ -58,7 +58,7 @@ def test_ambiguous_target_repair():
 
 def test_missing_target_repair():
     print("Testing MISSING_REQUIRED_TARGET repair...")
-    compiler = NaturalInputCompiler(MockOllamaService())
+    compiler = NaturalInputCompiler(MockOllamaService(), Path.cwd())
 
     ir = CompiledSpecIR(
         request_id="test_req_missing",
@@ -97,7 +97,7 @@ def test_missing_target_repair():
 
 def test_conflict_repair():
     print("Testing CONFLICTING_ACTIONS repair...")
-    compiler = NaturalInputCompiler(MockOllamaService())
+    compiler = NaturalInputCompiler(MockOllamaService(), Path.cwd())
 
     ir = CompiledSpecIR(
         request_id="test_req_conflict",
