@@ -56,6 +56,7 @@ class OrchestratorRun:
     clarification_session_id: Optional[str] = None
     draft_spec_id: Optional[str] = None
     compiled_plan_id: Optional[str] = None
+    execution_plan_id: Optional[str] = None
     preview_id: Optional[str] = None
     durable_run_id: Optional[str] = None
     apply_transaction_id: Optional[str] = None
@@ -74,6 +75,7 @@ class OrchestratorRun:
                 "clarification_session_id": self.clarification_session_id,
                 "draft_spec_id": self.draft_spec_id,
                 "compiled_plan_id": self.compiled_plan_id,
+                "execution_plan_id": self.execution_plan_id,
                 "preview_id": self.preview_id,
                 "durable_run_id": self.durable_run_id,
                 "apply_transaction_id": self.apply_transaction_id

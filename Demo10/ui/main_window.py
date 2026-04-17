@@ -558,6 +558,10 @@ class AgentWorkbenchApp:
         self.compile_input_button.pack(side="left", padx=(0, 8))
         Tooltip(self.compile_input_button, "Compile the natural language request into a structured IR and validate it.")
 
+        self.materialize_button = ttk.Button(action_row, text="Materialize Plan", command=self.materialize_plan)
+        self.materialize_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.materialize_button, "Materialize the validated IR into a deterministic execution plan (DAG).")
+
         self.decompose_button = ttk.Button(action_row, text="Decompose Request", command=self.decompose_request)
         self.decompose_button.pack(side="left", padx=(0, 8))
         Tooltip(self.decompose_button, "Decompose the natural language request into sub-intents and a planning skeleton.")
@@ -669,6 +673,7 @@ class AgentWorkbenchApp:
         planning_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         clarification_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         input_preview_ir_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        execution_plan_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         draft_details_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         compile_report_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         index_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
@@ -688,6 +693,7 @@ class AgentWorkbenchApp:
         notebook.add(planning_frame, text="Planning")
         notebook.add(clarification_frame, text="Clarification")
         notebook.add(input_preview_ir_frame, text="Input Compiler Preview")
+        notebook.add(execution_plan_frame, text="Execution Plan")
         notebook.add(draft_details_frame, text="Draft Translation")
         notebook.add(compile_report_frame, text="Compile Report")
         notebook.add(index_frame, text="Architecture Index")
@@ -705,7 +711,7 @@ class AgentWorkbenchApp:
 
         self._build_clarification_view(clarification_frame)
 
-        for frame in (viewer_frame, prompt_frame, response_frame, planning_frame, clarification_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, session_memory_frame, ops_console_frame):
+        for frame in (viewer_frame, prompt_frame, response_frame, planning_frame, clarification_frame, execution_plan_frame, draft_details_frame, compile_report_frame, index_frame, selection_frame, bundle_frame, candidate_frame, impact_preview_frame, restore_preview_frame, restore_frame, approvals_frame, slot_detail_frame, session_memory_frame, ops_console_frame):
             frame.rowconfigure(0, weight=1)
             frame.columnconfigure(0, weight=1)
 
@@ -803,6 +809,27 @@ class AgentWorkbenchApp:
         # Repair Suggestions Section in Input Preview
         self.repair_panel = ttk.Frame(input_preview_ir_frame, style="Panel.TFrame")
         self.repair_panel.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+
+        self.execution_plan_view = tk.Text(
+            execution_plan_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        execution_plan_scroll = ttk.Scrollbar(execution_plan_frame, orient="vertical", command=self.execution_plan_view.yview)
+        self.execution_plan_view.configure(yscrollcommand=execution_plan_scroll.set)
+        self.execution_plan_view.grid(row=0, column=0, sticky="nsew")
+        execution_plan_scroll.grid(row=0, column=1, sticky="ns")
+        self.execution_plan_view.configure(state="disabled")
+
+        self.execution_plan_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 11, "bold"))
+        self.execution_plan_view.tag_configure("step", foreground="#9cdcfe")
+        self.execution_plan_view.tag_configure("error", foreground="#f44747")
+        self.execution_plan_view.tag_configure("ready", foreground="#6a9955", font=("Consolas", 11, "bold"))
+        self.execution_plan_view.tag_configure("invalid", foreground="#f44747", font=("Consolas", 11, "bold"))
 
         self.draft_details_view = tk.Text(
             draft_details_frame,
@@ -1888,6 +1915,29 @@ class AgentWorkbenchApp:
                 self.notebook.select(i)
                 break
 
+    def materialize_plan(self) -> None:
+        if not self.current_input_ir:
+            self.log_event("Materialize Plan blocked: no input IR available.")
+            return
+
+        from services.planner.plan_builder import PlanBuilder
+        builder = PlanBuilder()
+        execution_plan = builder.build_plan(self.current_input_ir)
+        self.log_event(f"Execution plan materialized: {execution_plan.plan_id}")
+        self._refresh_execution_plan(execution_plan)
+
+        # Persist plan for audit
+        plan_dir = Path.cwd() / "runtime_data" / "execution_plans"
+        plan_dir.mkdir(parents=True, exist_ok=True)
+        with (plan_dir / f"{execution_plan.plan_id}.json").open("w") as f:
+             json.dump(execution_plan.to_dict(), f, indent=2)
+
+        # Switch to execution plan tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Execution Plan" in self.notebook.tab(tabid, "text"):
+                self.notebook.select(i)
+                break
+
     def compile_natural_input(self) -> None:
         model = self.model_var.get().strip()
         if not model:
@@ -1917,6 +1967,48 @@ class AgentWorkbenchApp:
                 self.ui_queue.put(("compile_input_done", None))
 
         threading.Thread(target=worker, daemon=True).start()
+
+    def _refresh_execution_plan(self, plan: Any):
+        self.execution_plan_view.configure(state="normal")
+        self.execution_plan_view.delete("1.0", "end")
+
+        status_tag = "ready" if plan.status == "ready" else "invalid"
+        self.execution_plan_view.insert("end", f"PLAN STATUS: {plan.status.upper()}\n\n", status_tag)
+
+        self.execution_plan_view.insert("end", "[ STEP GRAPH ]\n", "header")
+        # Simple textual representation of DAG
+        for sid in plan.root_steps:
+            self._print_step_tree(plan, sid, 0, set())
+
+        self.execution_plan_view.insert("end", "\n[ STEP DETAILS ]\n", "header")
+        for sid, step in plan.steps.items():
+            self.execution_plan_view.insert("end", f"- {sid} ({step.step_type})\n", "step")
+            self.execution_plan_view.insert("end", f"  Target: {step.target}\n")
+            if step.dependencies:
+                self.execution_plan_view.insert("end", f"  Depends on: {', '.join(step.dependencies)}\n")
+
+            self.execution_plan_view.insert("end", "  Contract:\n")
+            self.execution_plan_view.insert("end", f"    Pre:  {', '.join(step.contract.preconditions)}\n")
+            self.execution_plan_view.insert("end", f"    Post: {', '.join(step.contract.postconditions)}\n")
+
+        if plan.issues:
+            self.execution_plan_view.insert("end", "\n[ PLAN ISSUES ]\n", "header")
+            for issue in plan.issues:
+                tag = "error" if issue.severity == "error" else "warning"
+                self.execution_plan_view.insert("end", f"- [{issue.code}] {issue.message}\n", tag)
+
+        self.execution_plan_view.configure(state="disabled")
+
+    def _print_step_tree(self, plan: Any, sid: str, indent: int, visited: set):
+        if sid in visited: return
+        visited.add(sid)
+        prefix = "  " * indent
+        self.execution_plan_view.insert("end", f"{prefix}{sid}\n")
+
+        # Find steps that depend on sid
+        children = [s.step_id for s in plan.steps.values() if sid in s.dependencies]
+        for child_id in children:
+            self._print_step_tree(plan, child_id, indent + 1, visited)
 
     def _refresh_input_preview_ir(self, ir: CompiledSpecIR, issues: List[CompileIssue]):
         self.input_preview_ir_view.configure(state="normal")

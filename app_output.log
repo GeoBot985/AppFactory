@@ -1,0 +1,13 @@
+Traceback (most recent call last):
+  File "/app/Demo10/main.py", line 5, in <module>
+    main()
+  File "/app/Demo10/app.py", line 5, in main
+    app = AgentWorkbenchApp()
+          ^^^^^^^^^^^^^^^^^^^
+  File "/app/Demo10/ui/main_window.py", line 147, in __init__
+    self.root = tk.Tk()
+                ^^^^^^^
+  File "/home/jules/.pyenv/versions/3.12.13/lib/python3.12/tkinter/__init__.py", line 2346, in __init__
+    self.tk = _tkinter.create(screenName, baseName, className, interactive, wantobjects, useTk, sync, use)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_tkinter.TclError: no display name and no $DISPLAY environment variable
