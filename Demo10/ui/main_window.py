@@ -79,6 +79,10 @@ from services.compiled_runtime.run_controller import CompiledPlanRunController
 from services.compiled_runtime.run_models import CompiledPlanRun, CompiledRunStatus, CompiledTaskStatus
 from services.compiled_runtime.rerun_models import ReRunRequest, ReRunType
 
+from orchestrator.controller import OrchestratorController
+from orchestrator.run_model import OrchestratorRun, StageStatus
+from orchestrator.stages import OrchestratorStage
+
 from services.preview.simulator import PlanSimulator
 from services.preview.approval_controller import ApprovalController
 from services.preview.impact_model import ImpactPreview, ApprovalState, ApprovalStatus, RiskLevel
@@ -198,6 +202,18 @@ class AgentWorkbenchApp:
         self.profile_registry = ProfileRegistry()
         self._load_external_profiles()
         self.env_masker = EnvironmentMasker()
+
+        self.orchestrator = OrchestratorController({
+            "normalizer": self.request_normalizer,
+            "skeleton_builder": self.skeleton_builder,
+            "clarification": self.clarification_service,
+            "translator": self.draft_translator,
+            "compiler": self.compiler,
+            "policy": self.policy_evaluator,
+            "approval": self.approval_service,
+            "ledger": self.ledger_service,
+            "session": self.session_manager
+        })
 
     def _load_external_profiles(self):
         profile_file = Path.cwd() / "profiles.yaml"
@@ -1933,25 +1949,60 @@ class AgentWorkbenchApp:
             return
 
         slot = queue_state.queue_slots[active_idx]
-        self.pipeline_view.insert("end", f" Slot {active_idx + 1} Pipeline:\n\n", "completed")
 
-        for stage in slot.pipeline_stages:
-            status_sym = "[ ]"
-            if stage.status == "running":
-                status_sym = "[→]"
-            elif stage.status == "completed":
-                status_sym = "[✔]"
-            elif stage.status == "failed":
-                status_sym = "[✘]"
-            elif stage.status == "skipped":
-                status_sym = "[-]"
+        if hasattr(slot, "orchestrator_run") and slot.orchestrator_run:
+            orch_run: OrchestratorRun = slot.orchestrator_run
+            self.pipeline_view.insert("end", f" Slot {active_idx + 1} Orchestrator Pipeline ({orch_run.orchestrator_run_id}):\n\n", "completed")
 
-            self.pipeline_view.insert("end", f"  {status_sym} {stage.name}\n", stage.status)
-            if getattr(stage, "message_history", None):
-                for entry in stage.message_history[-5:]:
-                    self.pipeline_view.insert("end", f"      > {entry}\n", "pending")
-            elif stage.last_message:
-                self.pipeline_view.insert("end", f"      > {stage.last_message}\n", "pending")
+            # Use defined stages in order
+            ordered_stages = [
+                OrchestratorStage.REQUEST_RECEIVED, OrchestratorStage.NORMALIZATION, OrchestratorStage.INTENT_DECOMPOSITION,
+                OrchestratorStage.PLANNING_SKELETON, OrchestratorStage.CLARIFICATION_GATE, OrchestratorStage.DRAFT_SPEC_GENERATION,
+                OrchestratorStage.COMPILE, OrchestratorStage.COMPILE_REPAIR, OrchestratorStage.PREVIEW_SIMULATION,
+                OrchestratorStage.APPROVAL_GATE, OrchestratorStage.EXECUTION, OrchestratorStage.APPLY_CHANGESET,
+                OrchestratorStage.POST_APPLY_VERIFICATION, OrchestratorStage.METRICS_AGGREGATION, OrchestratorStage.COMPLETED
+            ]
+
+            for stage_enum in ordered_stages:
+                stage_name = stage_enum.value
+                stage_state = orch_run.stages.get(stage_name)
+                if not stage_state: continue
+
+                status_sym = "[ ]"
+                if stage_state.status == StageStatus.RUNNING: status_sym = "[→]"
+                elif stage_state.status == StageStatus.COMPLETED: status_sym = "[✔]"
+                elif stage_state.status == StageStatus.FAILED: status_sym = "[✘]"
+                elif stage_state.status == StageStatus.BLOCKED: status_sym = "[!]"
+                elif stage_state.status == StageStatus.AWAITING_USER: status_sym = "[?]"
+
+                status_tag = stage_state.status.value
+                if status_tag == "awaiting_user": status_tag = "skipped" # use existing colors
+                elif status_tag == "blocked": status_tag = "failed"
+
+                self.pipeline_view.insert("end", f"  {status_sym} {stage_name}\n", status_tag)
+                if stage_state.errors:
+                    for err in stage_state.errors[-2:]:
+                        self.pipeline_view.insert("end", f"      ! {err}\n", "failed")
+        else:
+            self.pipeline_view.insert("end", f" Slot {active_idx + 1} Pipeline:\n\n", "completed")
+
+            for stage in slot.pipeline_stages:
+                status_sym = "[ ]"
+                if stage.status == "running":
+                    status_sym = "[→]"
+                elif stage.status == "completed":
+                    status_sym = "[✔]"
+                elif stage.status == "failed":
+                    status_sym = "[✘]"
+                elif stage.status == "skipped":
+                    status_sym = "[-]"
+
+                self.pipeline_view.insert("end", f"  {status_sym} {stage.name}\n", stage.status)
+                if getattr(stage, "message_history", None):
+                    for entry in stage.message_history[-5:]:
+                        self.pipeline_view.insert("end", f"      > {entry}\n", "pending")
+                elif stage.last_message:
+                    self.pipeline_view.insert("end", f"      > {stage.last_message}\n", "pending")
 
         # Durable Run Info
         if slot.current_run_id:
@@ -3011,6 +3062,12 @@ class AgentWorkbenchApp:
             else:
                 self.ui_queue.put(("queue_log", f"Preserving run ID {slot.current_run_id} for resume"))
 
+            # Initialize Orchestrator Run for this slot
+            if not hasattr(slot, "orchestrator_run") or not slot.orchestrator_run:
+                slot.orchestrator_run = self.orchestrator.create_run(slot.spec_text)
+            orch_run: OrchestratorRun = slot.orchestrator_run
+            orch_run.durable_run_id = slot.current_run_id
+
             self.queue_service.mark_slot_running(self.spec_queue, slot)
             self.ui_queue.put(("queue_slot_state", slot.slot_index))
             self.ui_queue.put(("queue_log", f"Active slot changed to {slot.slot_index + 1}"))
@@ -3038,6 +3095,34 @@ class AgentWorkbenchApp:
                 self.queue_service.update_stage_status(slot, name, status, message)
                 if status == "running":
                     current_stage_idx = stages.index(name)
+
+                # Map UI stages to Orchestrator stages if possible
+                mapping = {
+                    "Spec Intake": [OrchestratorStage.REQUEST_RECEIVED, OrchestratorStage.NORMALIZATION, OrchestratorStage.INTENT_DECOMPOSITION],
+                    "Spec Parsing": [OrchestratorStage.PLANNING_SKELETON, OrchestratorStage.CLARIFICATION_GATE, OrchestratorStage.DRAFT_SPEC_GENERATION, OrchestratorStage.COMPILE],
+                    "Policy Check (Pre-Exec)": [],
+                    "Runtime Environment": [],
+                    "Impact Preview": [OrchestratorStage.PREVIEW_SIMULATION],
+                    "Approval Gate": [OrchestratorStage.APPROVAL_GATE],
+                    "Task Execution": [OrchestratorStage.EXECUTION],
+                    "Logging / Audit": [OrchestratorStage.APPLY_CHANGESET, OrchestratorStage.POST_APPLY_VERIFICATION, OrchestratorStage.METRICS_AGGREGATION]
+                }
+
+                if status == "running" and name in mapping:
+                    for target_stage in mapping[name]:
+                        try:
+                            # ENFORCE transitions by stepping through intermediate stages if needed
+                            self.orchestrator.advance_stage(orch_run, target_stage)
+                        except Exception as e:
+                            self.log_event(f"Orchestrator transition error ({target_stage.value}): {e}")
+                        # If transition fails, we might want to block, but for now we'll just log
+                elif status == "failed" and name in mapping:
+                    self.orchestrator.handle_stage_failure(orch_run, message)
+                elif status == "pending" and name in mapping:
+                    if "approval" in message.lower():
+                        self.orchestrator.await_user(orch_run)
+                    else:
+                        self.orchestrator.block_run(orch_run, message)
 
                 # SPEC 016: Record state transition in ledger
                 if status == "running":
@@ -3741,15 +3826,18 @@ class AgentWorkbenchApp:
                 update_stage("Logging / Audit", "completed")
                 check_stop()
 
+                self.orchestrator.advance_stage(orch_run, OrchestratorStage.COMPLETED)
                 self.queue_service.mark_slot_completed(self.spec_queue, slot)
                 self.ui_queue.put(("queue_slot_completed", slot.slot_index))
                 self.ui_queue.put(("queue_log", f"Slot {slot.slot_index + 1} completed"))
 
             except InterruptedError:
+                self.orchestrator.block_run(orch_run, "stop requested")
                 self.queue_service.mark_slot_stopped(slot, "stop requested")
                 self.ui_queue.put(("queue_slot_stopped", (slot.slot_index, "stop requested")))
                 self.ui_queue.put(("queue_log", f"Slot {slot.slot_index + 1} stopped"))
             except Exception as exc:
+                self.orchestrator.handle_stage_failure(orch_run, str(exc))
                 if current_stage_idx >= 0:
                     failed_stage_name = stages[current_stage_idx]
                     update_stage(failed_stage_name, "failed", str(exc))
