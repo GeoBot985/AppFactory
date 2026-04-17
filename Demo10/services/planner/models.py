@@ -7,12 +7,16 @@ class StepContract:
     preconditions: List[str] = field(default_factory=list)
     postconditions: List[str] = field(default_factory=list)
     failure_modes: List[str] = field(default_factory=list)
+    compensation_type: str = "non_reversible" # CompensationType literal
+    compensation_template: Optional[str] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "preconditions": self.preconditions,
             "postconditions": self.postconditions,
-            "failure_modes": self.failure_modes
+            "failure_modes": self.failure_modes,
+            "compensation_type": self.compensation_type,
+            "compensation_template": self.compensation_template
         }
 
 @dataclass

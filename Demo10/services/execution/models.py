@@ -31,6 +31,7 @@ class StepAttempt:
     preconditions_passed: bool = False
     postconditions_passed: bool = False
     outputs: Dict[str, Any] = field(default_factory=dict)
+    rollback_metadata: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -42,7 +43,8 @@ class StepAttempt:
             "error_message": self.error_message,
             "preconditions_passed": self.preconditions_passed,
             "postconditions_passed": self.postconditions_passed,
-            "outputs": self.outputs
+            "outputs": self.outputs,
+            "rollback_metadata": self.rollback_metadata
         }
 
 @dataclass
@@ -66,6 +68,8 @@ class StepResult:
     recovered_via_retry: bool = False
     retry_exhausted: bool = False
 
+    rollback_metadata: Dict[str, Any] = field(default_factory=dict)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "step_id": self.step_id,
@@ -81,7 +85,8 @@ class StepResult:
             "attempts": [a.to_dict() for a in self.attempts],
             "final_attempt_count": self.final_attempt_count,
             "recovered_via_retry": self.recovered_via_retry,
-            "retry_exhausted": self.retry_exhausted
+            "retry_exhausted": self.retry_exhausted,
+            "rollback_metadata": self.rollback_metadata
         }
 
 @dataclass
@@ -91,6 +96,7 @@ class HandlerResult:
     error_code: Optional[str] = None
     error_message: Optional[str] = None
     is_transient: Optional[bool] = None
+    rollback_metadata: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class Run:
@@ -107,6 +113,20 @@ class Run:
     recovered_steps: int = 0
     retry_exhausted_steps: int = 0
 
+    rollback_status: Literal[
+        "not_needed",
+        "pending",
+        "running",
+        "completed",
+        "completed_with_warnings",
+        "failed"
+    ] = "not_needed"
+    consistency_outcome: Literal[
+        "clean",
+        "partially_restored",
+        "not_restored"
+    ] = "clean"
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "run_id": self.run_id,
@@ -118,5 +138,7 @@ class Run:
             "ended_at": self.ended_at.isoformat() if self.ended_at else None,
             "total_retries": self.total_retries,
             "recovered_steps": self.recovered_steps,
-            "retry_exhausted_steps": self.retry_exhausted_steps
+            "retry_exhausted_steps": self.retry_exhausted_steps,
+            "rollback_status": self.rollback_status,
+            "consistency_outcome": self.consistency_outcome
         }

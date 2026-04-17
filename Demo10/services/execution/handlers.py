@@ -1,12 +1,16 @@
 import os
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, Callable
+from typing import Dict, Any, Callable, Optional
 from services.planner.models import Step
+from services.execution.snapshots import SnapshotManager
+from services.execution.models import HandlerResult
 
 class StepHandlers:
-    def __init__(self, workspace_root: Path):
+    def __init__(self, workspace_root: Path, run_id: Optional[str] = None):
         self.workspace_root = workspace_root
+        self.run_id = run_id
+        self.snapshot_manager = SnapshotManager(workspace_root, run_id) if run_id else None
 
     def get_handler(self, step_type: str) -> Callable[[Step], Dict[str, Any]]:
         handlers = {
@@ -27,13 +31,21 @@ class StepHandlers:
         }
         return handlers.get(step_type, self.not_implemented_handler)
 
-    def create_file(self, step: Step) -> Dict[str, Any]:
+    def create_file(self, step: Step) -> HandlerResult:
         path = self.workspace_root / step.target
+        existed = path.exists()
+
         path.parent.mkdir(parents=True, exist_ok=True)
         content = step.inputs.get("content", "")
         with open(path, "w") as f:
             f.write(content)
-        return {"path": str(path), "bytes_written": len(content)}
+
+        outputs = {"path": str(path), "bytes_written": len(content)}
+        rollback_metadata = {
+            "created_by_run": not existed,
+            "target": step.target
+        }
+        return HandlerResult(success=True, outputs=outputs, rollback_metadata=rollback_metadata)
 
     def read_file(self, step: Step) -> Dict[str, Any]:
         path = self.workspace_root / step.target
@@ -41,27 +53,56 @@ class StepHandlers:
             content = f.read()
         return {"content": content}
 
-    def write_file(self, step: Step) -> Dict[str, Any]:
+    def write_file(self, step: Step) -> HandlerResult:
         path = self.workspace_root / step.target
+
+        rollback_metadata = {}
+        if self.snapshot_manager:
+            if path.exists():
+                snapshot_path = self.snapshot_manager.capture_snapshot(step.target)
+                checksum = self.snapshot_manager.get_checksum(step.target)
+                rollback_metadata = {
+                    "snapshot_path": snapshot_path,
+                    "checksum": checksum,
+                    "target": step.target
+                }
+            else:
+                rollback_metadata = {
+                    "created_by_run": True,
+                    "target": step.target
+                }
+
         content = step.inputs.get("content", "")
         with open(path, "w") as f:
             f.write(content)
-        return {"path": str(path), "bytes_written": len(content)}
 
-    def modify_file(self, step: Step) -> Dict[str, Any]:
+        outputs = {"path": str(path), "bytes_written": len(content)}
+        return HandlerResult(success=True, outputs=outputs, rollback_metadata=rollback_metadata)
+
+    def modify_file(self, step: Step) -> HandlerResult:
         path = self.workspace_root / step.target
+
+        rollback_metadata = {}
+        if self.snapshot_manager and path.exists():
+            snapshot_path = self.snapshot_manager.capture_snapshot(step.target)
+            checksum = self.snapshot_manager.get_checksum(step.target)
+            rollback_metadata = {
+                "snapshot_path": snapshot_path,
+                "checksum": checksum,
+                "target": step.target
+            }
+
         # Deterministic rule or simple replacement for v1
         with open(path, "r") as f:
             content = f.read()
 
-        # In a real system, we'd have more complex logic.
-        # For v1, let's look for 'instruction' and apply it if it's a simple search/replace?
-        # Or just use the provided 'content' if it's meant to be the whole new content.
         new_content = step.inputs.get("content", content)
 
         with open(path, "w") as f:
             f.write(new_content)
-        return {"path": str(path), "modified": True}
+
+        outputs = {"path": str(path), "modified": True}
+        return HandlerResult(success=True, outputs=outputs, rollback_metadata=rollback_metadata)
 
     def run_command(self, step: Step) -> Dict[str, Any]:
         cmd = step.inputs.get("command")

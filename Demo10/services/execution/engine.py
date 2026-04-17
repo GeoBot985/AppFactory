@@ -11,19 +11,21 @@ from services.execution.contracts import ContractEvaluator
 from services.execution.handlers import StepHandlers
 from services.execution.retry_policy import get_retry_policy
 from services.execution.retry_classifier import classify_failure
+from services.execution.rollback import RollbackPlanner, RollbackEngine
 
 class ExecutionEngine:
     def __init__(self, workspace_root: Path):
         self.workspace_root = workspace_root
         self.logger = ExecutionLogger(workspace_root)
         self.contracts = ContractEvaluator(workspace_root)
-        self.handlers = StepHandlers(workspace_root)
 
     def execute(self, plan: ExecutionPlan) -> Run:
         print("RUN START")
         run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         run = Run(run_id=run_id, plan_id=plan.plan_id, status="running")
         self.logger.log_run(run)
+
+        self.handlers = StepHandlers(self.workspace_root, run_id=run_id)
 
         ordered_steps = self._get_ordered_steps(plan)
 
@@ -45,10 +47,77 @@ class ExecutionEngine:
                 failed = True
 
         run.status = "failed" if failed else "completed"
+
+        if failed:
+            self._handle_rollback(plan, run, ordered_steps)
+
         run.ended_at = datetime.now()
         self.logger.log_run(run)
         print(f"RUN {'FAILED' if failed else 'COMPLETED'}")
+        if failed:
+            print(f"CONSISTENCY OUTCOME: {run.consistency_outcome}")
         return run
+
+    def _handle_rollback(self, plan: ExecutionPlan, run: Run, ordered_step_ids: List[str]):
+        # Rollback Trigger Rules
+        has_reversible = any(
+            run.step_results.get(sid) and
+            run.step_results[sid].status == "completed" and
+            plan.steps[sid].contract.compensation_type in ["reversible", "compensatable"]
+            for sid in ordered_step_ids
+        )
+
+        if not has_reversible:
+            run.rollback_status = "not_needed"
+            # If failed but nothing to rollback, check for non-reversible steps that were completed
+            has_non_reversible = any(
+                run.step_results.get(sid) and
+                run.step_results[sid].status == "completed" and
+                plan.steps[sid].contract.compensation_type == "non_reversible"
+                for sid in ordered_step_ids
+            )
+            run.consistency_outcome = "not_restored" if has_non_reversible else "clean"
+            return
+
+        planner = RollbackPlanner(plan)
+        rollback_plan = planner.build_rollback_plan(run, ordered_step_ids)
+        self.logger.log_rollback_plan(run.run_id, rollback_plan)
+
+        engine = RollbackEngine(self.workspace_root)
+        engine.execute(rollback_plan, run, self.logger)
+        self.logger.log_rollback_plan(run.run_id, rollback_plan)
+
+        # Update consistency outcome
+        all_reversible_undone = True
+        any_failed = (rollback_plan.status == "failed")
+
+        # Check if all completed steps that were reversible have a corresponding successful action
+        completed_reversible_step_ids = [
+            sid for sid in ordered_step_ids
+            if run.step_results.get(sid) and
+            run.step_results[sid].status == "completed" and
+            plan.steps[sid].contract.compensation_type in ["reversible", "compensatable"]
+        ]
+
+        for sid in completed_reversible_step_ids:
+            action = next((a for a in rollback_plan.actions if a.source_step_id == sid), None)
+            if not action or action.status != "completed":
+                all_reversible_undone = False
+                break
+
+        has_non_reversible = any(
+            run.step_results.get(sid) and
+            run.step_results[sid].status == "completed" and
+            plan.steps[sid].contract.compensation_type == "non_reversible"
+            for sid in ordered_step_ids
+        )
+
+        if any_failed:
+            run.consistency_outcome = "not_restored"
+        elif not all_reversible_undone or has_non_reversible:
+            run.consistency_outcome = "partially_restored"
+        else:
+            run.consistency_outcome = "clean"
 
     def _get_ordered_steps(self, plan: ExecutionPlan) -> List[str]:
         # Simple topological sort or use dependency order
@@ -111,6 +180,7 @@ class ExecutionEngine:
 
                 if isinstance(handler_result, HandlerResult):
                     attempt.outputs = handler_result.outputs
+                    attempt.rollback_metadata = handler_result.rollback_metadata
                     if handler_result.success:
                         attempt.status = "completed"
                     else:
@@ -147,6 +217,7 @@ class ExecutionEngine:
             if attempt.status == "completed":
                 result.status = "completed"
                 result.outputs = attempt.outputs
+                result.rollback_metadata = attempt.rollback_metadata
                 result.preconditions_passed = attempt.preconditions_passed
                 result.postconditions_passed = attempt.postconditions_passed
                 result.ended_at = datetime.now()
