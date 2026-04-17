@@ -10,13 +10,24 @@ class CompileIssue:
     field: Optional[str] = None
     source_span: Optional[Tuple[int, int]] = None
 
+    repairable: bool = False
+    repair_type: Optional[Literal[
+        "select_option",
+        "provide_value",
+        "remove_conflict",
+        "clarify_reference",
+        "split_instruction"
+    ]] = None
+
     def to_dict(self):
         return {
             "severity": self.severity,
             "code": self.code,
             "message": self.message,
             "field": self.field,
-            "source_span": self.source_span
+            "source_span": self.source_span,
+            "repairable": self.repairable,
+            "repair_type": self.repair_type
         }
 
 # Stable Issue Codes

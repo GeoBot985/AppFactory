@@ -13,15 +13,22 @@ from .issues import (
     VAGUE_WORDING, ASSUMED_TARGET_DIRECTORY, MISSING_TITLE, MISSING_OBJECTIVE
 )
 from .validator import InputValidator
+from .repair_mapper import RepairMapper
+from .repair_engine import RepairEngine
+from .repair_session_store import RepairSessionStore
+from .repair_models import RepairSession, RepairIteration, RepairAction
 
 class NaturalInputCompiler:
     def __init__(self, ollama_service: OllamaService, persistence_dir: Path = Path("runtime_data/compiler_runs")):
         self.ollama_service = ollama_service
         self.persistence_dir = persistence_dir
         self.validator = InputValidator()
+        self.repair_mapper = RepairMapper()
+        self.repair_engine = RepairEngine()
+        self.repair_store = RepairSessionStore()
         self.persistence_dir.mkdir(parents=True, exist_ok=True)
 
-    def compile(self, model_name: str, raw_input: str) -> Tuple[CompiledSpecIR, List[CompileIssue]]:
+    def compile(self, model_name: str, raw_input: str, repair_session_id: Optional[str] = None) -> Tuple[CompiledSpecIR, List[CompileIssue]]:
         request_id = f"creq_{uuid.uuid4().hex[:8]}"
         timestamp = datetime.now().isoformat()
 
@@ -53,12 +60,21 @@ class NaturalInputCompiler:
             # Stage D: Validation
             issues = self.validator.validate(ir)
 
+            # Stage D.1: Annotate issues for repair
+            for issue in issues:
+                self.repair_mapper.annotate_issue(issue)
+
             # Stage E: Eligibility decision
             ir.compile_status = self.validator.evaluate_eligibility(issues)
 
             # Capture issues in IR
             ir.errors = [issue.message for issue in issues if issue.severity == "error"]
             ir.warnings = [issue.message for issue in issues if issue.severity == "warning"]
+
+            # Stage F: Repair Session Tracking
+            if repair_session_id:
+                # We expect the UI to manage the session object and pass it or we load it
+                pass
 
             # Persistence
             self._persist_run(ir, issues)
@@ -178,3 +194,43 @@ You MUST output ONLY valid JSON matching this structure:
 
         with filepath.open("w") as f:
             json.dump(data, f, indent=2)
+
+    def generate_repairs(self, issues: List[CompileIssue]) -> List[RepairAction]:
+        all_actions = []
+        for issue in issues:
+            if issue.repairable:
+                # For AMBIGUOUS_TARGET_FILE we might need to find candidates
+                # This is simplified for the demo
+                context = {}
+                if "pipeline" in issue.message.lower() or "graph" in issue.message.lower():
+                    context["candidates"] = ["pipeline.py", "graph.py"]
+
+                actions = self.repair_mapper.map_issue_to_actions(issue, context)
+                all_actions.extend(actions)
+        return all_actions
+
+    def apply_repairs(self, ir: CompiledSpecIR, repairs: List[RepairAction]) -> CompiledSpecIR:
+        updated_ir = ir
+        for repair in repairs:
+            updated_ir = self.repair_engine.apply_repair(updated_ir, repair)
+        return updated_ir
+
+    def revalidate(self, ir: CompiledSpecIR) -> Tuple[CompiledSpecIR, List[CompileIssue]]:
+        # Stage D: Validation
+        issues = self.validator.validate(ir)
+
+        # Stage D.1: Annotate issues for repair
+        for issue in issues:
+            self.repair_mapper.annotate_issue(issue)
+
+        # Stage E: Eligibility decision
+        ir.compile_status = self.validator.evaluate_eligibility(issues)
+
+        # Capture issues in IR
+        ir.errors = [issue.message for issue in issues if issue.severity == "error"]
+        ir.warnings = [issue.message for issue in issues if issue.severity == "warning"]
+
+        # Persistence
+        self._persist_run(ir, issues)
+
+        return ir, issues
