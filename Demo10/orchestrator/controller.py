@@ -152,6 +152,25 @@ class OrchestratorController:
             run.compiled_plan_id = plan.plan_id
             return {"plan": plan, "report": report}
 
+        elif stage == OrchestratorStage.PLAN_MATERIALIZATION:
+            from services.planner.plan_builder import PlanBuilder
+            builder = PlanBuilder()
+            # We need CompiledSpecIR here.
+            # If the flow came from Natural Input Compiler, we already have it.
+            # If it came from DraftSpec -> Compile, 'plan' above is a CompiledPlan,
+            # which is different from CompiledSpecIR.
+            # Spec 044 Objective says "Convert validated CompiledSpecIR into... task graph"
+            # So this stage is primarily for the SPEC 041 flow.
+
+            ir = run.stages[OrchestratorStage.COMPILE.value].outputs.get("ir")
+            if not ir:
+                 # Fallback/Legacy logic if coming from DraftSpec
+                 return {}
+
+            execution_plan = builder.build_plan(ir)
+            run.execution_plan_id = execution_plan.plan_id
+            return {"execution_plan": execution_plan}
+
         elif stage == OrchestratorStage.PREVIEW_SIMULATION:
             plan = run.stages[OrchestratorStage.COMPILE.value].outputs.get("plan")
             if not plan: return "BLOCKED"
