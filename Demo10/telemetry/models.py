@@ -14,7 +14,13 @@ TelemetryEventType = Literal[
     "rollback_completed",
     "verification_run",
     "verification_result",
-    "promotion_decision"
+    "promotion_decision",
+    "macro_promoted",
+    "macro_verified",
+    "macro_activated",
+    "macro_deprecated",
+    "macro_expanded",
+    "macro_expansion_failed"
 ]
 
 class TelemetryEvent(BaseModel):
