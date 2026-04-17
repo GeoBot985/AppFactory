@@ -11,7 +11,7 @@ def mock_ollama():
 
 @pytest.fixture
 def compiler(mock_ollama, tmp_path):
-    return NaturalInputCompiler(mock_ollama, persistence_dir=tmp_path)
+    return NaturalInputCompiler(mock_ollama, workspace_root=tmp_path, persistence_dir=tmp_path)
 
 def test_clean_compile(compiler, mock_ollama):
     mock_ollama.run_prompt.return_value = """

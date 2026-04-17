@@ -41,16 +41,25 @@ class InputValidator:
                 field="operations"
             ))
 
+        if ir.defaults_applied:
+            issues.append(CompileIssue(
+                severity="warning",
+                code="DEFAULTS_APPLIED",
+                message=f"Deterministic defaults applied: {', '.join(ir.defaults_applied)}"
+            ))
+
         # Validate each operation
         for i, op in enumerate(ir.operations):
             # File-targeted ops have target path when required
-            if op.op_type in [OperationType.CREATE_FILE, OperationType.MODIFY_FILE]:
+            if op.op_type in [OperationType.CREATE_FILE, OperationType.MODIFY_FILE, OperationType.WRITE_SPEC]:
                 if not op.target or op.target.strip() == "":
                     issues.append(CompileIssue(
                         severity="error",
                         code=MISSING_REQUIRED_TARGET,
                         message=f"Operation {i+1} ({op.op_type.value}) requires a target path",
-                        field=f"operations[{i}].target"
+                        field=f"operations[{i}].target",
+                        repairable=True,
+                        repair_type="provide_value"
                     ))
 
             if "vague" in op.instruction.lower():

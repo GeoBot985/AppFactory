@@ -51,6 +51,7 @@ class CompiledSpecIR:
     target_path: Optional[str] = None
     operations: List[OperationIR] = field(default_factory=list)
     constraints: List[ConstraintIR] = field(default_factory=list)
+    defaults_applied: List[str] = field(default_factory=list)
     assumptions: List[str] = field(default_factory=list)
     open_questions: List[str] = field(default_factory=list)
     warnings: List[str] = field(default_factory=list)
@@ -70,6 +71,7 @@ class CompiledSpecIR:
             "target_path": self.target_path,
             "operations": [op.to_dict() for op in self.operations],
             "constraints": [c.to_dict() for c in self.constraints],
+            "defaults_applied": self.defaults_applied,
             "assumptions": self.assumptions,
             "open_questions": self.open_questions,
             "warnings": self.warnings,

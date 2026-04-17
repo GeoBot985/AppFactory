@@ -17,15 +17,27 @@ from .repair_mapper import RepairMapper
 from .repair_engine import RepairEngine
 from .repair_session_store import RepairSessionStore
 from .repair_models import RepairSession, RepairIteration, RepairAction
+from .default_injector import DefaultInjector
+from ..context.context_resolver import ContextResolver
+from ..session_memory.session_manager import SessionManager
+from ..run_ledger.ledger import LedgerService
 
 class NaturalInputCompiler:
-    def __init__(self, ollama_service: OllamaService, persistence_dir: Path = Path("runtime_data/compiler_runs")):
+    def __init__(self, ollama_service: OllamaService, workspace_root: Path, persistence_dir: Path = Path("runtime_data/compiler_runs")):
         self.ollama_service = ollama_service
+        self.workspace_root = workspace_root
         self.persistence_dir = persistence_dir
         self.validator = InputValidator()
         self.repair_mapper = RepairMapper()
         self.repair_engine = RepairEngine()
         self.repair_store = RepairSessionStore()
+        self.default_injector = DefaultInjector()
+
+        # Context resolution dependencies
+        self.session_manager = SessionManager()
+        self.ledger_service = LedgerService(workspace_root)
+        self.context_resolver = ContextResolver(str(workspace_root), self.session_manager, self.ledger_service)
+
         self.persistence_dir.mkdir(parents=True, exist_ok=True)
 
     def compile(self, model_name: str, raw_input: str, repair_session_id: Optional[str] = None) -> Tuple[CompiledSpecIR, List[CompileIssue]]:
@@ -57,21 +69,27 @@ class NaturalInputCompiler:
                 timestamp=timestamp
             )
 
-            # Stage D: Validation
+            # Stage D: Context-Aware Defaults Injection (SPEC 043)
+            context = self.context_resolver.capture_snapshot()
+            ir = self.default_injector.inject_defaults(ir, context)
+
+            # Stage E: Validation
             issues = self.validator.validate(ir)
 
-            # Stage D.1: Annotate issues for repair
+            # Stage E.1: Annotate issues for repair
             for issue in issues:
                 self.repair_mapper.annotate_issue(issue)
 
-            # Stage E: Eligibility decision
+            # Stage F: Eligibility decision
             ir.compile_status = self.validator.evaluate_eligibility(issues)
 
             # Capture issues in IR
             ir.errors = [issue.message for issue in issues if issue.severity == "error"]
-            ir.warnings = [issue.message for issue in issues if issue.severity == "warning"]
+            # Merge validator warnings with rule-generated warnings in IR
+            # Validator warnings (like DEFAULTS_APPLIED) are already in issues
+            ir.warnings = list(set(ir.warnings + [issue.message for issue in issues if issue.severity == "warning"]))
 
-            # Stage F: Repair Session Tracking
+            # Stage G: Repair Session Tracking
             if repair_session_id:
                 # We expect the UI to manage the session object and pass it or we load it
                 pass
@@ -216,19 +234,23 @@ You MUST output ONLY valid JSON matching this structure:
         return updated_ir
 
     def revalidate(self, ir: CompiledSpecIR) -> Tuple[CompiledSpecIR, List[CompileIssue]]:
-        # Stage D: Validation
+        # Re-inject defaults on re-validation to ensure context is fresh
+        context = self.context_resolver.capture_snapshot()
+        ir = self.default_injector.inject_defaults(ir, context)
+
+        # Stage E: Validation
         issues = self.validator.validate(ir)
 
-        # Stage D.1: Annotate issues for repair
+        # Stage E.1: Annotate issues for repair
         for issue in issues:
             self.repair_mapper.annotate_issue(issue)
 
-        # Stage E: Eligibility decision
+        # Stage F: Eligibility decision
         ir.compile_status = self.validator.evaluate_eligibility(issues)
 
         # Capture issues in IR
         ir.errors = [issue.message for issue in issues if issue.severity == "error"]
-        ir.warnings = [issue.message for issue in issues if issue.severity == "warning"]
+        ir.warnings = list(set(ir.warnings + [issue.message for issue in issues if issue.severity == "warning"]))
 
         # Persistence
         self._persist_run(ir, issues)
