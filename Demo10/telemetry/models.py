@@ -25,7 +25,12 @@ TelemetryEventType = Literal[
     "routing_matched",
     "routing_selected",
     "routing_fallback",
-    "routing_failed"
+    "routing_failed",
+    "single_command_started",
+    "single_command_completed",
+    "single_command_failed",
+    "single_command_blocked",
+    "single_command_rejected"
 ]
 
 class TelemetryEvent(BaseModel):
