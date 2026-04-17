@@ -74,7 +74,7 @@ from templates.registry import TemplateRegistry
 from templates.selector import TemplateSelector
 from templates.fill import TemplateFiller
 from templates.validator import TemplateValidator
-from services.compiler.models import CompiledPlan, CompileStatus
+from services.compiler.models import CompiledPlan, CompileStatus as PlanCompileStatus
 from services.compiled_runtime.run_controller import CompiledPlanRunController
 from services.compiled_runtime.run_models import CompiledPlanRun, CompiledRunStatus, CompiledTaskStatus
 from services.compiled_runtime.rerun_models import ReRunRequest, ReRunType
@@ -86,6 +86,9 @@ from orchestrator.stages import OrchestratorStage
 from services.preview.simulator import PlanSimulator
 from services.preview.approval_controller import ApprovalController
 from services.preview.impact_model import ImpactPreview, ApprovalState, ApprovalStatus, RiskLevel
+
+from services.input_compiler.compiler import NaturalInputCompiler
+from services.input_compiler.models import CompiledSpecIR, CompileStatus as InputCompileStatus
 
 from runtime_profiles.models import RuntimeProfile, DriftPolicyMode
 from runtime_profiles.registry import ProfileRegistry
@@ -185,6 +188,7 @@ class AgentWorkbenchApp:
         self.current_normalized_request: Optional[NormalizedRequest] = None
         self.current_planning_skeleton: Optional[PlanningSkeleton] = None
         self.current_clarification_session: Optional[ClarificationSession] = None
+        self.current_input_ir: Optional[CompiledSpecIR] = None
 
         self.session_manager = SessionManager()
         self.working_set_manager = WorkingSetManager()
@@ -192,7 +196,8 @@ class AgentWorkbenchApp:
         self.session_evictor = SessionEvictor()
 
         self.compiler = DraftSpecCompiler()
-        self.approval_controller = ApprovalController(auto_approve_low_risk=True)
+        self.natural_compiler = NaturalInputCompiler(self.ollama_service)
+        self.approval_controller = ApprovalController()
 
         self.template_registry = TemplateRegistry()
         self.template_selector = TemplateSelector(self.template_registry)
@@ -544,6 +549,10 @@ class AgentWorkbenchApp:
             slot_text.bind("<Button-1>", lambda e, i=idx: self.select_slot(i))
         action_row = ttk.Frame(top, style="Panel.TFrame")
         action_row.grid(row=3, column=1, columnspan=7, sticky="ew", pady=(8, 0))
+        self.compile_input_button = ttk.Button(action_row, text="Compile Request", command=self.compile_natural_input)
+        self.compile_input_button.pack(side="left", padx=(0, 8))
+        Tooltip(self.compile_input_button, "Compile the natural language request into a structured IR and validate it.")
+
         self.decompose_button = ttk.Button(action_row, text="Decompose Request", command=self.decompose_request)
         self.decompose_button.pack(side="left", padx=(0, 8))
         Tooltip(self.decompose_button, "Decompose the natural language request into sub-intents and a planning skeleton.")
@@ -654,6 +663,7 @@ class AgentWorkbenchApp:
         response_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         planning_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         clarification_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
+        input_preview_ir_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         draft_details_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         compile_report_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
         index_frame = ttk.Frame(notebook, style="Panel.TFrame", padding=4)
@@ -672,6 +682,7 @@ class AgentWorkbenchApp:
         notebook.add(response_frame, text="Latest Response")
         notebook.add(planning_frame, text="Planning")
         notebook.add(clarification_frame, text="Clarification")
+        notebook.add(input_preview_ir_frame, text="Input Compiler Preview")
         notebook.add(draft_details_frame, text="Draft Translation")
         notebook.add(compile_report_frame, text="Compile Report")
         notebook.add(index_frame, text="Architecture Index")
@@ -761,6 +772,27 @@ class AgentWorkbenchApp:
         self.planning_view.tag_configure("step", foreground="#ce9178")
         self.planning_view.tag_configure("warn", foreground="#f44747")
         self.planning_view.tag_configure("complexity", foreground="#d7ba7d", font=("Consolas", 10, "bold"))
+
+        self.input_preview_ir_view = tk.Text(
+            input_preview_ir_frame,
+            wrap="word",
+            bg="#1b1b1c",
+            fg="#d4d4d4",
+            insertbackground="#d4d4d4",
+            font=("Consolas", 10),
+            relief="flat",
+        )
+        input_preview_ir_scroll = ttk.Scrollbar(input_preview_ir_frame, orient="vertical", command=self.input_preview_ir_view.yview)
+        self.input_preview_ir_view.configure(yscrollcommand=input_preview_ir_scroll.set)
+        self.input_preview_ir_view.grid(row=0, column=0, sticky="nsew")
+        input_preview_ir_scroll.grid(row=0, column=1, sticky="ns")
+        self.input_preview_ir_view.configure(state="disabled")
+
+        self.input_preview_ir_view.tag_configure("header", foreground="#569cd6", font=("Consolas", 11, "bold"))
+        self.input_preview_ir_view.tag_configure("blocked", foreground="#f44747", font=("Consolas", 11, "bold"))
+        self.input_preview_ir_view.tag_configure("clean", foreground="#6a9955", font=("Consolas", 11, "bold"))
+        self.input_preview_ir_view.tag_configure("warning", foreground="#d7ba7d")
+        self.input_preview_ir_view.tag_configure("label", foreground="#9cdcfe")
 
         self.draft_details_view = tk.Text(
             draft_details_frame,
@@ -1822,7 +1854,7 @@ class AgentWorkbenchApp:
         except Exception as e:
             self.log_event(f"Compile failed: {str(e)}")
 
-    def _refresh_compile_report(self, report: CompileReport):
+    def _refresh_compile_report(self, report: PlanCompileStatus):
         self.compile_report_view.configure(state="normal")
         self.compile_report_view.delete("1.0", "end")
 
@@ -1843,6 +1875,75 @@ class AgentWorkbenchApp:
         # Switch to report tab
         for i, tabid in enumerate(self.notebook.tabs()):
             if "Compile Report" in self.notebook.tab(tabid, "text"):
+                self.notebook.select(i)
+                break
+
+    def compile_natural_input(self) -> None:
+        model = self.model_var.get().strip()
+        if not model:
+            self.log_event("Input Compile blocked: no model selected.")
+            return
+        raw_input = self.request_text.get("1.0", "end-1c").strip()
+        if not raw_input:
+            self.log_event("Input Compile blocked: request is empty.")
+            return
+
+        self.log_event("Natural input compiler pass started...")
+        self.compile_input_button.state(["disabled"])
+
+        def worker():
+            try:
+                ir, issues = self.natural_compiler.compile(model, raw_input)
+                self.ui_queue.put(("input_ir_ready", (ir, issues)))
+            except Exception as e:
+                self.ui_queue.put(("queue_log", f"Input compilation failed: {e}"))
+            finally:
+                self.ui_queue.put(("compile_input_done", None))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _refresh_input_preview_ir(self, ir: CompiledSpecIR, issues: List[CompileIssue]):
+        self.input_preview_ir_view.configure(state="normal")
+        self.input_preview_ir_view.delete("1.0", "end")
+
+        status_tag = "blocked" if ir.compile_status == InputCompileStatus.BLOCKED else "clean"
+        self.input_preview_ir_view.insert("end", f"COMPILE STATUS: {ir.compile_status.value.upper()}\n\n", status_tag)
+
+        self.input_preview_ir_view.insert("end", f"Title: {ir.title}\n", "label")
+        self.input_preview_ir_view.insert("end", f"Objective: {ir.objective}\n", "label")
+        if ir.target_path:
+            self.input_preview_ir_view.insert("end", f"Target Path: {ir.target_path}\n", "label")
+
+        self.input_preview_ir_view.insert("end", "\n[ NORMALIZED OPERATIONS ]\n", "header")
+        for i, op in enumerate(ir.operations):
+            self.input_preview_ir_view.insert("end", f"{i+1}. {op.op_type.value}: {op.target or 'none'}\n", "label")
+            self.input_preview_ir_view.insert("end", f"   Instruction: {op.instruction}\n")
+            if op.depends_on:
+                self.input_preview_ir_view.insert("end", f"   Depends on: {', '.join(op.depends_on)}\n")
+
+        if ir.assumptions:
+            self.input_preview_ir_view.insert("end", "\n[ ASSUMPTIONS ]\n", "header")
+            for a in ir.assumptions:
+                self.input_preview_ir_view.insert("end", f"- {a}\n")
+
+        if issues:
+            self.input_preview_ir_view.insert("end", "\n[ ISSUES / BLOCKERS ]\n", "header")
+            for issue in issues:
+                tag = "blocked" if issue.severity == "error" else "warning"
+                self.input_preview_ir_view.insert("end", f"- [{issue.code}] {issue.message}\n", tag)
+
+        self.input_preview_ir_view.configure(state="disabled")
+
+        # Update gate logic
+        if ir.compile_status == InputCompileStatus.BLOCKED:
+            self.log_event("Input is BLOCKED. Cannot add to queue.")
+            self.submit_spec_button.state(["disabled"])
+        else:
+            self.submit_spec_button.state(["!disabled"])
+
+        # Switch to input compiler preview tab
+        for i, tabid in enumerate(self.notebook.tabs()):
+            if "Input Compiler Preview" in self.notebook.tab(tabid, "text"):
                 self.notebook.select(i)
                 break
 
@@ -2763,7 +2864,21 @@ class AgentWorkbenchApp:
         self._refresh_prompt_preview()
 
     def submit_spec(self) -> None:
+        # SPEC 041: Final programmatic check before submission
+        if self.current_input_ir and self.current_input_ir.compile_status == InputCompileStatus.BLOCKED:
+            self.log_event("Submit blocked: Input IR is in BLOCKED state.")
+            return
+
         spec = self.spec_text.get("1.0", "end-1c")
+
+        # If we have a clean input IR, we might want to use its content
+        # but for now we'll assume the user might have edited the result
+        # (though the spec says user cannot auto-repair yet).
+        # Actually, let's load the IR as the spec if it exists.
+        if self.current_input_ir:
+             import yaml
+             spec = yaml.dump(self.current_input_ir.to_dict(), sort_keys=False)
+
         idx = self.selected_slot_index
         slot = self.spec_queue.queue_slots[idx]
         slot.spec_text = spec
@@ -4746,6 +4861,14 @@ class AgentWorkbenchApp:
             return
         if message == "decompose_done":
             self.decompose_button.state(["!disabled"])
+            return
+        if message == "compile_input_done":
+            self.compile_input_button.state(["!disabled"])
+            return
+        if message == "input_ir_ready":
+            ir, issues = payload
+            self.current_input_ir = ir
+            self._refresh_input_preview_ir(ir, issues)
             return
         if message == "planning_ready":
             normalized, skeleton, session = payload

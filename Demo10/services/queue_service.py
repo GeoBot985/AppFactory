@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Optional, Any
 
 from services.bundle_service import WorkingSetBundle
 from services.selection_service import SelectionResult
@@ -90,8 +91,20 @@ class QueueService:
         ]
 
     def load_specs(self, state: SpecQueueState, specs: list[str]) -> None:
+        from services.input_compiler.models import CompileStatus
+        import yaml
         for idx, slot in enumerate(state.queue_slots):
             spec = specs[idx].strip() if idx < len(specs) else ""
+
+            # SPEC 041: Programmatic Gate Enforcement
+            if spec:
+                try:
+                    data = yaml.safe_load(spec)
+                    if isinstance(data, dict) and data.get("compile_status") == CompileStatus.BLOCKED.value:
+                        raise ValueError(f"GATE_REJECTED: Cannot load blocked spec into slot {idx + 1}")
+                except yaml.YAMLError:
+                    pass # Not an IR, maybe legacy spec
+
             slot.spec_text = spec
             if slot.status == "running":
                 slot.status = "ready" if spec else "empty"
