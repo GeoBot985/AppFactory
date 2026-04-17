@@ -92,3 +92,13 @@ class RerunDepthRule(PolicyRule):
         if depth > config.rerun.max_rerun_depth:
             return PolicyDecision.BLOCK, f"max_rerun_depth_exceeded: {depth} > {config.rerun.max_rerun_depth}"
         return PolicyDecision.ALLOW, None
+
+class ApplyConflictRule(PolicyRule):
+    def evaluate(self, domain: PolicyDomain, context: Dict[str, Any], config: PolicyConfig) -> tuple[PolicyDecision, Optional[str]]:
+        if domain != PolicyDomain.APPLY:
+            return PolicyDecision.ALLOW, None
+
+        has_conflicts = context.get("has_conflicts", False)
+        if has_conflicts:
+            return PolicyDecision.BLOCK, "apply_blocked_by_conflicts"
+        return PolicyDecision.ALLOW, None

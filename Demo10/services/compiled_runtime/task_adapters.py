@@ -94,15 +94,63 @@ class ApplyMutationsAdapter(TaskAdapter):
         if not context.candidate_file_ops:
             return TaskResult(success=True, message="No mutations to apply")
 
-        # Filter out what was already applied if any?
-        # For now, apply everything in candidate_file_ops
-        batch = executor.file_ops.execute_plan(context.candidate_file_ops, mode="apply")
-        context.last_mutation_batch = batch
+        from services.apply.changeset import ChangeSetBuilder
+        from services.apply.executor import DeterministicExecutor
+        from services.apply.models import TransactionStatus
+        from services.policy.models import PolicyDomain
 
-        if batch.failed_count > 0:
-            return TaskResult(success=False, message=f"Failed to apply {batch.failed_count} mutations", details={"batch": batch})
+        builder = ChangeSetBuilder(executor.file_ops.project_root)
+        det_executor = DeterministicExecutor(executor.file_ops.project_root)
 
-        return TaskResult(success=True, message=f"Successfully applied {len(context.candidate_file_ops)} mutations", details={"batch": batch})
+        # 1. Build ChangeSet
+        changeset = builder.build_changeset(getattr(executor, "run_id", "run_unknown"), context.candidate_file_ops)
+        context.current_changeset = changeset
+
+        # 2. Policy Check before apply
+        if hasattr(executor, "policy_engine"):
+            policy_context = {
+                "has_conflicts": False, # Will be re-checked if detector finds them
+                "file_count": len(changeset.entries)
+            }
+            # Initial check
+            res = executor.policy_engine.evaluate(PolicyDomain.APPLY, changeset.changeset_id, policy_context)
+            if res.decision == "block":
+                return TaskResult(success=False, message=f"Apply blocked by policy: {', '.join(res.reasons)}")
+
+        # 3. Execute ChangeSet
+        transaction = det_executor.execute(changeset)
+        context.last_transaction = transaction
+
+        if transaction.status != TransactionStatus.APPLIED:
+            msg = f"Failed to apply mutations. Status: {transaction.status.value}"
+            if transaction.conflict_report and transaction.conflict_report.conflicts:
+                msg += f" | {len(transaction.conflict_report.conflicts)} conflicts detected"
+            if transaction.verification_errors:
+                msg += f" | {len(transaction.verification_errors)} verification errors"
+
+            return TaskResult(
+                success=False,
+                message=msg,
+                details={
+                    "transaction": transaction,
+                    "conflicts": transaction.conflict_report,
+                    "verification_errors": transaction.verification_errors
+                }
+            )
+
+        summary = (
+            f"Successfully applied {len(transaction.applied_files)} mutations. "
+            f"Skipped {len(transaction.skipped_files)} (idempotent)."
+        )
+        return TaskResult(
+            success=True,
+            message=summary,
+            details={
+                "transaction": transaction,
+                "applied": transaction.applied_files,
+                "skipped": transaction.skipped_files
+            }
+        )
 
 class PythonParseValidationAdapter(TaskAdapter):
     def execute(self, task: Task, context: SharedRunContext, executor: TaskExecutorService) -> TaskResult:

@@ -14,6 +14,8 @@ class SharedRunContext:
     validated_file_ops: List[Any] = field(default_factory=list)
     mutation_previews: Dict[str, str] = field(default_factory=dict) # path -> diff
     last_mutation_batch: Optional[FileOperationBatchResult] = None
+    current_changeset: Optional[Any] = None # services.apply.models.ChangeSet
+    last_transaction: Optional[Any] = None # services.apply.models.ApplyTransaction
     test_results: Dict[str, Any] = field(default_factory=dict)
     validation_results: Dict[str, Any] = field(default_factory=dict)
 

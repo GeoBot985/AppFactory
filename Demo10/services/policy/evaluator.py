@@ -27,7 +27,14 @@ class PolicyEvaluator:
                         decision = PolicyDecision.POLICY_DENIED
                         reasons.append("DENIED_EXECUTABLE")
                         matched_rules.append("command_rules.denied_executables")
-                        return PolicyEvaluationResult(domain, entity_id, risk.value, decision.value, reasons, matched_rules)
+                        return PolicyEvaluationResult(
+                            policy_domain=domain,
+                            entity_id=entity_id,
+                            risk_class=risk.value,
+                            decision=decision.value,
+                            reason_codes=reasons,
+                            matched_rules=matched_rules
+                        )
 
         # Unattended max risk check (Requirement 4)
         unattended_max = RiskClass(self.config.defaults.get("unattended_max_risk", RiskClass.R1_MODERATE.value))
